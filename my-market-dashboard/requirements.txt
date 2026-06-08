@@ -1,1 +1,10 @@
+# 뷰어 (Streamlit 앱)
+streamlit
+yfinance
+pandas
 
+# 엔진 (텔레그램 수집 + AI 분석 + 뉴스)
+telethon
+python-dotenv
+anthropic
+requests
