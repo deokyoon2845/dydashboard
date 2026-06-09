@@ -1,4 +1,4 @@
-"""시황 리포트 뷰어 — JSON 구조화 포맷 렌더링."""
+"""시황 리포트 뷰어 — 자체 CSS 주입 방식, 미니멀 미스트 디자인."""
 
 import json
 import re
@@ -7,15 +7,45 @@ from pathlib import Path
 
 import streamlit as st
 
-from modules.stocks import stock_pills_html, naver_stock_url
+from modules.stocks import naver_stock_url
 
 REPORTS_DIR = Path("reports")
 
 MOOD_KO  = {"positive": "긍정", "neutral": "중립", "cautious": "주의"}
 MOOD_CLS = {"positive": "mood-pos", "neutral": "mood-neu", "cautious": "mood-cau"}
 
+# ── 보고서 전용 CSS (자체 주입 — app.py 의존 없음) ───────────────
+_RPT_CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Hanken+Grotesk:wght@400;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap');
+.rpt-wrap{font-family:'Hanken Grotesk','Noto Sans KR',sans-serif;}
+.rpt-toprow{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:6px;}
+.mood-badge{font-size:10.5px;font-weight:700;letter-spacing:.07em;padding:4px 11px;border-radius:20px;display:inline-block;}
+.mood-pos{background:#e1f5ee;color:#0f6e56;}
+.mood-neu{background:#F1F2EC;color:#5d6258;}
+.mood-cau{background:#FAEEDA;color:#854F0B;}
+.rpt-topmeta{font-size:11.5px;color:var(--muted,#9a9b92);}
+.rpt-accent{height:3px;width:32px;background:var(--sage,#A7BBA9);border-radius:3px;margin:0 0 12px;}
+.rpt-headline{font-family:'Fraunces','Noto Sans KR',Georgia,serif;font-size:21px;font-weight:600;letter-spacing:-.02em;color:var(--ink,#34352f);line-height:1.45;margin:6px 0 18px;}
+.rpt-kt-wrap{margin-bottom:26px;}
+.rpt-kt-label{font-size:10.5px;font-weight:700;letter-spacing:.07em;color:var(--sage-deep,#7E9A83);margin-bottom:6px;text-transform:uppercase;}
+.rpt-kt-box{font-size:14.5px;line-height:1.85;color:var(--ink,#34352f);background:var(--summary-bg,#F6F7F2);border-left:3px solid var(--sage,#A7BBA9);padding:14px 18px;border-radius:0 12px 12px 0;}
+.rpt-sec{margin:20px 0 0;}
+.rpt-sec-title{font-size:15.5px;font-weight:700;color:var(--ink,#34352f);border-bottom:2px solid var(--sage,#A7BBA9);padding-bottom:5px;margin-bottom:9px;}
+.rpt-sec-body{font-size:14px;line-height:1.9;color:var(--ink,#34352f);margin:0;}
+.rpt-group-label{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted,#9a9b92);margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--line,#ECEDE7);}
+.theme-card{background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);border-left:3px solid var(--sage,#A7BBA9);border-radius:0 13px 13px 0;padding:13px 16px 11px;margin-bottom:10px;}
+.theme-name{font-size:14px;font-weight:700;color:var(--ink,#34352f);margin-bottom:5px;}
+.theme-detail{font-size:13px;line-height:1.75;color:var(--ink,#34352f);margin-bottom:8px;}
+.theme-tickers{font-size:11.5px;color:var(--muted,#9a9b92);}
+.theme-tickers a{color:var(--sage-deep,#7E9A83);font-weight:600;text-decoration:none;background:var(--pill-bg,#F1F2EC);padding:2px 8px;border-radius:6px;border:1px solid var(--line,#ECEDE7);margin-right:4px;}
+.rpt-sources{margin-top:24px;padding-top:12px;border-top:1px solid var(--line,#ECEDE7);font-size:11.5px;color:var(--muted,#9a9b92);display:flex;flex-wrap:wrap;gap:5px;align-items:center;}
+.src-pill{background:var(--pill-bg,#F1F2EC);color:var(--pill-ink,#5d6258);border:1px solid var(--line,#ECEDE7);font-size:11px;font-weight:600;padding:3px 9px;border-radius:7px;}
+</style>
+"""
 
-# ── 파일 목록 / 날짜 ──────────────────────────────────────────
+
+# ── 파일 목록 / 유틸 ──────────────────────────────────────────
 
 def list_reports():
     if not REPORTS_DIR.exists():
@@ -34,10 +64,7 @@ def _report_date(path: Path) -> date:
         return date.today()
 
 
-# ── 파일 로드 ────────────────────────────────────────────────
-
 def _load(path: Path) -> dict:
-    """JSON 또는 구형 .md → 통일 dict."""
     if path.suffix == ".json":
         return json.loads(path.read_text(encoding="utf-8"))
     text = path.read_text(encoding="utf-8")
@@ -51,8 +78,6 @@ def _load(path: Path) -> dict:
         "messages_count": 0, "source_channels": [],
     }
 
-
-# ── 헬퍼 ────────────────────────────────────────────────────
 
 def _label(path: Path) -> str:
     name = path.stem
@@ -76,20 +101,18 @@ def _label_with_headline(path: Path) -> str:
 
 
 def _extract_stocks(text: str) -> list:
-    """종목명 리스트 추출 — JSON·구형 MD 양쪽 지원."""
+    """종목명 추출 — JSON·구형 MD 양쪽 지원. (trends.py 호환용)"""
     try:
         data = json.loads(text)
         stocks = set()
         for th in data.get("themes", []):
             for t in (th.get("tickers") or "").split(","):
-                t = t.strip()
-                if t:
-                    stocks.add(t)
+                if t.strip():
+                    stocks.add(t.strip())
         for kw in data.get("keywords", []):
             for t in (kw.get("related") or "").split(","):
-                t = t.strip()
-                if t:
-                    stocks.add(t)
+                if t.strip():
+                    stocks.add(t.strip())
         return sorted(stocks)
     except Exception:
         pass
@@ -130,26 +153,26 @@ def _render_report(data: dict):
     n_msg    = data.get("messages_count", 0)
     headline = data.get("headline", "시황 분석 보고서")
 
-    # 상단 행
-    meta_right = gen_at
-    if n_msg:
-        meta_right += f" · {n_msg}개 메시지"
+    # 상단: 감성 배지 + 날짜·메시지수
+    meta_right = gen_at + (f" · {n_msg}개 메시지" if n_msg else "")
     st.markdown(
+        f'<div class="rpt-wrap">'
+        f'<div class="rpt-accent"></div>'
         f'<div class="rpt-toprow">'
-        f'<span class="mood-badge {mood_cls}">{mood_ko.upper()}</span>'
-        f'<span class="rpt-topmeta">{meta_right}</span>'
+        f'  <span class="mood-badge {mood_cls}">{mood_ko.upper()}</span>'
+        f'  <span class="rpt-topmeta">{meta_right}</span>'
+        f'</div>'
+        f'<div class="rpt-headline">{headline}</div>'
         f'</div>', unsafe_allow_html=True)
-
-    # 헤드라인
-    st.markdown(f'<div class="rpt-headline">{headline}</div>', unsafe_allow_html=True)
 
     # 오늘의 관전
     kt = data.get("key_takeaway", "")
     if kt:
         st.markdown(
+            f'<div class="rpt-kt-wrap">'
             f'<div class="rpt-kt-label">오늘의 관전</div>'
-            f'<div class="rpt-kt-box">{kt}</div>',
-            unsafe_allow_html=True)
+            f'<div class="rpt-kt-box">{kt}</div>'
+            f'</div>', unsafe_allow_html=True)
 
     # 동적 섹션
     for sec in data.get("sections", []):
@@ -157,9 +180,11 @@ def _render_report(data: dict):
         body  = sec.get("body", "")
         if not title and not body:
             continue
-        st.markdown(f'<div class="rpt-sec-title">{title}</div>', unsafe_allow_html=True)
-        if body:
-            st.markdown(f'<div class="rpt-sec-body">{body}</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="rpt-sec">'
+            f'<div class="rpt-sec-title">{title}</div>'
+            f'<div class="rpt-sec-body">{body}</div>'
+            f'</div>', unsafe_allow_html=True)
 
     # 주목 테마
     themes = data.get("themes", [])
@@ -169,14 +194,14 @@ def _render_report(data: dict):
             name    = th.get("name", "")
             detail  = th.get("detail", "")
             tickers = [t.strip() for t in (th.get("tickers") or "").split(",") if t.strip()]
-            ticker_html = "".join(
-                f'<a class="pill" href="{naver_stock_url(t)}" target="_blank">{t}</a>'
+            tickers_html = "".join(
+                f'<a href="{naver_stock_url(t)}" target="_blank">{t}</a>'
                 for t in tickers)
             st.markdown(
                 f'<div class="theme-card">'
                 f'<div class="theme-name">{name}</div>'
                 f'<div class="theme-detail">{detail}</div>'
-                + (f'<div class="theme-tickers">관련: {ticker_html}</div>' if ticker_html else "")
+                + (f'<div class="theme-tickers">관련: {tickers_html}</div>' if tickers_html else "")
                 + '</div>', unsafe_allow_html=True)
 
     # 출처
@@ -187,6 +212,9 @@ def _render_report(data: dict):
 
 
 def render_reports():
+    # CSS 자체 주입 (app.py 의존 없음)
+    st.markdown(_RPT_CSS, unsafe_allow_html=True)
+
     files = list_reports()
     if not files:
         st.markdown(
