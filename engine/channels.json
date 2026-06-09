@@ -1,1 +1,64 @@
-
+{
+  "channels": [
+    {
+      "id": "@lim_econ",
+      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "active": true
+    },
+    {
+      "id": "@hedgecat0301",
+      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "active": true
+    },
+    {
+      "id": "@Jstockclass",
+      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "active": true
+    },
+    {
+      "id": "@Meritz_strategy",
+      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "active": true
+    },
+    {
+      "id": "@HANAStrategy",
+      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "active": true
+    },
+    {
+      "id": "@ehdwl",
+      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "active": true
+    },
+    {
+      "id": "@egzion",
+      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "active": true
+    },
+    {
+      "id": "@bumgore",
+      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "active": true
+    },
+    {
+      "id": "@globalmktinsight",
+      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "active": true
+    },
+    {
+      "id": "@yuantais",
+      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "active": true
+    },
+    {
+      "id": "@bornlupin",
+      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "active": true
+    },
+    {
+      "id": "@activeetf",
+      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "active": true
+    }
+  ]
+}
