@@ -1,0 +1,70 @@
+{
+  "generated": "2026-06-09T23:41:20.353217+09:00",
+  "items": [
+    {
+      "keyword": "코스피 8% 급반등",
+      "stocks": [],
+      "news_title": "[마감시황] 코스피, 8000선 되찾으며 8% 급반등…역대 최대 상승폭 기록",
+      "news_url": "http://www.kdfnews.com/news/articleView.html?idxno=184068"
+    },
+    {
+      "keyword": "역대 최대 상승폭",
+      "stocks": [],
+      "news_title": "코스피 8% 급등 '8천피' 회복...역대 최대 상승폭",
+      "news_url": "https://www.ytn.co.kr/_ln/0102_202606092215068013"
+    },
+    {
+      "keyword": "8000선 회복",
+      "stocks": [],
+      "news_title": "코스피, 8000선 회복…하락분 단숨에 되돌려 [마감시황]",
+      "news_url": "https://www.ekn.kr/web/view.php?key=20260609020321860"
+    },
+    {
+      "keyword": "반도체주 강세",
+      "stocks": [
+        "삼성전자",
+        "SK하이닉스"
+      ],
+      "news_title": "코스피, 급락 충격 딛고 8000선으로 반등… 삼전·SK하닉 훨훨 [MTN 마감...",
+      "news_url": "https://news.mtn.co.kr/news-detail/2026060915443192830"
+    },
+    {
+      "keyword": "매수 사이드카 발동",
+      "stocks": [],
+      "news_title": "[속보] 코스피 이어 코스닥도 매수 사이드카 발동",
+      "news_url": "http://www.yonhapnewstv.co.kr/news/MYH20260609094103ugZ"
+    },
+    {
+      "keyword": "공포지수 최고",
+      "stocks": [],
+      "news_title": "천당·지옥 오간 코스피…변동성 지수 '역대 최고'",
+      "news_url": "https://www.idaegu.co.kr/news/articleView.html?idxno=550567"
+    },
+    {
+      "keyword": "원화 약세",
+      "stocks": [],
+      "news_title": "코스피 뛰는데 원화는 추락…외국인 차익 실현에 금융시장 '출렁'",
+      "news_url": "https://www.newsis.com/view/NISX20260609_0003662802"
+    },
+    {
+      "keyword": "외국인 매수",
+      "stocks": [],
+      "news_title": "[마감시황] 코스닥, 하루 만에 6.19% 급반등…외국인·기관 동반 매수에...",
+      "news_url": "https://www.seoul.co.kr/news/economy/securities/2026/06/09/20260609500211?wlog_tag3=naver"
+    },
+    {
+      "keyword": "레버리지 ETF 과열",
+      "stocks": [
+        "하이닉스"
+      ],
+      "news_title": "두 배 빠졌는데 1조 몰렸다···삼전닉스 레버리지 과열에 시장은 '몸살...",
+      "news_url": "https://www.womaneconomy.co.kr/news/articleView.html?idxno=254867"
+    },
+    {
+      "keyword": "빚투 강제 처분",
+      "stocks": [],
+      "news_title": "\"하루만 더 버텼으면…\" 코스피 이틀 급락에 3000억원 '강제 처분'",
+      "news_url": "https://www.edaily.co.kr/news/newspath.asp?newsid=05877766645480080"
+    }
+  ]
+}
