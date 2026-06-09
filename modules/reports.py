@@ -61,7 +61,31 @@ def _label(path: Path) -> str:
         return name
 
 
-def _label_with_headline(path: Path) -> str:
+def _extract_stocks(text: str) -> list:
+    """종목명 리스트 추출 — JSON·구형 MD 양쪽 지원."""
+    # JSON 포맷
+    try:
+        data = json.loads(text)
+        stocks = set()
+        for th in data.get("themes", []):
+            for t in (th.get("tickers") or "").split(","):
+                t = t.strip()
+                if t: stocks.add(t)
+        for kw in data.get("keywords", []):
+            for t in (kw.get("related") or "").split(","):
+                t = t.strip()
+                if t: stocks.add(t)
+        return sorted(stocks)
+    except Exception:
+        pass
+    # 구형 MD 포맷
+    import re as _re
+    m = _re.search(r"##\s*언급[^\n]*종목[^\n]*\n+(.+?)(?=\n##|\Z)", text, _re.S)
+    if not m:
+        return []
+    parts = _re.split(r"[,·\n/]", m.group(1))
+    return [p.strip().strip("-•*· ").strip()
+            for p in parts if p.strip() and len(p.strip()) <= 20 and not p.strip().startswith("#")]
     base = _label(path)
     try:
         data = _load(path)
