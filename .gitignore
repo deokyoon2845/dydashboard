@@ -1,1 +1,15 @@
+# 가상환경
+venv/
+.venv/
 
+# 파이썬 캐시
+__pycache__/
+*.pyc
+
+# 시크릿 / 환경변수 (절대 깃에 올리지 말 것)
+.streamlit/secrets.toml
+.env
+
+# 텔레그램 세션 파일 (2단계에서 사용)
+*.session
+*.session-journal
