@@ -1,0 +1,15 @@
+{
+  "channels": [
+    {"id": "@lim_econ",   "name": "1",   "active": true},
+    {"id": "@hedgecat0301",    "name": "2",  "active": true},
+    {"id": "@Jstockclass",    "name": "3",  "active": true},
+    {"id": "@Meritz_strategy",    "name": "4",  "active": true},
+    {"id": "@HANAStrategy",    "name": "5",  "active": true},
+    {"id": "@ehdwl",    "name": "6",  "active": true},
+    {"id": "@bumgore",    "name": "7",  "active": true},
+    {"id": "@globalmktinsight",    "name": "8",  "active": true},
+    {"id": "@bornlupin",    "name": "9",  "active": true},
+    {"id": "@activeetf",    "name": "10",  "active": true},
+    {"id": "@yuantais", "name": "11",    "active": false}
+  ]
+}
