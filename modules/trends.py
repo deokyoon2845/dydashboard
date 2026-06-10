@@ -23,7 +23,19 @@ def _empty(ico, msg, hint=""):
     )
 
 
+_MOOD_SCORE = {"positive": 1.0, "neutral": 0.0, "cautious": -1.0}
+
+
 def _sentiment_score(text: str):
+    # 신형 JSON 리포트: mood 필드
+    try:
+        import json as _json
+        data = _json.loads(text)
+        if isinstance(data, dict) and "mood" in data:
+            return _MOOD_SCORE.get(data.get("mood"), 0.0)
+    except Exception:
+        pass
+    # 구형 MD 리포트: '시장 분위기' 섹션 단어 기반
     m = re.search(r"##\s*시장\s*분위기[^\n]*\n+(.+?)(?=\n##|\Z)", text, re.S)
     seg = m.group(1) if m else text
     pos, neg, neu = ("긍정" in seg), ("부정" in seg), ("중립" in seg)
@@ -87,7 +99,7 @@ def render_trends():
     st.title("추세")
 
     if not list_reports():
-        _empty("📊", "리포트가 쌓이면 추세를 보여드려요", "시황 리포트를 먼저 만들어보세요")
+        _empty("📊", "리포트가 쌓이면 추세를 보여드려요", "전략·시황 보고서를 먼저 만들어보세요")
         return
 
     dark = st.session_state.get("dark", False)
