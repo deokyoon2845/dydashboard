@@ -10,7 +10,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 NAVER_URL = "https://openapi.naver.com/v1/search/news.json"
-DEFAULT_QUERIES = ["증시 시황", "코스피", "코스닥", "주식 외국인"]
+DEFAULT_QUERIES = [
+    "증시 시황", "코스피", "코스닥", "외국인 순매수",
+    "반도체 실적", "2차전지", "AI 반도체", "기준금리",
+    "환율", "실적 발표", "정부 정책 증시",
+]
 
 
 def _clean(text: str) -> str:
@@ -25,11 +29,11 @@ def _headers():
     }
 
 
-def fetch_market_news(queries=None, per_query: int = 30, cap: int = 70):
+def fetch_market_news(queries=None, per_query: int = 25, cap: int = 120):
     """시황 관련 뉴스를 [{title, url, pubDate}, ...]로 반환 (중복 제거)."""
     queries = queries or DEFAULT_QUERIES
     headers = _headers()
-    seen, out = set(), []
+    seen, seen_title, out = set(), set(), []
 
     for q in queries:
         try:
@@ -45,14 +49,13 @@ def fetch_market_news(queries=None, per_query: int = 30, cap: int = 70):
 
         for it in items:
             url = (it.get("originallink") or it.get("link") or "").strip()
-            if not url or url in seen:
+            title = _clean(it.get("title", ""))
+            tkey = re.sub(r"\s+", "", title)[:40]      # 제목 기반 중복도 제거
+            if not url or url in seen or tkey in seen_title:
                 continue
             seen.add(url)
-            out.append({
-                "title": _clean(it.get("title", "")),
-                "url": url,
-                "pubDate": it.get("pubDate", ""),
-            })
+            seen_title.add(tkey)
+            out.append({"title": title, "url": url, "pubDate": it.get("pubDate", "")})
         if len(out) >= cap:
             break
 
