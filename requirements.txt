@@ -9,4 +9,5 @@ altair
 telethon
 python-dotenv
 anthropic
+reportlab
 requests
