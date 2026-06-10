@@ -1,7 +1,12 @@
-"""[엔진] 오늘의 증시 Top10 키워드 추출.
+"""[엔진] 오늘의 증시 키워드 추출 (15개, 키워드당 뉴스 3개).
 
 안전장치: AI는 우리가 건넨 '실제 기사 목록'에서 번호만 고릅니다.
 URL을 새로 만들지 않으므로 가짜 링크가 생기지 않습니다.
+
+개선:
+- 키워드 15개, 키워드당 대표 기사 최대 3개
+- '코스피 1.2% 상승' 같은 단순 시세/등락 뉴스는 사전 필터로 제외
+- 의미가 겹치는 키워드는 대표어로 통합하도록 지시
 """
 
 import json
@@ -17,9 +22,30 @@ from modules.usage import estimate_cost_usd, append_usage
 
 KST = ZoneInfo("Asia/Seoul")
 KW_PATH = Path("data/keywords_today.json")
-MODEL = "claude-haiku-4-5"  # 헤드라인 추출 → 저렴·빠른 모델
+KW_ARCHIVE_DIR = Path("data/keywords_archive")
+MODEL = "claude-haiku-4-5"
+
+CATEGORIES = ["거시", "섹터", "종목", "정책"]
 
 SYSTEM = "당신은 한국 증시 애널리스트입니다. 오늘 뉴스 헤드라인에서 핵심 키워드를 추출합니다."
+
+# 단순 시세·등락 뉴스로 간주할 패턴 (제목에 이게 핵심이면 제외)
+_PRICE_NOISE = re.compile(
+    r"(코스피|코스닥|증시|지수|다우|나스닥|S&P|환율|원\s*달러)\s*[\d.,]*\s*"
+    r"(%|％|포인트|p|pt|원)?\s*"
+    r"(상승|하락|급등|급락|강세|약세|마감|출발|개장|혼조|보합|반등|하락세|상승세|↑|↓)"
+)
+_PRICE_NOISE2 = re.compile(r"(장\s*마감|개장|시황|마감\s*시황|오전\s*시황|오후\s*시황)\s*$")
+
+
+def _is_price_noise(title: str) -> bool:
+    """'코스피 1.2% 상승' 류 단순 시세 헤드라인이면 True."""
+    t = title.strip()
+    if _PRICE_NOISE.search(t):
+        return True
+    if _PRICE_NOISE2.search(t):
+        return True
+    return False
 
 
 def _parse_json(text: str):
@@ -32,27 +58,85 @@ def _parse_json(text: str):
     return json.loads(text)
 
 
+def _compute_streaks(today_keywords, now):
+    """오늘 키워드별 '연속 등장 일수' 계산.
+    아카이브의 직전 날짜들을 거슬러 올라가며, 키워드가 연속으로 나타난 날 수를 셈."""
+    from datetime import timedelta
+
+    def _norm(k):
+        return k.lower().replace(" ", "")
+
+    today_set = {_norm(k) for k in today_keywords}
+    streaks = {k: 1 for k in today_keywords}        # 오늘 포함 최소 1
+
+    if not KW_ARCHIVE_DIR.exists():
+        return streaks
+
+    # 직전 날짜부터 최대 30일 거슬러 올라감
+    consecutive_days = {k: 1 for k in today_keywords}
+    still_alive = set(today_keywords)
+    cur = now.date()
+    for back in range(1, 31):
+        if not still_alive:
+            break
+        d = cur - timedelta(days=back)
+        f = KW_ARCHIVE_DIR / f"{d:%Y-%m-%d}.json"
+        if not f.exists():
+            # 해당 날짜 데이터가 없으면 연속 끊김으로 보지 않고 건너뜀(주말·휴장 고려)
+            continue
+        try:
+            past = json.loads(f.read_text(encoding="utf-8"))
+            past_set = {_norm(it.get("keyword", "")) for it in past.get("items", [])}
+        except Exception:
+            continue
+        ended = set()
+        for k in still_alive:
+            if _norm(k) in past_set:
+                consecutive_days[k] += 1
+            else:
+                ended.add(k)
+        still_alive -= ended
+
+    return consecutive_days
+
+
 def build_today_keywords() -> dict:
-    articles = fetch_market_news()
-    if not articles:
+    raw_articles = fetch_market_news()
+    if not raw_articles:
         return {"ok": False, "reason": "뉴스를 가져오지 못했습니다. (네이버 키/쿼터 확인)"}
+
+    # 단순 시세·등락 뉴스 제외
+    articles = [a for a in raw_articles if not _is_price_noise(a["title"])]
+    if len(articles) < 10:                       # 너무 적으면 원본 유지
+        articles = raw_articles
 
     listing = "\n".join(f"{i}: {a['title']}" for i, a in enumerate(articles))
     prompt = (
         "다음은 오늘의 증시 관련 뉴스 헤드라인 목록입니다 (번호: 제목).\n\n"
         f"{listing}\n\n"
-        "이 중에서 오늘 증시에서 가장 중요한 키워드 10개를 중요도 순으로 뽑아주세요. "
-        "각 키워드마다 (1) 관련 한국 종목명 0~3개, (2) 그 키워드를 가장 잘 대표하는 "
-        "헤드라인의 번호 하나를 고르세요.\n"
-        "반드시 아래 JSON 배열 형식으로만 응답하세요(설명·코드블록 없이 JSON만):\n"
-        '[{"keyword":"...","stocks":["...","..."],"article_index": 정수}, ...]\n'
-        "- article_index 는 위 목록에 실제 있는 번호여야 합니다. 번호나 URL을 지어내지 마세요.\n"
-        "- 종목이 분명하지 않으면 stocks 는 빈 배열로 두세요."
+        "이 중에서 오늘 증시에서 가장 중요한 키워드 15개를 중요도 순으로 뽑아주세요.\n"
+        "각 키워드마다 (1) 관련 한국 종목명 0~3개, (2) 그 키워드를 대표하는 "
+        "헤드라인 번호를 중요도 순으로 최대 3개, (3) 카테고리, (4) 중요도 점수를 매기세요.\n\n"
+        "규칙:\n"
+        "- 의미가 겹치는 키워드는 하나의 대표어로 통합하세요 "
+        "(예: AI/인공지능/챗GPT → 'AI', 반도체/메모리/HBM → 적절한 대표어). "
+        "절대 비슷한 키워드를 중복해서 만들지 마세요.\n"
+        "- '코스피 1% 상승' 같은 단순 지수 등락은 키워드가 아닙니다. "
+        "실적·정책·계약·기술·수급 등 '사건/원인'이 되는 키워드를 뽑으세요.\n"
+        "- '관련주', '수혜주', '테마주' 같은 일반어는 키워드로 쓰지 마세요.\n"
+        "- category 는 다음 중 하나: 거시(금리·환율·물가 등 매크로), 섹터(산업·테마), "
+        "종목(개별 기업 이슈), 정책(정부·규제·제도).\n"
+        "- weight 는 1~10 정수 (오늘 시장 영향력).\n"
+        "- article_indices 의 번호는 위 목록에 실제 있는 번호여야 합니다. 지어내지 마세요.\n"
+        "- 종목이 분명하지 않으면 stocks 는 빈 배열로 두세요.\n\n"
+        "아래 JSON 배열로만 응답하세요(설명·코드블록 없이):\n"
+        '[{"keyword":"...","category":"거시","weight":8,'
+        '"stocks":["...","..."],"article_indices":[정수,정수,정수]}, ...]'
     )
 
     client = Anthropic()
     resp = client.messages.create(
-        model=MODEL, max_tokens=1200, system=SYSTEM,
+        model=MODEL, max_tokens=2500, system=SYSTEM,
         messages=[{"role": "user", "content": prompt}],
     )
 
@@ -61,23 +145,65 @@ def build_today_keywords() -> dict:
     except Exception:
         return {"ok": False, "reason": "AI 응답을 해석하지 못했습니다. 다시 시도해주세요."}
 
-    items = []
-    for obj in parsed[:10]:
-        idx = obj.get("article_index")
-        art = articles[idx] if isinstance(idx, int) and 0 <= idx < len(articles) else None
+    items, seen_kw = [], set()
+    for obj in parsed:
+        kw = str(obj.get("keyword", "")).strip()
+        if not kw:
+            continue
+        norm = kw.lower().replace(" ", "")
+        if norm in seen_kw:                       # 안전망: 중복 키워드 제거
+            continue
+        seen_kw.add(norm)
+
+        # 기사 번호 → 실제 기사 (중복 url 제거, 최대 3개)
+        idxs = obj.get("article_indices") or obj.get("article_index")
+        if isinstance(idxs, int):
+            idxs = [idxs]
+        news, news_seen = [], set()
+        for idx in (idxs or []):
+            if isinstance(idx, int) and 0 <= idx < len(articles):
+                art = articles[idx]
+                if art["url"] in news_seen:
+                    continue
+                news_seen.add(art["url"])
+                news.append({"title": art["title"], "url": art["url"]})
+            if len(news) >= 3:
+                break
+
+        cat = str(obj.get("category", "")).strip()
+        if cat not in CATEGORIES:
+            cat = "섹터"
+        try:
+            weight = int(obj.get("weight", 5))
+        except (ValueError, TypeError):
+            weight = 5
+        weight = max(1, min(10, weight))
+
         items.append({
-            "keyword": str(obj.get("keyword", "")).strip(),
+            "keyword": kw,
+            "category": cat,
+            "weight": weight,
             "stocks": [str(s).strip() for s in (obj.get("stocks") or [])][:3],
-            "news_title": art["title"] if art else "",
-            "news_url": art["url"] if art else "",
+            "news": news,
         })
+        if len(items) >= 15:
+            break
 
     now = datetime.now(KST)
+
+    # 연속 등장(streak) 계산 — 아카이브의 직전 날짜들과 비교
+    streaks = _compute_streaks([it["keyword"] for it in items], now)
+    for it in items:
+        it["streak"] = streaks.get(it["keyword"], 1)
+
+    payload = {"generated": now.isoformat(), "items": items}
     KW_PATH.parent.mkdir(exist_ok=True)
-    KW_PATH.write_text(
-        json.dumps({"generated": now.isoformat(), "items": items}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    KW_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # 날짜별 아카이브 저장
+    KW_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    (KW_ARCHIVE_DIR / f"{now:%Y-%m-%d}.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     cost = estimate_cost_usd(MODEL, resp.usage.input_tokens, resp.usage.output_tokens)
     append_usage({
