@@ -16,7 +16,7 @@ from modules.verify import render_verify
 from modules.usage import total_cost_usd
 
 load_dotenv()
-st.set_page_config(page_title="시장 현황 대시보드", page_icon="📈", layout="wide")
+st.set_page_config(page_title="전략·시황 대시보드", page_icon="📈", layout="wide")
 
 if "dark" not in st.session_state:
     st.session_state["dark"] = False
@@ -52,7 +52,9 @@ CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Hanken+Grotesk:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;700&display=swap');
 __VARS__
 html, body, [data-testid="stAppViewContainer"] { font-family: 'Hanken Grotesk','Noto Sans KR',sans-serif; }
-.block-container { max-width: 980px; padding-top: 1.6rem; }
+.block-container { max-width: 980px; padding-top: 3.5rem; }
+[data-testid="stMainBlockContainer"] { padding-top: 3.5rem !important; }
+.stMainBlockContainer { padding-top: 3.5rem !important; }
 h1,h2,h3 { font-family: 'Fraunces','Noto Sans KR',serif !important; letter-spacing:-.01em; color:var(--ink); }
 
 /* 상단 헤더 */
@@ -86,9 +88,27 @@ h1,h2,h3 { font-family: 'Fraunces','Noto Sans KR',serif !important; letter-spaci
 
 /* 리포트 */
 .rpt-bar { height:3px; width:34px; background:var(--sage); border-radius:3px; margin:8px 0 8px; }
-.rpt-title { font-family:'Fraunces','Noto Sans KR',serif; font-size:24px; font-weight:600; letter-spacing:-.01em; color:var(--ink); }
-.rpt-meta { font-size:12px; color:var(--muted); margin-top:4px; }
-.rpt-summary { font-size:15px; color:var(--ink); background:var(--summary-bg); border-left:3px solid var(--sage); padding:12px 16px; border-radius:0 10px 10px 0; margin:14px 0 6px; }
+.rpt-toprow { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+.mood-badge { font-size:11px; font-weight:700; letter-spacing:.06em; padding:4px 10px; border-radius:20px; }
+.mood-pos { background:#e1f5ee; color:#0f6e56; }
+.mood-neu { background:#F1F2EC; color:#5d6258; }
+.mood-cau { background:#FAEEDA; color:#854F0B; }
+.app.dark .mood-pos { background:#085041; color:#9fe1cb; }
+.app.dark .mood-neu { background:#343845; color:#C7CAD6; }
+.app.dark .mood-cau { background:#633806; color:#FAC775; }
+.rpt-topmeta { font-size:11.5px; color:var(--muted); }
+.rpt-headline { font-family:'Fraunces','Noto Sans KR',serif; font-size:22px; font-weight:600; letter-spacing:-.02em; color:var(--ink); margin-bottom:14px; }
+.rpt-kt-label { font-size:11px; font-weight:700; letter-spacing:.06em; color:var(--sage-deep); margin-bottom:5px; }
+.rpt-kt-box { font-size:15px; line-height:1.75; color:var(--ink); background:var(--summary-bg); border-left:3px solid var(--sage); padding:13px 17px; border-radius:0 10px 10px 0; margin-bottom:20px; }
+.rpt-sec-title { font-size:16px; font-weight:700; color:var(--ink); border-bottom:1.5px solid var(--sage); padding-bottom:5px; margin:22px 0 8px; }
+.rpt-sec-body { font-size:14.5px; line-height:1.8; color:var(--ink); margin-bottom:8px; }
+.rpt-group-label { font-size:12px; font-weight:700; letter-spacing:.05em; color:var(--muted); margin:22px 0 10px; }
+.theme-card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:10px; }
+.theme-name { font-size:14.5px; font-weight:700; color:var(--ink); margin-bottom:5px; }
+.theme-detail { font-size:13.5px; line-height:1.7; color:var(--ink); margin-bottom:8px; }
+.theme-tickers { font-size:12.5px; color:var(--muted); }
+.rpt-sources { margin-top:22px; padding-top:12px; border-top:1px solid var(--line); font-size:12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.src-pill { background:var(--pill-bg); color:var(--pill-ink); border:1px solid var(--line); font-size:11.5px; font-weight:600; padding:3px 9px; border-radius:7px; }
 [data-testid="stMarkdownContainer"] ul li::marker { color:var(--sage); }
 
 /* pill */
@@ -119,7 +139,7 @@ now = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")
 hc1, hc2 = st.columns([5, 1])
 with hc1:
     st.markdown(
-        f'<div class="app-name">📊 시장 현황 대시보드</div>'
+        f'<div class="app-name">📊 전략·시황 대시보드</div>'
         f'<div class="app-upd">조회 {now} KST · 데이터 기준일은 항목별 표기</div>',
         unsafe_allow_html=True,
     )
@@ -189,8 +209,12 @@ def render_indices():
         st.markdown(f'<div class="mkt-grid">{cards}</div>', unsafe_allow_html=True)
 
 
-# ── 사용량 · 비용 · 잔액 ──
+# ── 사용량 · 비용 ──
 def render_usage_section():
+    last = st.session_state.get("last_gen")
+    if not (last and last.get("ok")):
+        return
+
     st.markdown('<div class="mkt-group">사용량 · 비용</div>', unsafe_allow_html=True)
     rate_data = fetch_index("KRW=X")
     rate = rate_data["current"] if rate_data else None
@@ -198,34 +222,19 @@ def render_usage_section():
     def to_krw(usd):
         return f" ≈ {usd * rate:,.0f}원" if rate else ""
 
-    last = st.session_state.get("last_gen")
-    if last and last.get("ok"):
-        u, c = last["usage"], last["cost_usd"]
-        c1, c2, c3 = st.columns(3)
-        c1.metric("이번 입력 토큰", f"{u['input_tokens']:,}")
-        c2.metric("이번 출력 토큰", f"{u['output_tokens']:,}")
-        c3.metric("이번 예상 비용", f"${c:.4f}", help=to_krw(c).strip())
-
-    total = total_cost_usd()
-    st.write(f"**누적 추정 사용액** · ${total:.4f}{to_krw(total)}")
-
-    budget = os.environ.get("ANTHROPIC_BUDGET_KRW")
-    if budget and rate:
-        try:
-            b = float(budget)
-            used_krw = total * rate
-            st.write(f"**예산** {b:,.0f}원 · **잔액(추정)** {b - used_krw:,.0f}원")
-            st.progress(min(max(used_krw / b, 0.0), 1.0) if b > 0 else 0.0)
-        except ValueError:
-            pass
-    st.caption("※ 비용·잔액은 토큰 단가 기반 추정치입니다. 실제는 Anthropic 콘솔(Billing)에서 확인하세요.")
+    u, c = last["usage"], last["cost_usd"]
+    c1, c2, c3 = st.columns(3)
+    c1.metric("입력 토큰", f"{u['input_tokens']:,}")
+    c2.metric("출력 토큰", f"{u['output_tokens']:,}")
+    c3.metric("본 리포트 생성 비용", f"${c:.4f}", help=to_krw(c).strip())
+    st.caption("※ 토큰 단가 기반 추정치입니다. 실제 청구액은 Anthropic 콘솔(Billing)에서 확인하세요.")
 
 
-# ── 시황 리포트 탭 ──
+# ── 전략·시황 보고서 탭 ──
 def render_report_tab():
     st.markdown('<div class="rpt-bar"></div>', unsafe_allow_html=True)
-    st.title("시황 리포트")
-    if st.button("📝 리포트 생성 (전일 00:00 ~ 지금)"):
+    st.title("전략·시황 보고서")
+    if st.button("📝 리포트 생성 (전일 15:40 ~ 지금)"):
         with st.spinner("텔레그램 수집 → Claude 분석 중... (메시지가 많으면 시간이 걸립니다)"):
             try:
                 from engine.generate import generate_report
@@ -237,6 +246,8 @@ def render_report_tab():
             st.success(f"생성 완료 · {res['messages']}개 메시지 분석")
         else:
             st.warning(f"생성 실패 · {res.get('reason')}")
+    from modules.watchlist import render_watchlist_editor
+    render_watchlist_editor()
     render_reports()
     st.divider()
     render_usage_section()
@@ -244,7 +255,7 @@ def render_report_tab():
 
 # ── 탭 ──
 tab_idx, tab_rep, tab_kw, tab_tr = st.tabs(
-    ["📈 지수 현황", "📰 시황 리포트", "🔑 오늘의 키워드", "📊 추세"]
+    ["📈 지수 현황", "📰 전략·시황", "🔑 오늘의 키워드", "📊 추세"]
 )
 with tab_idx:
     render_indices()
