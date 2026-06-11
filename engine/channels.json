@@ -98,7 +98,7 @@
     {
       "id": "@hanaallocation",
       "name": "[하나 자산배분] 이영주 (자산배분의 창)",
-      "active
+      "active": true
     {
       "id": "@narrative_wars",
       "name": "Narrative Wars",
@@ -113,7 +113,6 @@
       "id": "@aetherjapanresearch",
       "name": "에테르의 일본&미국 리서치",
       "active": true
-    },": true
     },
     {
       "id": "@activeetf",
