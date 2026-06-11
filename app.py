@@ -7,7 +7,12 @@ from zoneinfo import ZoneInfo
 import streamlit as st
 from dotenv import load_dotenv
 
-from modules.indices import INDEX_GROUPS, fetch_index, sparkline_points
+from modules.indices import (
+    INDEX_GROUPS, fetch_index, sparkline_points,
+    fetch_us_sectors, fetch_supply_demand_summary,
+)
+from modules.calendar_view import render_calendar
+from modules.timeline_view import render_timeline
 from modules.indicators import render_indicators
 from modules.reports import render_reports
 from modules.keywords_view import render_keywords
@@ -86,6 +91,41 @@ h1,h2,h3 { font-family: 'Fraunces','Noto Sans KR',serif !important; letter-spaci
 .rsi-gauge i { position:absolute; top:-3px; width:8px; height:12px; border-radius:3px; transform:translateX(-50%); background:var(--muted); }
 .rsi-gauge i.up { background:var(--up); } .rsi-gauge i.down { background:var(--down); }
 
+/* 간밤 미국장 섹터 카드 */
+.sector-card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px 10px; }
+.sector-name { font-size:11.5px; font-weight:600; color:var(--muted); }
+.sector-val { font-size:17px; font-weight:700; color:var(--ink); margin-top:3px; letter-spacing:-.01em; }
+.sector-chg { font-size:12px; font-weight:700; margin-top:1px; }
+.sector-chg.up { color:var(--up); }
+.sector-chg.down { color:var(--down); }
+
+/* 수급 상위 종목 테이블 */
+.supply-wrap { background:var(--summary-bg); border:1px solid var(--line); border-radius:14px; padding:14px 16px; margin-bottom:10px; }
+.supply-mkt { font-size:12px; font-weight:700; letter-spacing:.05em; color:var(--muted); margin-bottom:10px; }
+.supply-row { display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px solid var(--line); }
+.supply-row:last-child { border-bottom:none; }
+.supply-type { font-size:11px; font-weight:700; color:var(--sage-deep); width:52px; flex:none; }
+.supply-stocks { font-size:12.5px; color:var(--ink); flex:1; }
+.supply-stock-item { display:inline-block; margin-right:6px; }
+.supply-val-pos { color:var(--up); font-weight:700; }
+.supply-val-neg { color:var(--down); font-weight:700; }
+.supply-note { font-size:11px; color:var(--muted); margin-top:8px; }
+
+/* 다가오는 일정 캘린더 */
+.cal-wrap { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:6px 16px; }
+.cal-row { display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+.cal-row:last-child { border-bottom:none; }
+.cal-dday { font-size:11.5px; font-weight:700; background:var(--pill-bg); color:var(--pill-ink); border:1px solid var(--line); padding:2px 8px; border-radius:7px; width:46px; text-align:center; flex:none; }
+.cal-dday.cal-soon { background:var(--tint-up); color:var(--up); border-color:var(--up); }
+.cal-dday.cal-today { background:var(--up); color:#fff; border-color:var(--up); }
+.cal-date { font-size:12px; font-weight:600; color:var(--muted); width:42px; flex:none; }
+.cal-name { font-size:13.5px; font-weight:600; color:var(--ink); }
+.cal-cat { font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:6px; background:var(--pill-bg); color:var(--pill-ink); flex:none; }
+.cal-cat.cal-us { background:var(--tint-down); color:var(--down); }
+.cal-cat.cal-kr { background:var(--tint-up); color:var(--up); }
+.cal-cat.cal-earn { background:var(--summary-bg); color:var(--sage-deep); }
+.cal-note { font-size:11.5px; color:var(--muted); }
+
 /* 리포트 */
 .rpt-bar { height:3px; width:34px; background:var(--sage); border-radius:3px; margin:8px 0 8px; }
 .rpt-toprow { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
@@ -149,7 +189,7 @@ st.markdown('<hr style="border:none;border-top:1px solid var(--line);margin:6px 
             unsafe_allow_html=True)
 
 
-# ── 지수 현황 ──
+# ── 지수 카드 HTML ──
 def _card_html(name, data):
     if data is None:
         return (f'<div class="mkt-card"><div class="mkt-name">{name}</div>'
@@ -171,6 +211,60 @@ def _card_html(name, data):
             f'{spark}</div>')
 
 
+# ── 간밤 미국장 섹터 HTML ──
+def _sector_card_html(name, data):
+    if data is None:
+        return (f'<div class="sector-card"><div class="sector-name">{name}</div>'
+                f'<div class="mkt-na">-</div></div>')
+    is_up = data["pct"] >= 0
+    cls = "up" if is_up else "down"
+    arrow = "▲" if data["pct"] > 0 else ("▼" if data["pct"] < 0 else "▬")
+    if data.get("is_rate"):
+        diff = data["current"] - data.get("prev", data["current"])
+        val_str = f'{data["current"]:.2f}%'
+        chg_str = f'{arrow} {data["pct"]:+.2f}bp'
+    else:
+        val_str = f'{data["current"]:.2f}'
+        chg_str = f'{arrow} {data["pct"]:+.2f}%'
+    return (f'<div class="sector-card"><div class="sector-name">{name}</div>'
+            f'<div class="sector-val">{val_str}</div>'
+            f'<div class="sector-chg {cls}">{chg_str}</div></div>')
+
+
+# ── 수급 상위 종목 HTML ──
+def _supply_html(supply_data: dict) -> str:
+    if not supply_data:
+        return ""
+    parts = []
+    for mkt_label, mkt_data in supply_data.items():
+        date_str = mkt_data.get("date", "")
+        rows_html = ""
+        for investor in ("외국인", "기관"):
+            items = mkt_data.get(investor, [])
+            if not items:
+                continue
+            stocks_html = ""
+            for name, val in items:
+                val_cls = "supply-val-pos" if val >= 0 else "supply-val-neg"
+                stocks_html += (f'<span class="supply-stock-item">'
+                                f'{name} <span class="{val_cls}">{val:+,}억</span>'
+                                f'</span>')
+            rows_html += (f'<div class="supply-row">'
+                          f'<span class="supply-type">{investor}</span>'
+                          f'<span class="supply-stocks">{stocks_html}</span>'
+                          f'</div>')
+        if rows_html:
+            parts.append(
+                f'<div class="supply-wrap">'
+                f'<div class="supply-mkt">{mkt_label} · 순매수 상위 5종목</div>'
+                f'{rows_html}'
+                f'<div class="supply-note">⚠️ 전일 확정 데이터 · 당일 수급과 다를 수 있음</div>'
+                f'</div>'
+            )
+    return "".join(parts)
+
+
+# ── 지수 현황 탭 렌더 ──
 def render_indices():
     st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
     st.title("주요 지수 현황")
@@ -179,6 +273,7 @@ def render_indices():
         st.cache_data.clear()
         st.rerun()
     render_indicators()
+    render_calendar()
 
     # 1) 전체 조회 후 그룹별 기준일 계산
     group_data, group_asof = {}, {}
@@ -207,6 +302,26 @@ def render_indices():
         st.markdown(head, unsafe_allow_html=True)
         cards = "".join(_card_html(name, d) for name, d in items)
         st.markdown(f'<div class="mkt-grid">{cards}</div>', unsafe_allow_html=True)
+
+    # 4) 간밤 미국장 섹터 흐름
+    sectors = fetch_us_sectors()
+    if any(v is not None for v in sectors.values()):
+        st.markdown('<div class="mkt-group">🌙 간밤 미국장 섹터</div>', unsafe_allow_html=True)
+        sector_items = list(sectors.items())
+        cards = "".join(_sector_card_html(name, d) for name, d in sector_items)
+        st.markdown(f'<div class="mkt-grid">{cards}</div>', unsafe_allow_html=True)
+        # 기준일 표기
+        asofs = [d["asof"] for d in sectors.values() if d and d.get("asof")]
+        if asofs:
+            st.markdown(
+                f'<div class="data-asof">기준 {max(asofs)} · 미국 장 마감 종가</div>',
+                unsafe_allow_html=True)
+
+    # 5) 수급 상위 종목
+    supply = fetch_supply_demand_summary()
+    if supply:
+        st.markdown('<div class="mkt-group">💰 수급 상위 종목</div>', unsafe_allow_html=True)
+        st.markdown(_supply_html(supply), unsafe_allow_html=True)
 
 
 # ── 사용량 · 비용 ──
@@ -264,5 +379,6 @@ with tab_rep:
 with tab_kw:
     render_keywords()
 with tab_tr:
+    render_timeline()
     render_trends()
     render_verify()
