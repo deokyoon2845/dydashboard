@@ -22,7 +22,7 @@ _MOOD_MAP = {"positive": ("긍정", "pos", "#2E7D5B"),
              "cautious": ("주의", "cau", "#C2410C")}
 _SEC_TITLE_KEYS = ("title", "name", "heading", "제목")
 _MAX_SECTIONS = 5
-_TRUNC = 20
+_TRUNC = 35
 
 _TL_CSS = """
 <style>
@@ -165,22 +165,13 @@ def _svg_html(entries: list) -> str:
     """트랙 + 노드 사이 진행 화살표 + mood 노드. 노드는 균등 간격."""
     n = len(entries)
     w = 960
-    parts = [f'<svg class="tl-svg" viewBox="0 0 {w} 64" preserveAspectRatio="none">',
-             f'<line x1="10" y1="40" x2="{w-20}" y2="40" stroke="#D3D1C7" stroke-width="2"/>',
-             f'<path d="M{w-20},40 l-12,-7 v14 z" fill="#D3D1C7"/>']
+    parts = [f'<svg class="tl-svg" viewBox="0 0 {w} 48" preserveAspectRatio="none">',
+             f'<line x1="10" y1="24" x2="{w-20}" y2="24" stroke="#D3D1C7" stroke-width="2"/>',
+             f'<path d="M{w-20},24 l-12,-7 v14 z" fill="#D3D1C7"/>']
     xs = [(i + 0.5) / n * w for i in range(n)]
-    # 노드 사이 진행 화살표
-    arrows = []
-    for i in range(n - 1):
-        mx = (xs[i] + xs[i + 1]) / 2
-        arrows.append(f'<path d="M{mx:.0f},22 l14,-7 m0,0 l-14,-7 m14,7 h-26"/>')
-    if arrows:
-        parts.append('<g fill="none" stroke="#B4B2A9" stroke-width="2" '
-                     'stroke-linecap="round" stroke-linejoin="round">'
-                     + "".join(arrows) + "</g>")
     for i, (x, e) in enumerate(zip(xs, entries)):
         r = 11 if i == n - 1 else 8
-        parts.append(f'<circle cx="{x:.0f}" cy="40" r="{r}" fill="{e["mood_color"]}" '
+        parts.append(f'<circle cx="{x:.0f}" cy="24" r="{r}" fill="{e["mood_color"]}" '
                      f'stroke="var(--bg)" stroke-width="3"/>')
     parts.append("</svg>")
     return "".join(parts)
