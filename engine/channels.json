@@ -2,62 +2,122 @@
   "channels": [
     {
       "id": "@lim_econ",
-      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "name": "한화투자증권 경제 임혜윤",
       "active": true
     },
     {
       "id": "@hedgecat0301",
-      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "name": "키움증권 전략/시황 한지영",
       "active": true
     },
     {
       "id": "@Jstockclass",
-      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "name": "엄브렐라리서치 Jay의 주식투자교실",
       "active": true
     },
     {
       "id": "@Meritz_strategy",
-      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "name": "메리츠증권 투자전략팀",
       "active": true
     },
     {
       "id": "@HANAStrategy",
-      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "name": "《하나 주식전략》 이재만과 이경수",
       "active": true
     },
     {
       "id": "@ehdwl",
-      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "name": "사제콩이_서상영",
       "active": true
     },
     {
       "id": "@egzion",
-      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "name": "이그전 (이은택의 그림 전략)",
       "active": true
     },
     {
       "id": "@bumgore",
-      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "name": "시장 이야기 by 제이슨",
       "active": true
     },
     {
       "id": "@globalmktinsight",
-      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "name": "미래에셋증권 시황 김석환",
       "active": true
     },
     {
       "id": "@yuantais",
-      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "name": "《유안타 투자전략》",
       "active": true
     },
     {
       "id": "@bornlupin",
-      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "name": "루팡",
       "active": true
     },
     {
+      "id": "@MacroAllocation",
+      "name": "Macro Trader",
+      "active": true
+    },
+    {
+      "id": "@bornlupin",
+      "name": "루팡",
+      "active": true
+    },
+    {
+      "id": "@siglab",
+      "name": "[시그널랩] Signal Lab 리서치",
+      "active": true
+    },
+    {
+      "id": "@strategy_kis",
+      "name": "[한투증권 투자전략 김대준]",
+      "active": true
+    },
+    {
+      "id": "@shStrategy",
+      "name": "[신한 리서치본부] 주식전략/시황/퀀트",
+      "active": true
+    },
+    {
+      "id": "@Samsung_Global_AI_SW",
+      "name": "[삼성 이영진] 글로벌 AI/SW",
+      "active": true
+    },
+    {
+      "id": "@mk81_koreainvestment",
+      "name": "한국투자증권/기관영업부/이민근",
+      "active": true
+    },
+    {
+      "id": "@huhjae",
+      "name": "허재환 유진증권 전략",
+      "active": true
+    },
+    {
+      "id": "@hanaallocation",
+      "name": "[하나 자산배분] 이영주 (자산배분의 창)",
+      "active
+    {
+      "id": "@narrative_wars",
+      "name": "Narrative Wars",
+      "active": true
+    },
+    {
+      "id": "@tambangwang",
+      "name": "탐방왕",
+      "active": true
+    },
+    {
+      "id": "@aetherjapanresearch",
+      "name": "에테르의 일본&미국 리서치",
+      "active": true
+    },": true
+    },
+    {
       "id": "@activeetf",
-      "name": "채널 이름 (설명용, 리포트에 표시됨)",
+      "name": "TIME ACT!VE ETF",
       "active": true
     }
   ]
