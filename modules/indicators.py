@@ -28,9 +28,8 @@ def compute_rsi(ticker, period=14):
     return float(100 - 100 / (1 + g / l))
 
 
-@st.cache_data(ttl=1800)
-def fetch_adr(market="KOSPI"):
-    """등락비율 = 상승종목수/하락종목수×100 (pykrx). 가장 최근 거래일 기준."""
+def _adr_from_pykrx(market="KOSPI"):
+    """1차 시도: pykrx (KRX 공식 데이터). 해외 IP(Streamlit Cloud)에서 차단될 수 있음."""
     try:
         from datetime import datetime, timedelta
         from pykrx import stock
@@ -42,11 +41,81 @@ def fetch_adr(market="KOSPI"):
                 up = int((df["등락률"] > 0).sum())
                 down = int((df["등락률"] < 0).sum())
                 adr = round(up / down * 100, 1) if down else None
-                return {"adr": adr, "up": up, "down": down, "date": ds}
+                return {"adr": adr, "up": up, "down": down, "date": ds, "source": "KRX"}
             d -= timedelta(days=1)
     except Exception:
         return None
     return None
+
+
+def _adr_from_naver(market="KOSPI"):
+    """2차 폴백: 네이버 금융 (해외 IP 차단 없음).
+
+    ⚠️ 네이버 HTML 구조 변경 시 정규식 조정이 필요할 수 있습니다.
+    비정상 값은 sanity check로 걸러내고, 실패 시 None을 반환합니다.
+    """
+    try:
+        import re
+        import requests
+        from datetime import datetime
+
+        code = "KOSPI" if market == "KOSPI" else "KOSDAQ"
+        url = f"https://finance.naver.com/sise/sise_index.naver?code={code}"
+        r = requests.get(
+            url,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+            timeout=10,
+        )
+        r.raise_for_status()
+        # 네이버는 EUC-KR 인코딩
+        r.encoding = "euc-kr"
+        html = r.text
+
+        def _grab(label):
+            """label(상승/하락) 뒤에 나오는 첫 숫자를 추출. 여러 패턴 시도."""
+            patterns = [
+                # <span class="up">상승</span> ... <span class="num">510</span>
+                label + r"</span>\s*</?[^>]*>\s*<span[^>]*>\s*([\d,]+)",
+                # 상승 <em>510</em> 형태
+                label + r"[^0-9<]{0,30}?<[^>]+>\s*([\d,]+)",
+                # 상승 510 (태그 없이 근접)
+                label + r"[^0-9]{0,30}?([\d,]+)",
+            ]
+            for pat in patterns:
+                m = re.search(pat, html)
+                if m:
+                    try:
+                        return int(m.group(1).replace(",", ""))
+                    except ValueError:
+                        continue
+            return None
+
+        up = _grab("상승")
+        down = _grab("하락")
+
+        # sanity check: 종목 수가 상식적인 범위인지 확인 (오탐 방지)
+        if not up or not down:
+            return None
+        if not (20 <= up <= 3000 and 20 <= down <= 3000):
+            return None
+
+        adr = round(up / down * 100, 1) if down else None
+        ds = datetime.now().strftime("%Y%m%d")
+        return {"adr": adr, "up": up, "down": down, "date": ds, "source": "네이버"}
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=1800)
+def fetch_adr(market="KOSPI"):
+    """등락비율 = 상승종목수/하락종목수×100.
+
+    1차 pykrx(KRX) → 실패 시 2차 네이버 금융 → 모두 실패 시 None.
+    """
+    result = _adr_from_pykrx(market)
+    if result and result.get("adr") is not None:
+        return result
+    return _adr_from_naver(market)
 
 
 @st.cache_data(ttl=1800)
@@ -135,10 +204,12 @@ def render_indicators():
     # 등락비율 (코스피/코스닥)
     cards = []
     adr_date = None
+    adr_source = None
     for mkt, label in (("KOSPI", "코스피 등락비율"), ("KOSDAQ", "코스닥 등락비율")):
         a = fetch_adr(mkt)
         if a and a["adr"] is not None:
             adr_date = adr_date or a.get("date")
+            adr_source = adr_source or a.get("source", "KRX")
             tone = "up" if a["adr"] >= 100 else "down"
             tint = "mkt-up" if tone == "up" else "mkt-down"
             cards.append(
@@ -150,7 +221,8 @@ def render_indicators():
                          f'<div class="mkt-na">데이터 없음</div></div>')
     st.markdown(f'<div class="mkt-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
     if adr_date:
-        st.markdown(f'<div class="grp-asof" style="margin:4px 0 0;">등락비율 기준 {_fmt_ymd(adr_date)} (KRX)</div>',
+        src_label = adr_source or "KRX"
+        st.markdown(f'<div class="grp-asof" style="margin:4px 0 0;">등락비율 기준 {_fmt_ymd(adr_date)} ({src_label})</div>',
                     unsafe_allow_html=True)
 
     # RSI
@@ -174,4 +246,4 @@ def render_indicators():
     st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
     st.markdown(f'<div class="mkt-grid">{"".join(rcards)}</div>', unsafe_allow_html=True)
     st.caption(f"RSI ≥70 과매수 · ≤30 과매도 (종가 14일 · 기준 {_rsi_asof()}). "
-               "ADR=상승/하락 종목수 비율(100↑ 상승 우세). 데이터: yfinance·KRX·CNN.")
+               "ADR=상승/하락 종목수 비율(100↑ 상승 우세). 데이터: yfinance·KRX/네이버·CNN.")
