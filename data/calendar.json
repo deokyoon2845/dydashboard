@@ -1,0 +1,27 @@
+{
+  "_comment": "주요 경제 일정. 연 1회 갱신 (FOMC: federalreserve.gov / 금통위: bok.or.kr / 미국CPI: bls.gov). date는 KST 기준 표기, FOMC 결과는 한국시간 익일 새벽 발표.",
+  "events": [
+    {"date": "2026-06-17", "name": "FOMC 금리 결정", "category": "미국", "note": "SEP·점도표 발표 · 결과는 한국시간 18일 새벽"},
+    {"date": "2026-07-14", "name": "미국 CPI (6월분)", "category": "미국", "note": "한국시간 21:30 발표"},
+    {"date": "2026-07-16", "name": "한은 금통위 기준금리 결정", "category": "한국", "note": ""},
+    {"date": "2026-07-29", "name": "FOMC 금리 결정", "category": "미국", "note": "결과는 한국시간 30일 새벽"},
+    {"date": "2026-08-12", "name": "미국 CPI (7월분)", "category": "미국", "note": "한국시간 21:30 발표"},
+    {"date": "2026-08-27", "name": "한은 금통위 기준금리 결정", "category": "한국", "note": ""},
+    {"date": "2026-09-11", "name": "미국 CPI (8월분)", "category": "미국", "note": "한국시간 21:30 발표"},
+    {"date": "2026-09-16", "name": "FOMC 금리 결정", "category": "미국", "note": "SEP·점도표 발표 · 결과는 한국시간 17일 새벽"},
+    {"date": "2026-10-14", "name": "미국 CPI (9월분)", "category": "미국", "note": "한국시간 21:30 발표"},
+    {"date": "2026-10-22", "name": "한은 금통위 기준금리 결정", "category": "한국", "note": ""},
+    {"date": "2026-10-28", "name": "FOMC 금리 결정", "category": "미국", "note": "결과는 한국시간 29일 새벽"},
+    {"date": "2026-11-10", "name": "미국 CPI (10월분)", "category": "미국", "note": "한국시간 22:30 발표(겨울시간)"},
+    {"date": "2026-11-26", "name": "한은 금통위 기준금리 결정", "category": "한국", "note": ""},
+    {"date": "2026-12-09", "name": "FOMC 금리 결정", "category": "미국", "note": "SEP·점도표 발표 · 결과는 한국시간 10일 새벽"},
+    {"date": "2026-12-10", "name": "미국 CPI (11월분)", "category": "미국", "note": "한국시간 22:30 발표(겨울시간)"}
+  ],
+  "earnings_tickers": {
+    "엔비디아": "NVDA",
+    "TSMC": "TSM",
+    "마이크론": "MU",
+    "삼성전자": "005930.KS",
+    "SK하이닉스": "000660.KS"
+  }
+}
