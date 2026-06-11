@@ -4,6 +4,7 @@
 2차(Sonnet): 정제된 메시지 + 정량 데이터 + 뉴스 헤드라인 + 워치리스트로 심층 분석
 
 핵심 지시: 채널 '의견'과 실제 '데이터·사실'을 교차 검증하고 불일치를 짚는다.
+추가 컨텍스트: 다가오는 주요 일정(캘린더) + 최근 시황 흐름(직전 보고서) 주입.
 """
 
 import json
@@ -69,6 +70,32 @@ def _strip_fence(raw):
             raw = raw.lstrip()[4:]
         raw = raw.strip()
     return raw
+
+
+# ── 추가 컨텍스트 빌더 (실패해도 보고서 생성에 영향 없음) ──────
+
+def _build_calendar_block():
+    """다가오는 주요 일정 (FOMC·금통위·CPI·실적) 블록. 실패/빈 일정 시 ''."""
+    try:
+        from engine.calendar_events import build_calendar_text
+        text = build_calendar_text(days=14, include_earnings=True)
+        if text:
+            return f"\n\n=== 다가오는 주요 일정 (검증된 사실) ===\n{text}\n=== 끝 ==="
+    except Exception:
+        pass
+    return ""
+
+
+def _build_flow_block():
+    """최근 시황 흐름 (직전 보고서들의 판단) 블록. 실패/보고서 없음 시 ''."""
+    try:
+        from engine.timeline_context import build_recent_flow_text
+        text = build_recent_flow_text(5)
+        if text:
+            return f"\n\n=== 최근 시황 흐름 (참고용 맥락) ===\n{text}\n=== 끝 ==="
+    except Exception:
+        pass
+    return ""
 
 
 # ── 1차: 메시지 정제 (Haiku) ───────────────────────────────────
@@ -137,6 +164,10 @@ def analyze_messages(messages, channel_name: str = "",
         nl = "\n".join(f"- {t}" for t in news_titles[:25])
         news_block = f"\n\n=== 오늘의 뉴스 헤드라인 (언론 보도) ===\n{nl}\n=== 끝 ==="
 
+    # 다가오는 일정 + 최근 시황 흐름 블록
+    cal_block = _build_calendar_block()
+    flow_block = _build_flow_block()
+
     # 워치리스트 블록 + 스키마 확장
     watch_block, watch_schema = "", ""
     if watchlist:
@@ -151,15 +182,24 @@ def analyze_messages(messages, channel_name: str = "",
         "당신은 한국 주식시장을 깊이 이해하는 베테랑 애널리스트입니다.\n"
         f"아래는 텔레그램 시황 채널({channel_name})의 메시지"
         + (", 실제 시장 정량 데이터, 언론 뉴스 헤드라인" if (snapshot_text or news_titles) else "")
+        + (", 다가오는 주요 일정" if cal_block else "")
+        + (", 최근 시황 흐름" if flow_block else "")
         + "입니다.\n"
         "개인 투자자가 장 시작 전에 읽고 '오늘 시장이 어떨지, 무엇을 봐야 할지' "
         "통찰을 얻을 수 있도록 깊이 있는 전략·시황 보고서를 작성하세요.\n\n"
-        f"{msg_block}{quant_block}{news_block}{watch_block}\n\n"
+        f"{msg_block}{quant_block}{news_block}{cal_block}{flow_block}{watch_block}\n\n"
         "작성 철학:\n"
         "- ★교차 검증: '시장 시각'(애널리스트·전문투자자 채널의 판단)을 정량 데이터·뉴스라는 "
         "'사실'과 대조하세요. 둘이 어긋나면 반드시 짚으세요 (예: '시장 시각은 반도체 낙관론이 "
         "우세하지만 실제 외국인은 순매도 지속'). 일치하면 그 시각의 신뢰도가 높다고 평가하세요.\n"
-        "- 보고서 구조를 미리 정해두지 말고, 오늘 가장 중요한 흐름에 맞춰 섹션을 직접 구성하세요.\n"
+        + ("- 다가오는 일정이 제공되었습니다. 임박한 이벤트(FOMC·금통위·CPI·실적 등)가 "
+           "오늘 시장 심리에 미치는 영향을 관전 포인트에 반영하세요 (예: 'D-2 FOMC를 앞둔 관망세').\n"
+           if cal_block else "")
+        + ("- '최근 시황 흐름'은 직전 보고서들의 판단입니다. 흐름과의 연속성·변화를 짚으세요 "
+           "(예: '어제 주의로 본 레버리지 수급이 오늘 일부 해소'). 단, 과거 판단을 무비판적으로 "
+           "답습하지 말고 오늘 데이터가 다르면 다르다고 쓰세요.\n"
+           if flow_block else "")
+        + "- 보고서 구조를 미리 정해두지 말고, 오늘 가장 중요한 흐름에 맞춰 섹션을 직접 구성하세요.\n"
         "- 단순 사실 나열이 아니라 '왜 그런가, 그래서 무엇을 의미하는가'까지 해석하세요.\n"
         "- 과장 금지. 입력에 없는 사실을 지어내지 마세요.\n"
         "- 투자 조언(매수/매도 단정)이 아니라 판단을 돕는 시장 이해의 관점으로 쓰세요.\n"
