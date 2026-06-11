@@ -1,4 +1,7 @@
-"""오늘의 키워드 뷰 — 카테고리·중요도·연속배지·인라인시세·아카이브."""
+"""오늘의 키워드 뷰 — 카테고리·중요도·연속배지·인라인시세·아카이브.
+
+데스크톱: 3열 그리드 카드 (TOP15 → 3×5) / 모바일: 1열로 자동 전환.
+"""
 
 import html
 import json
@@ -16,23 +19,34 @@ CAT_CLS = {"거시": "cat-macro", "섹터": "cat-sector", "종목": "cat-stock",
 
 _KW_CSS = """
 <style>
-.kw-row{display:flex;gap:13px;padding:15px 0;border-bottom:1px solid var(--line,#ECEDE7);}
-.kw-rank{font-family:'Fraunces','Noto Sans KR',Georgia,serif;font-size:19px;font-weight:600;color:var(--sage-deep,#7E9A83);min-width:26px;text-align:center;line-height:1.3;}
-.kw-mid{flex:1;min-width:0;}
-.kw-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:4px;}
-.kw-kw{font-size:15px;font-weight:700;color:var(--ink,#34352f);}
-.kw-cat{font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;letter-spacing:.02em;}
+/* 3열 그리드 (데스크톱) → 좁아지면 2열 → 1열 */
+.kw-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:6px;}
+@media(max-width:900px){.kw-grid{grid-template-columns:repeat(2,1fr);}}
+@media(max-width:600px){.kw-grid{grid-template-columns:1fr;}}
+
+.kw-card{background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);border-radius:14px;
+  padding:14px 15px;display:flex;flex-direction:column;gap:0;}
+.kw-card-head{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
+.kw-rank{font-family:'Fraunces','Noto Sans KR',Georgia,serif;font-size:18px;font-weight:600;
+  color:var(--sage-deep,#7E9A83);min-width:20px;line-height:1;}
+.kw-kw{font-size:14.5px;font-weight:700;color:var(--ink,#34352f);flex:1;min-width:0;
+  word-break:keep-all;line-height:1.35;}
+.kw-cat{font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;letter-spacing:.02em;flex:none;}
 .cat-macro{background:#E6F0F6;color:#2C5F7C;}
 .cat-sector{background:#EBF3EC;color:#4A6B4F;}
 .cat-stock{background:#F3EEE6;color:#7C5F2C;}
 .cat-policy{background:#F0E9F3;color:#6B4A7C;}
-.kw-streak{font-size:10px;font-weight:700;color:#C2410C;background:#FDEEE3;padding:2px 7px;border-radius:5px;}
-.kw-wbar{height:4px;border-radius:3px;background:var(--line,#ECEDE7);margin:5px 0 7px;overflow:hidden;max-width:160px;}
+.kw-streak{font-size:9.5px;font-weight:700;color:#C2410C;background:#FDEEE3;padding:2px 6px;border-radius:5px;flex:none;}
+.kw-wbar{height:4px;border-radius:3px;background:var(--line,#ECEDE7);margin:0 0 9px;overflow:hidden;}
 .kw-wbar>span{display:block;height:100%;background:var(--sage,#A7BBA9);border-radius:3px;}
-.kw-stocks{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px;}
-.kw-stk{font-size:11.5px;font-weight:600;text-decoration:none;background:var(--pill-bg,#F1F2EC);color:var(--pill-ink,#5d6258);border:1px solid var(--line,#ECEDE7);padding:2px 9px;border-radius:7px;}
+.kw-stocks{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:9px;}
+.kw-stk{font-size:11px;font-weight:600;text-decoration:none;background:var(--pill-bg,#F1F2EC);
+  color:var(--pill-ink,#5d6258);border:1px solid var(--line,#ECEDE7);padding:2px 8px;border-radius:7px;}
 .kw-stk .up{color:#B65F5A;} .kw-stk .down{color:#5A7CA0;} .kw-stk .flat{color:#9a9b92;}
-.kw-news a{display:block;font-size:12.5px;line-height:1.5;color:var(--sage-deep,#7E9A83);text-decoration:none;margin-bottom:3px;padding-left:11px;position:relative;}
+.kw-news{margin-top:auto;}
+.kw-news a{display:block;font-size:12px;line-height:1.45;color:var(--sage-deep,#7E9A83);
+  text-decoration:none;margin-bottom:4px;padding-left:11px;position:relative;
+  overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
 .kw-news a:before{content:"›";position:absolute;left:0;color:var(--muted,#9a9b92);}
 .kw-news a:hover{text-decoration:underline;}
 .app.dark .cat-macro{background:#21303B;color:#9CC4DC;}
@@ -95,7 +109,7 @@ def _stock_html(names, show_quote):
 
 
 def _render_items(items, show_quote):
-    rows = []
+    cards = []
     for i, it in enumerate(items[:15], start=1):
         kw = html.escape(it.get("keyword", ""))
         cat = it.get("category", "")
@@ -116,19 +130,22 @@ def _render_items(items, show_quote):
             news_list = [{"title": it.get("news_title", ""), "url": it.get("news_url", "")}]
         news_html = ""
         if news_list:
+            # 그리드 카드 높이 균일화를 위해 뉴스는 카드당 최대 2개
             links = "".join(
                 f'<a href="{html.escape(n.get("url",""))}" target="_blank" rel="noopener">'
                 f'{html.escape(n.get("title",""))} ↗</a>'
-                for n in news_list if n.get("url"))
+                for n in news_list[:2] if n.get("url"))
             news_html = f'<div class="kw-news">{links}</div>'
 
-        rows.append(
-            f'<div class="kw-row"><div class="kw-rank">{i}</div>'
-            f'<div class="kw-mid">'
-            f'<div class="kw-head"><span class="kw-kw">{kw}</span>{cat_html}{streak_html}</div>'
-            f'{wbar}{stocks_html}{news_html}</div></div>'
+        cards.append(
+            f'<div class="kw-card">'
+            f'<div class="kw-card-head">'
+            f'<span class="kw-rank">{i}</span>'
+            f'<span class="kw-kw">{kw}</span>'
+            f'{cat_html}{streak_html}</div>'
+            f'{wbar}{stocks_html}{news_html}</div>'
         )
-    st.markdown("".join(rows), unsafe_allow_html=True)
+    st.markdown(f'<div class="kw-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
 
 
 def render_keywords():
@@ -177,4 +194,4 @@ def render_keywords():
 
     _render_items(data["items"], show_quote)
     st.caption("※ 키워드·종목·카테고리·중요도는 AI 추출, 링크는 네이버 뉴스 실제 기사. "
-               "🔥 배지는 연속 등장 일수, 막대는 중요도. 단순 지수 등락 뉴스는 제외됩니다.")
+               "🔥 배지는 연속 등장 일수, 막대는 중요도. 뉴스는 카드당 2건 표시.")
