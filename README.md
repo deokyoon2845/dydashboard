@@ -1,117 +1,81 @@
-# 📊 시장 현황 대시보드
+# DY Monitoring
 
-국내·해외 주요 지수, 텔레그램 채널 기반 AI 시황 분석 리포트, 오늘의 증시 키워드를
-한 곳에서 보는 개인용 Streamlit 대시보드입니다.
+개인용 한국 증시 모니터링 대시보드. 텔레그램 시황 채널 + 네이버 뉴스 + 실시간 시장 데이터를 묶어 **"전략·시황 보고서"**를 자동 생성하고, 지수·키워드·추세를 한 화면에서 본다.
 
-## 주요 기능
+> **아키텍처 한 줄 요약**: `엔진(engine/) — 데이터 생성·자동화` + `뷰어(modules/ + app.py) — 표시` 분리
 
-- **📈 지수 현황** — 코스피·코스닥·S&P500·나스닥·다우·원/달러·VIX·금·WTI를 카드로 표시 (Yahoo Finance, 약 15분 지연)
-- **📰 시황 리포트** — 텔레그램 채널의 *전일 00:00 ~ 지금* 메시지를 Claude로 분석해 보고서 생성. 키워드·기간으로 검색되는 아카이브, 토큰 사용량·예상 비용·잔액(추정) 포함
-- **🔑 오늘의 키워드 Top10** — 네이버 뉴스 기반 오늘의 증시 키워드 + 관련 종목 + 실제 기사 링크
+---
 
-디자인: 미니멀 미스트(파스텔) · 등락색 한국식(상승 빨강 / 하락 파랑)
+## 1. 빠른 시작
 
-## 폴더 구조
-
-```
-my-market-dashboard/
-├── app.py                  # 메인 앱 (탭 3개)
-├── requirements.txt        # 필요한 라이브러리
-├── .gitignore              # 깃 제외 목록 (.env 등)
-├── .env.example            # 환경변수 템플릿 (이걸 복사해 .env 생성)
-├── .streamlit/
-│   └── config.toml         # 테마(색·폰트) 설정
-├── modules/                # 화면(뷰어)
-│   ├── __init__.py
-│   ├── indices.py          # 지수 데이터
-│   ├── reports.py          # 리포트 뷰 + 아카이브 검색
-│   ├── keywords_view.py    # 오늘의 키워드 뷰
-│   └── usage.py            # 비용 계산 + 사용량 로그
-├── engine/                 # 데이터 생성(엔진) — 로컬에서 실행
-│   ├── __init__.py
-│   ├── telegram_login.py   # 최초 1회 텔레그램 로그인
-│   ├── fetch_telegram.py   # 채널 메시지 수집
-│   ├── analyze.py          # Claude 시황 분석
-│   ├── generate.py         # 리포트 생성 통합 로직
-│   ├── news.py             # 네이버 뉴스 수집
-│   ├── keywords.py         # 오늘의 키워드 추출
-│   └── run_report.py       # CLI로 리포트 생성
-├── reports/                # 생성된 리포트(.md)가 쌓이는 곳 (= 아카이브)
-└── data/                   # 사용량 로그·키워드 캐시
-```
-
-> design_concepts.html / report_layouts.html / keyword_layouts.html 은 디자인 고를 때 쓴
-> 미리보기 파일이라 앱 동작과 무관합니다. 지워도 됩니다.
-
-## 시작하기
-
-### 1. 라이브러리 설치
-
+### 로컬 실행
 ```bash
 pip install -r requirements.txt
-```
-
-가상환경은 필수가 아닙니다(써도 좋음).
-
-### 2. 환경변수 설정
-
-`.env.example` 을 복사해 같은 폴더에 **`.env`** 로 저장하고 값을 채웁니다.
-
-| 변수 | 설명 | 발급처 |
-|------|------|--------|
-| `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` | 텔레그램 API 키 | my.telegram.org |
-| `TELEGRAM_SESSION` | 로그인 세션 문자열 | `telegram_login.py` 실행 결과 |
-| `TELEGRAM_CHANNEL` | 분석할 채널 (`@아이디`) | — |
-| `ANTHROPIC_API_KEY` | Claude API 키 | console.anthropic.com |
-| `ANTHROPIC_BUDGET_KRW` | 총 예산(원), 잔액 표시용 (선택) | — |
-| `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | 네이버 뉴스 검색 API | developers.naver.com |
-
-### 3. 텔레그램 최초 로그인 (1회만)
-
-```bash
-python engine/telegram_login.py
-```
-
-전화번호(+82…) → 인증코드 입력 → 출력된 세션 문자열을 `.env` 의 `TELEGRAM_SESSION` 에 붙여넣기.
-
-### 4. 실행
-
-```bash
 streamlit run app.py
 ```
 
-브라우저에서 `localhost:8501` 이 열립니다.
+### 비밀키 설정 (`.streamlit/secrets.toml` 또는 Streamlit Cloud Secrets)
+```toml
+ANTHROPIC_API_KEY = "sk-..."
+TELEGRAM_API_ID = "..."
+TELEGRAM_API_HASH = "..."
+TELEGRAM_SESSION = "..."
+APP_PASSWORD = "리포트_생성_잠금_비밀번호"   # ← 토큰 보호용 (미설정 시 잠금 없음)
+```
 
-## 사용법
+> ⚠️ `APP_PASSWORD`를 설정하지 않으면 누구나 리포트를 생성할 수 있어 API 토큰이 소비된다. 외부 공유 시 반드시 설정할 것.
 
-- **지수 현황**: 자동 표시. "새로고침"으로 최신화
-- **시황 리포트**: "📝 리포트 생성" → 전일 00:00~지금 메시지 분석·저장. 검색창·기간으로 과거 리포트 찾기. 하단에 토큰·비용·잔액
-- **오늘의 키워드**: "🔄 키워드 갱신" → 뉴스 기반 Top10. 기사 제목(↗) 클릭 시 실제 기사로 이동
+---
 
-## 인터넷에 올리기 (배포)
+## 2. 4개 탭 구성
 
-1. GitHub Desktop 등으로 코드를 GitHub 저장소에 올림
-2. share.streamlit.io 에서 그 저장소를 연결해 배포
-3. 작동 방식
-   - **로컬(내 컴퓨터)**: 생성 버튼 포함 모든 기능 사용 → 여기서 리포트·키워드를 만듦
-   - **클라우드(배포 링크)**: 보기·공유 전용. 생성 버튼은 키가 없어 동작하지 않음(정상)
-   - 새로 만든 결과를 클라우드에도 보이게 하려면: **로컬 생성 → GitHub에 Push → 클라우드 자동 반영**
+| 탭 | 내용 |
+|---|---|
+| **지수 현황** | 시장 지표(체온계: 공포·탐욕·ADR·RSI) + 주요 지수 4열 그리드 + 다가오는 일정 + 수급 상위 종목 |
+| **전략·시황** | AI 보고서(헤드라인·관전·섹션·테마·내 종목) + 워치리스트 + PDF + 삭제 |
+| **오늘의 키워드** | TOP15 키워드 3×5 그리드(카테고리·중요도·🔥연속·인라인시세·뉴스) + 날짜 아카이브 |
+| **추세** | 시황 타임라인 + 시장 분위기 추세 + 주간 다이제스트 + 감성vs지수 검증 |
 
-## ⚠️ 보안 · 주의
+---
 
-- **`.env` 는 절대 GitHub에 올리지 마세요.** `.gitignore` 가 자동으로 막아둠
-- 텔레그램 세션 문자열·API 키는 비밀번호급. 공유 금지
-- 비용·잔액은 **토큰 단가 기반 추정치**입니다. 실제 청구는 Anthropic 콘솔(Billing)에서 확인
-- Yahoo Finance 데이터는 지연되며, 클라우드 환경에서 일시 차단될 수 있음
-- 본 도구는 **정보 정리용이며 투자 권유가 아닙니다**
+## 3. 핵심 데이터 흐름
 
-## 🛠 기술 스택
+```
+[수집] 텔레그램(전일 15:40~) + 네이버 뉴스 + yfinance/pykrx
+   │
+[분석] engine/analyze.py — 2단계 파이프라인
+   │     1차 Haiku: 메시지 클러스터링·중복제거 (15건↑일 때만)
+   │     2차 Opus:  심층 분석 + JSON 구조화
+   │     ↳ 주입: 정량 스냅샷 + 뉴스 + 캘린더 일정 + 최근 시황 흐름 + 워치리스트
+   │
+[저장] reports/YYYY-MM-DD_HHMM.json
+   │
+[표시] app.py + modules/ (Streamlit Cloud)
+```
 
-Streamlit · yfinance · Telethon · Claude API(Anthropic) · 네이버 뉴스 검색 API
+자동화: `.github/workflows/daily.yml` — 평일 KST 07:50 (cron `50 22 * * 0-4`) → 보고서·키워드·예측채점 생성 후 텔레그램 발송.
 
-## 💡 앞으로 개선하면 좋은 것 (선택)
+---
 
-- `requirements.txt` 라이브러리 버전 고정 → 배포 안정성↑
-- 클라우드에 비밀키(Secrets) 설정 → 클라우드에서도 '키워드 갱신' 가능
-- `data/usage_log.json` 을 깃에 커밋 → 기기 간 잔액 공유
-- 텔레그램 메시지 기반 키워드도 함께 반영
+## 4. 디자인 시스템 "미니멀 미스트"
+
+- 배경 `#FCFCFA` · 세이지 액센트 `#A7BBA9` · 상승=적 `#B65F5A` / 하락=청 `#5A7CA0`
+- 폰트: Fraunces(세리프 제목) + Hanken Grotesk + Noto Sans KR
+- 다크모드 지원 (`.app.dark` 변수 오버라이드)
+- mood 3색은 `modules/mood.py` 단일 팔레트로 통일 (긍정 `#2E7D5B` / 중립 세이지 / 주의 `#C2410C`)
+- 레이아웃: 컨테이너 최대폭 1280px, 카드 그리드 4열(981px+) → 3열 → 2열 반응형
+
+---
+
+## 5. 외부 의존성
+
+| 소스 | 용도 | 안정성 |
+|---|---|---|
+| yfinance | 지수·환율·RSI·종목 히스토리 | 높음 |
+| pykrx | ADR·수급·종목명 | ⚠️ 해외 IP 차단 가능 (폴백 있음) |
+| KRX data API | ADR 2차 폴백 | ⚠️ 동일 |
+| 네이버 금융/뉴스 | ADR 3차 폴백·키워드·종목링크 | 높음 |
+| CNN F&G (비공식) | 공포·탐욕 지수 | 중간 |
+| Anthropic API | 보고서·키워드 분석 | 높음 |
+
+자세한 파일별 역할·작업 규칙·로드맵은 `Handoff.md` 참고.
