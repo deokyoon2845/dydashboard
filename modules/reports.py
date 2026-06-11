@@ -36,25 +36,6 @@ __MOOD_BADGE_CSS__
 .theme-detail{font-size:13px;line-height:1.75;color:var(--ink,#34352f);margin-bottom:8px;}
 .theme-tickers{font-size:11.5px;color:var(--muted,#9a9b92);}
 .theme-tickers a{color:var(--sage-deep,#7E9A83);font-weight:600;text-decoration:none;background:var(--pill-bg,#F1F2EC);padding:2px 8px;border-radius:6px;border:1px solid var(--line,#ECEDE7);margin-right:4px;}
-.rpt-sources{margin-top:24px;padding-top:12px;border-top:1px solid var(--line,#ECEDE7);font-size:11.5px;color:var(--muted,#9a9b92);display:flex;flex-wrap:wrap;gap:5px;align-items:center;}
-.src-pill{background:var(--pill-bg,#F1F2EC);color:var(--pill-ink,#5d6258);border:1px solid var(--line,#ECEDE7);font-size:11px;font-weight:600;padding:3px 9px;border-radius:7px;}
-.xc-wrap{margin:6px 0 24px;border:1px solid var(--line,#ECEDE7);border-radius:14px;overflow:hidden;}
-.xc-head{display:flex;align-items:center;gap:8px;padding:11px 16px;background:var(--summary-bg,#F6F7F2);border-bottom:1px solid var(--line,#ECEDE7);}
-.xc-title{font-size:13px;font-weight:700;color:var(--ink,#34352f);}
-.xc-verdict{margin-left:auto;font-size:10.5px;font-weight:700;letter-spacing:.04em;padding:3px 10px;border-radius:20px;}
-.xc-align{background:#E1F5EE;color:#0F6E56;} .xc-diverge{background:#FBEADF;color:#9C4318;} .xc-mixed{background:#EDF1EC;color:#5A6B5E;}
-.xc-cols{display:grid;grid-template-columns:1fr 1fr;}
-@media(max-width:520px){.xc-cols{grid-template-columns:1fr;}}
-.xc-col{padding:13px 16px;}
-.xc-col.view{border-right:1px solid var(--line,#ECEDE7);}
-@media(max-width:520px){.xc-col.view{border-right:none;border-bottom:1px solid var(--line,#ECEDE7);}}
-.xc-label{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:5px;}
-.xc-label.view{color:var(--sage-deep,#7E9A83);} .xc-label.data{color:#5A7CA0;}
-.xc-text{font-size:13px;line-height:1.7;color:var(--ink,#34352f);}
-.xc-insight{padding:11px 16px;border-top:1px solid var(--line,#ECEDE7);font-size:13px;line-height:1.7;color:var(--ink,#34352f);background:var(--card,#fff);}
-.xc-insight b{color:var(--sage-deep,#7E9A83);}
-.app.dark .xc-align{background:#0C4435;color:#9FE1CB;} .app.dark .xc-diverge{background:#4F2E18;color:#F0B58C;} .app.dark .xc-mixed{background:#33403A;color:#BFD6C5;}
-.app.dark .xc-label.data{color:#94B6EA;}
 </style>
 """
 
@@ -91,7 +72,7 @@ def _load(path: Path) -> dict:
         "sections": [{"title": "보고서 본문", "body": text}],
         "themes": [], "keywords": [],
         "mood": "neutral", "generated_at": "",
-        "messages_count": 0, "source_channels": [],
+        "messages_count": 0,
     }
 
 
@@ -170,28 +151,6 @@ def _render_report(data: dict):
             f'<div class="rpt-kt-box">{kt}</div>'
             f'</div>', unsafe_allow_html=True)
 
-    # 시장 시각 vs 실제 데이터 (핵심 차별 섹션)
-    xc = data.get("cross_check")
-    if isinstance(xc, dict) and (xc.get("market_view") or xc.get("data_fact")):
-        verdict = (xc.get("verdict") or "mixed").lower()
-        vmap = {"align": ("xc-align", "일치"), "diverge": ("xc-diverge", "괴리"),
-                "mixed": ("xc-mixed", "혼재")}
-        vcls, vko = vmap.get(verdict, vmap["mixed"])
-        insight = xc.get("insight", "")
-        st.markdown(
-            f'<div class="xc-wrap">'
-            f'<div class="xc-head"><span>⚖️</span>'
-            f'<span class="xc-title">시장 시각 vs 실제 데이터</span>'
-            f'<span class="xc-verdict {vcls}">{vko}</span></div>'
-            f'<div class="xc-cols">'
-            f'<div class="xc-col view"><div class="xc-label view">시장 시각</div>'
-            f'<div class="xc-text">{xc.get("market_view","")}</div></div>'
-            f'<div class="xc-col"><div class="xc-label data">실제 데이터</div>'
-            f'<div class="xc-text">{xc.get("data_fact","")}</div></div>'
-            f'</div>'
-            + (f'<div class="xc-insight"><b>해석</b> · {insight}</div>' if insight else "")
-            + '</div>', unsafe_allow_html=True)
-
     for sec in data.get("sections", []):
         title = sec.get("title", "")
         body  = sec.get("body", "")
@@ -235,11 +194,6 @@ def _render_report(data: dict):
                 + (f'<div class="theme-tickers">관련: {tickers_html}</div>' if tickers_html else "")
                 + '</div>', unsafe_allow_html=True)
 
-    sources = data.get("source_channels", [])
-    if sources:
-        pills = "".join(f'<span class="src-pill">{s}</span>' for s in sources)
-        st.markdown(f'<div class="rpt-sources">출처 {pills}</div>', unsafe_allow_html=True)
-
 
 # ── 삭제 UI ─────────────────────────────────────────────────
 
@@ -282,7 +236,6 @@ def render_reports():
         return
 
     # files 는 최신순 정렬 → 기본은 최신 리포트
-    # 과거 리포트는 expander 안에서 선택 (선택 시 session_state에 반영)
     selected = files[0]
     picked_key = st.session_state.get("rpt_picked_path")
     if picked_key and Path(picked_key).exists() and Path(picked_key) in files:
@@ -326,22 +279,24 @@ def render_reports():
         st.error(f"리포트를 불러오지 못했어요: {e}")
         return
 
-    # 최신/과거 표시 배지
+    # 최신/과거 표시 배지 + PDF 다운로드 (한 줄 정렬)
     badge = "최신" if is_latest else f"과거 · {_label(selected)}"
-    st.caption(f"📄 {badge} 리포트")
-
-    # PDF 다운로드 버튼
-    try:
-        from modules.report_pdf import build_pdf
-        pdf_bytes = build_pdf(data)
-        st.download_button(
-            "📄 PDF로 다운로드",
-            data=pdf_bytes,
-            file_name=f"{selected.stem}.pdf",
-            mime="application/pdf",
-            key="rpt_pdf_dl")
-    except Exception as e:
-        st.caption(f"PDF 생성을 사용할 수 없어요: {e}")
+    meta_col, pdf_col = st.columns([3, 1])
+    with meta_col:
+        st.caption(f"📄 {badge} 리포트")
+    with pdf_col:
+        try:
+            from modules.report_pdf import build_pdf
+            pdf_bytes = build_pdf(data)
+            st.download_button(
+                "📄 PDF",
+                data=pdf_bytes,
+                file_name=f"{selected.stem}.pdf",
+                mime="application/pdf",
+                key="rpt_pdf_dl",
+                use_container_width=True)
+        except Exception as e:
+            st.caption(f"PDF 불가: {e}")
 
     _render_report(data)
 
