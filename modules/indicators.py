@@ -41,6 +41,64 @@ def _adr_from_pykrx(market="KOSPI"):
                 up = int((df["등락률"] > 0).sum())
                 down = int((df["등락률"] < 0).sum())
                 adr = round(up / down * 100, 1) if down else None
+                if up + down > 0:
+                    return {"adr": adr, "up": up, "down": down, "date": ds, "source": "KRX"}
+            d -= timedelta(days=1)
+    except Exception:
+        return None
+    return None
+
+
+def _adr_from_krx_api(market="KOSPI"):
+    """2차 시도: KRX 데이터 API 직접 호출 (data.krx.co.kr).
+
+    pykrx가 내부적으로 쓰는 엔드포인트를 requests로 직접 호출합니다.
+    OTP 발급(1차) → 데이터 조회(2차)의 2단계 방식.
+    최근 7거래일을 거슬러 올라가며 첫 유효 데이터를 반환합니다.
+    """
+    try:
+        import requests
+        from datetime import datetime, timedelta
+
+        mkt_id = "STK" if market == "KOSPI" else "KSQ"
+        otp_url = "http://data.krx.co.kr/comm/fileDn/GenerateOTP/generate.cmd"
+        data_url = "http://data.krx.co.kr/comm/bldAttendant/getJsonData.cmd"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "Referer": "http://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd",
+        }
+        sess = requests.Session()
+        d = datetime.now()
+        for _ in range(7):
+            ds = d.strftime("%Y%m%d")
+            # 전종목 등락률 조회 (bld: 일별매매동향 등락현황)
+            otp_params = {
+                "bld": "dbms/MDC/STAT/standard/MDCSTAT01602",
+                "mktId": mkt_id,
+                "trdDd": ds,
+                "money": "1", "csvxls_isNo": "false",
+            }
+            try:
+                otp = sess.get(otp_url, params=otp_params, headers=headers, timeout=10).text
+                if not otp or len(otp) < 10:
+                    d -= timedelta(days=1)
+                    continue
+                resp = sess.post(data_url, data={"code": otp}, headers=headers, timeout=10)
+                rows = resp.json().get("OutBlock_1", [])
+            except Exception:
+                d -= timedelta(days=1)
+                continue
+
+            # 등락 구분 필드(FLUC_TP_CD): 1=상승, 2=하락 (KRX 표준)
+            up = down = 0
+            for row in rows:
+                tp = str(row.get("FLUC_TP_CD", "")).strip()
+                if tp == "1":
+                    up += 1
+                elif tp == "2":
+                    down += 1
+            if up + down > 0:
+                adr = round(up / down * 100, 1) if down else None
                 return {"adr": adr, "up": up, "down": down, "date": ds, "source": "KRX"}
             d -= timedelta(days=1)
     except Exception:
@@ -49,7 +107,7 @@ def _adr_from_pykrx(market="KOSPI"):
 
 
 def _adr_from_naver(market="KOSPI"):
-    """2차 폴백: 네이버 금융 (해외 IP 차단 없음).
+    """3차 폴백: 네이버 금융 (해외 IP 차단 없음).
 
     ⚠️ 네이버 HTML 구조 변경 시 정규식 조정이 필요할 수 있습니다.
     비정상 값은 sanity check로 걸러내고, 실패 시 None을 반환합니다.
@@ -67,19 +125,16 @@ def _adr_from_naver(market="KOSPI"):
             timeout=10,
         )
         r.raise_for_status()
-        # 네이버는 EUC-KR 인코딩
         r.encoding = "euc-kr"
         html = r.text
 
+        # 네이버 등락 현황은 보통 '상승 N 보합 N 하락 N' 형태로 인접 배치됨.
+        # '상승'과 '하락' 사이/주변 숫자를 폭넓게 시도.
         def _grab(label):
-            """label(상승/하락) 뒤에 나오는 첫 숫자를 추출. 여러 패턴 시도."""
             patterns = [
-                # <span class="up">상승</span> ... <span class="num">510</span>
-                label + r"</span>\s*</?[^>]*>\s*<span[^>]*>\s*([\d,]+)",
-                # 상승 <em>510</em> 형태
-                label + r"[^0-9<]{0,30}?<[^>]+>\s*([\d,]+)",
-                # 상승 510 (태그 없이 근접)
-                label + r"[^0-9]{0,30}?([\d,]+)",
+                label + r"\s*</?[a-z][^>]*>\s*<[^>]*>\s*([\d,]+)",
+                label + r"[^\d<]{0,40}?<[^>]+>\s*([\d,]+)",
+                label + r"[^\d]{0,40}?([\d,]+)",
             ]
             for pat in patterns:
                 m = re.search(pat, html)
@@ -92,8 +147,6 @@ def _adr_from_naver(market="KOSPI"):
 
         up = _grab("상승")
         down = _grab("하락")
-
-        # sanity check: 종목 수가 상식적인 범위인지 확인 (오탐 방지)
         if not up or not down:
             return None
         if not (20 <= up <= 3000 and 20 <= down <= 3000):
@@ -110,12 +163,13 @@ def _adr_from_naver(market="KOSPI"):
 def fetch_adr(market="KOSPI"):
     """등락비율 = 상승종목수/하락종목수×100.
 
-    1차 pykrx(KRX) → 실패 시 2차 네이버 금융 → 모두 실패 시 None.
+    1차 pykrx → 2차 KRX API 직접 호출 → 3차 네이버 금융 → 모두 실패 시 None.
     """
-    result = _adr_from_pykrx(market)
-    if result and result.get("adr") is not None:
-        return result
-    return _adr_from_naver(market)
+    for fn in (_adr_from_pykrx, _adr_from_krx_api, _adr_from_naver):
+        result = fn(market)
+        if result and result.get("adr") is not None:
+            return result
+    return None
 
 
 @st.cache_data(ttl=1800)
