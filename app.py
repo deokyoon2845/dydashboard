@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 
 from modules.indices import (
     INDEX_GROUPS, fetch_index, sparkline_points,
-    fetch_us_sectors, fetch_supply_demand_summary,
+    fetch_supply_demand_summary,
 )
 from modules.calendar_view import render_calendar
 from modules.timeline_view import render_timeline
@@ -21,7 +21,7 @@ from modules.verify import render_verify
 from modules.usage import total_cost_usd
 
 load_dotenv()
-st.set_page_config(page_title="전략·시황 대시보드", page_icon="📈", layout="wide")
+st.set_page_config(page_title="DY Monitoring", page_icon="📈", layout="wide")
 
 if "dark" not in st.session_state:
     st.session_state["dark"] = False
@@ -57,10 +57,20 @@ CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Hanken+Grotesk:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;700&display=swap');
 __VARS__
 html, body, [data-testid="stAppViewContainer"] { font-family: 'Hanken Grotesk','Noto Sans KR',sans-serif; }
-.block-container { max-width: 980px; padding-top: 3.5rem; }
+.block-container { max-width: 1280px; padding-top: 3.5rem; }
 [data-testid="stMainBlockContainer"] { padding-top: 3.5rem !important; }
 .stMainBlockContainer { padding-top: 3.5rem !important; }
 h1,h2,h3 { font-family: 'Fraunces','Noto Sans KR',serif !important; letter-spacing:-.01em; color:var(--ink); }
+
+/* 탭: 글자 잘림 방지 (줄바꿈 금지 + 넉넉한 패딩) */
+.stTabs [data-baseweb="tab-list"] { gap:4px; flex-wrap:wrap; }
+.stTabs [data-baseweb="tab"] { white-space:nowrap; padding:8px 14px; height:auto; min-width:max-content; }
+.stTabs [data-baseweb="tab"] p { font-size:15px; margin:0; white-space:nowrap; }
+
+/* 버튼: 통일된 정렬·여백 */
+.stButton > button { border-radius:9px; padding:6px 16px; font-weight:600; }
+.stButton { margin-bottom:4px; }
+[data-testid="stExpander"] { border-radius:10px; margin-bottom:8px; }
 
 /* 상단 헤더 */
 .app-name { font-family:'Fraunces','Noto Sans KR',serif; font-size:18px; font-weight:600; color:var(--ink); }
@@ -70,7 +80,8 @@ h1,h2,h3 { font-family: 'Fraunces','Noto Sans KR',serif !important; letter-spaci
 .accent-bar { height:3px; width:30px; background:var(--sage); border-radius:3px; margin:0 0 12px; }
 .mkt-group { font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:16px 0 10px; }
 .grp-asof { font-weight:600; font-size:10.5px; letter-spacing:0; text-transform:none; color:var(--muted); opacity:.8; margin-left:8px; }
-.mkt-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+.mkt-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+@media (max-width:980px){ .mkt-grid{ grid-template-columns:repeat(3,1fr);} }
 @media (max-width:640px){ .mkt-grid{ grid-template-columns:repeat(2,1fr);} }
 .mkt-card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px 14px 12px; }
 .mkt-card.mkt-up { background:var(--tint-up); }
@@ -90,14 +101,6 @@ h1,h2,h3 { font-family: 'Fraunces','Noto Sans KR',serif !important; letter-spaci
 .rsi-gauge .t30 { left:30%; } .rsi-gauge .t70 { left:70%; }
 .rsi-gauge i { position:absolute; top:-3px; width:8px; height:12px; border-radius:3px; transform:translateX(-50%); background:var(--muted); }
 .rsi-gauge i.up { background:var(--up); } .rsi-gauge i.down { background:var(--down); }
-
-/* 간밤 미국장 섹터 카드 */
-.sector-card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px 14px 10px; }
-.sector-name { font-size:11.5px; font-weight:600; color:var(--muted); }
-.sector-val { font-size:17px; font-weight:700; color:var(--ink); margin-top:3px; letter-spacing:-.01em; }
-.sector-chg { font-size:12px; font-weight:700; margin-top:1px; }
-.sector-chg.up { color:var(--up); }
-.sector-chg.down { color:var(--down); }
 
 /* 수급 상위 종목 테이블 */
 .supply-wrap { background:var(--summary-bg); border:1px solid var(--line); border-radius:14px; padding:14px 16px; margin-bottom:10px; }
@@ -179,7 +182,7 @@ now = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")
 hc1, hc2 = st.columns([5, 1])
 with hc1:
     st.markdown(
-        f'<div class="app-name">📊 전략·시황 대시보드</div>'
+        f'<div class="app-name">DY Monitoring</div>'
         f'<div class="app-upd">조회 {now} KST · 데이터 기준일은 항목별 표기</div>',
         unsafe_allow_html=True,
     )
@@ -209,26 +212,6 @@ def _card_html(name, data):
             f'<div class="mkt-val">{data["current"]:,.2f}</div>'
             f'<div class="mkt-chg {cls}">{arrow} {data["change"]:+,.2f} ({data["pct"]:+.2f}%)</div>'
             f'{spark}</div>')
-
-
-# ── 간밤 미국장 섹터 HTML ──
-def _sector_card_html(name, data):
-    if data is None:
-        return (f'<div class="sector-card"><div class="sector-name">{name}</div>'
-                f'<div class="mkt-na">-</div></div>')
-    is_up = data["pct"] >= 0
-    cls = "up" if is_up else "down"
-    arrow = "▲" if data["pct"] > 0 else ("▼" if data["pct"] < 0 else "▬")
-    if data.get("is_rate"):
-        diff = data["current"] - data.get("prev", data["current"])
-        val_str = f'{data["current"]:.2f}%'
-        chg_str = f'{arrow} {data["pct"]:+.2f}bp'
-    else:
-        val_str = f'{data["current"]:.2f}'
-        chg_str = f'{arrow} {data["pct"]:+.2f}%'
-    return (f'<div class="sector-card"><div class="sector-name">{name}</div>'
-            f'<div class="sector-val">{val_str}</div>'
-            f'<div class="sector-chg {cls}">{chg_str}</div></div>')
 
 
 # ── 수급 상위 종목 HTML ──
@@ -291,10 +274,9 @@ def render_indices():
             f'<div class="data-asof">데이터 기준 {next(iter(distinct))} · '
             f'해외 지수·환율은 직전 거래일 종가</div>', unsafe_allow_html=True)
 
-    # 3) 그룹별 렌더 (등락률 큰 순 정렬)
+    # 3) 그룹별 렌더 (INDEX_GROUPS 정의 순서 그대로)
     for group_name, datas in group_data.items():
-        items = sorted(datas.items(),
-                       key=lambda kv: kv[1]["pct"] if kv[1] else -1e9, reverse=True)
+        items = list(datas.items())
         head = f'<div class="mkt-group">{group_name}'
         if not unified and group_asof[group_name]:
             head += f'<span class="grp-asof">기준 {group_asof[group_name]}</span>'
@@ -303,21 +285,7 @@ def render_indices():
         cards = "".join(_card_html(name, d) for name, d in items)
         st.markdown(f'<div class="mkt-grid">{cards}</div>', unsafe_allow_html=True)
 
-    # 4) 간밤 미국장 섹터 흐름
-    sectors = fetch_us_sectors()
-    if any(v is not None for v in sectors.values()):
-        st.markdown('<div class="mkt-group">🌙 간밤 미국장 섹터</div>', unsafe_allow_html=True)
-        sector_items = list(sectors.items())
-        cards = "".join(_sector_card_html(name, d) for name, d in sector_items)
-        st.markdown(f'<div class="mkt-grid">{cards}</div>', unsafe_allow_html=True)
-        # 기준일 표기
-        asofs = [d["asof"] for d in sectors.values() if d and d.get("asof")]
-        if asofs:
-            st.markdown(
-                f'<div class="data-asof">기준 {max(asofs)} · 미국 장 마감 종가</div>',
-                unsafe_allow_html=True)
-
-    # 5) 수급 상위 종목
+    # 4) 수급 상위 종목
     supply = fetch_supply_demand_summary()
     if supply:
         st.markdown('<div class="mkt-group">💰 수급 상위 종목</div>', unsafe_allow_html=True)
@@ -345,11 +313,48 @@ def render_usage_section():
     st.caption("※ 토큰 단가 기반 추정치입니다. 실제 청구액은 Anthropic 콘솔(Billing)에서 확인하세요.")
 
 
+# ── 생성 권한 확인 (비밀번호) ──
+def _can_generate():
+    """리포트 생성 권한 확인. Secrets에 APP_PASSWORD가 있으면 인증 요구.
+
+    - APP_PASSWORD 미설정 시: 잠금 없음 (개인 로컬 사용 등)
+    - 설정 시: 비밀번호 일치한 세션에서만 생성 허용
+    """
+    try:
+        pw_required = st.secrets.get("APP_PASSWORD", "")
+    except Exception:
+        pw_required = ""
+
+    # 비밀번호 미설정 → 잠금 없음
+    if not pw_required:
+        return True
+
+    # 이미 이 세션에서 인증됨
+    if st.session_state.get("gen_authed"):
+        return True
+
+    # 인증 UI
+    with st.expander("🔒 리포트 생성은 잠겨 있어요 (소유자 전용)", expanded=False):
+        st.caption("이 대시보드는 자유롭게 둘러볼 수 있어요. 리포트 생성만 소유자 비밀번호가 필요합니다.")
+        pw = st.text_input("비밀번호", type="password", key="gen_pw")
+        if st.button("잠금 해제", key="gen_unlock"):
+            if pw == pw_required:
+                st.session_state["gen_authed"] = True
+                st.success("잠금 해제됐어요. 이제 리포트를 생성할 수 있어요.")
+                st.rerun()
+            else:
+                st.error("비밀번호가 일치하지 않아요.")
+    return False
+
+
 # ── 전략·시황 보고서 탭 ──
 def render_report_tab():
     st.markdown('<div class="rpt-bar"></div>', unsafe_allow_html=True)
     st.title("전략·시황 보고서")
-    if st.button("📝 리포트 생성 (전일 15:40 ~ 지금)"):
+
+    authed = _can_generate()
+    gen_clicked = st.button("📝 리포트 생성 (전일 15:40 ~ 지금)", disabled=not authed)
+    if gen_clicked and authed:
         with st.spinner("텔레그램 수집 → Claude 분석 중... (메시지가 많으면 시간이 걸립니다)"):
             try:
                 from engine.generate import generate_report
@@ -370,7 +375,7 @@ def render_report_tab():
 
 # ── 탭 ──
 tab_idx, tab_rep, tab_kw, tab_tr = st.tabs(
-    ["📈 지수 현황", "📰 전략·시황", "🔑 오늘의 키워드", "📊 추세"]
+    ["지수 현황", "전략·시황", "오늘의 키워드", "추세"]
 )
 with tab_idx:
     render_indices()
