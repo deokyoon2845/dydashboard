@@ -19,7 +19,9 @@ INDEX_GROUPS = {
     },
     "환율": {
         "원/달러": "KRW=X",
-        "엔/달러": "JPY=X",
+        "원/엔": "KRWJPY=X",
+        "원/유로": "KRWEUR=X",
+        "원/위안": "KRWCNY=X",
         "달러 인덱스": "DX-Y.NYB",
     },
     "변동성·원자재": {
@@ -27,23 +29,6 @@ INDEX_GROUPS = {
         "금": "GC=F",
         "WTI 유가": "CL=F",
     },
-}
-
-# 미국 국채 금리 (값이 수익률 %로 직접 표시됨 — 변화는 %p로 계산)
-RATE_GROUPS = {
-    "미 10년물": "^TNX",
-    "미 5년물": "^FVX",
-    "미 30년물": "^TYX",
-}
-
-# 간밤 미국장 섹터 ETF
-US_SECTOR_GROUPS = {
-    "기술": "XLK",
-    "반도체": "SOXX",
-    "에너지": "XLE",
-    "금융": "XLF",
-    "헬스케어": "XLV",
-    "미 10년물": "^TNX",
 }
 
 
@@ -79,69 +64,13 @@ def fetch_index(ticker: str):
         return None
 
 
-@st.cache_data(ttl=600)
-def fetch_rate_spread():
-    """장단기 금리차 = 미 10년물(^TNX) - 미 3개월물(^IRX), 단위 %p.
-
-    음수(역전)는 통상 경기침체 선행 신호로 해석됩니다.
-    실패 시 None 반환.
-    """
-    try:
-        long_df = yf.Ticker("^TNX").history(period="10d", interval="1d")
-        short_df = yf.Ticker("^IRX").history(period="10d", interval="1d")
-        if long_df.empty or short_df.empty:
-            return None
-        lc = long_df["Close"].dropna()
-        sc = short_df["Close"].dropna()
-        if len(lc) < 2 or len(sc) < 2:
-            return None
-        spread = float(lc.iloc[-1]) - float(sc.iloc[-1])
-        prev_spread = float(lc.iloc[-2]) - float(sc.iloc[-2])
-        asof = lc.index[-1].strftime("%Y-%m-%d")
-        return {
-            "spread": spread,
-            "change": spread - prev_spread,  # %p
-            "asof": asof,
-            "inverted": spread < 0,
-        }
-    except Exception:
-        return None
-
-
-@st.cache_data(ttl=600)
-def fetch_us_sectors():
-    """간밤 미국장 섹터 ETF 데이터. 실패 항목은 None으로 반환."""
-    results = {}
-    for name, ticker in US_SECTOR_GROUPS.items():
-        try:
-            df = yf.Ticker(ticker).history(period="10d", interval="1d")
-            if df.empty or len(df) < 2:
-                results[name] = None
-                continue
-            close = df["Close"].dropna()
-            cur = float(close.iloc[-1])
-            prev = float(close.iloc[-2])
-            pct = (cur / prev - 1) * 100
-            asof = close.index[-1].strftime("%Y-%m-%d")
-            results[name] = {
-                "ticker": ticker,
-                "current": cur,
-                "pct": pct,
-                "asof": asof,
-                "is_rate": ticker == "^TNX",  # 금리는 별도 표기
-            }
-        except Exception:
-            results[name] = None
-    return results
-
-
 @st.cache_data(ttl=1800)  # 30분 캐시 — pykrx 호출 비용 고려
 def fetch_supply_demand_summary():
     """외국인·기관 순매수 상위 5종목 (최근 거래일).
     
     반환값: {
-        "KOSPI": {"외국인": [("삼성전자", +1200), ...], "기관": [...], "date": "2024-01-15"},
-        "KOSDAQ": { ... }
+        "코스피": {"외국인": [("삼성전자", +1200), ...], "기관": [...], "date": "2024-01-15"},
+        "코스닥": { ... }
     }
     실패 시 빈 dict 반환.
     """
