@@ -1,15 +1,13 @@
-"""추세 탭: 감성 추세(테마 색 차트) + 반복 등장 종목 + 주간 다이제스트."""
+"""추세 탭: 감성 추세(테마 색 차트) + 주간 다이제스트."""
 
 import re
-from collections import defaultdict
 from pathlib import Path
 
 import altair as alt
 import pandas as pd
 import streamlit as st
 
-from modules.reports import list_reports, _report_date, _extract_stocks
-from modules.stocks import stock_pills_html
+from modules.reports import list_reports, _report_date
 
 DIGEST_DIR = Path("digests")
 
@@ -75,18 +73,6 @@ def _sentiment_chart(series, dark):
     return (area + zero).properties(height=220, background="transparent").configure_view(strokeWidth=0)
 
 
-def _stock_stats():
-    days, total = defaultdict(set), defaultdict(int)
-    for f in list_reports():
-        d = _report_date(f)
-        for s in _extract_stocks(f.read_text(encoding="utf-8")):
-            days[s].add(d)
-            total[s] += 1
-    rows = [{"stock": s, "days": len(days[s]), "total": total[s]} for s in total]
-    rows.sort(key=lambda r: (r["days"], r["total"]), reverse=True)
-    return rows
-
-
 def _latest_digest():
     if not DIGEST_DIR.exists():
         return None
@@ -115,23 +101,7 @@ def render_trends():
     else:
         st.caption("'시장 분위기'를 인식할 수 있는 리포트가 아직 없어요.")
 
-    # ── 2. 반복 등장 종목 ──
-    st.markdown('<div class="mkt-group">자주 등장한 종목</div>', unsafe_allow_html=True)
-    stats = _stock_stats()
-    if stats:
-        rows = []
-        for r in stats[:10]:
-            rows.append(
-                '<div style="padding:8px 0;border-bottom:1px solid var(--line);">'
-                f'{stock_pills_html([r["stock"]])} '
-                f'<span style="font-size:12px;color:var(--muted);">'
-                f'{r["days"]}일 등장 · 총 {r["total"]}회</span></div>'
-            )
-        st.markdown("".join(rows), unsafe_allow_html=True)
-    else:
-        st.caption("리포트에서 종목을 아직 찾지 못했어요.")
-
-    # ── 3. 주간 다이제스트 ──
+    # ── 2. 주간 다이제스트 ──
     st.divider()
     st.markdown('<div class="mkt-group">주간 다이제스트</div>', unsafe_allow_html=True)
     if st.button("📅 주간 다이제스트 생성 (최근 7일)"):
