@@ -14,7 +14,7 @@ from modules.indices import (
 from modules.calendar_view import render_calendar
 from modules.timeline_view import render_timeline
 from modules.indicators import render_indicators
-from modules.reports import render_reports
+from modules.reports import render_reports, render_reports_manage
 from modules.keywords_view import render_keywords
 from modules.trends import render_trends
 from modules.verify import render_verify
@@ -352,6 +352,16 @@ def render_report_tab():
     st.markdown('<div class="rpt-bar"></div>', unsafe_allow_html=True)
     st.title("전략·시황 보고서")
 
+    # 1) 리포트 먼저 표시 (좌 2/3 본문 · 우 1/3 내 종목/주목 테마)
+    render_reports()
+
+    # 2) 하단: 생성·관리 영역
+    st.divider()
+
+    flash = st.session_state.pop("gen_flash", None)
+    if flash:
+        st.success(flash)
+
     authed = _can_generate()
     gen_clicked = st.button("📝 리포트 생성 (전일 15:40 ~ 지금)", disabled=not authed)
     if gen_clicked and authed:
@@ -363,12 +373,18 @@ def render_report_tab():
                 res = {"ok": False, "reason": str(e)}
         st.session_state["last_gen"] = res
         if res.get("ok"):
-            st.success(f"생성 완료 · {res['messages']}개 메시지 분석")
+            # 새 리포트가 상단에 바로 보이도록 rerun (성공 메시지는 flash 로 전달)
+            st.session_state["gen_flash"] = f"생성 완료 · {res['messages']}개 메시지 분석"
+            st.session_state["rpt_picked_path"] = None
+            st.rerun()
         else:
             st.warning(f"생성 실패 · {res.get('reason')}")
+
     from modules.watchlist import render_watchlist_editor
     render_watchlist_editor()
-    render_reports()
+
+    render_reports_manage()
+
     st.divider()
     render_usage_section()
 
