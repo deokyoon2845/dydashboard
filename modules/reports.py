@@ -319,19 +319,23 @@ def render_reports_manage():
     is_latest = (selected == files[0])
     picked_key = st.session_state.get("rpt_picked_path")
 
-    # 과거 리포트 탐색 (접이식)
-    if len(files) > 1:
-        with st.expander(f"🗂 지난 리포트 보기 ({len(files)}개)"):
+    # 과거 리포트 탐색 (접이식) — 1개여도 노출, 과거 보고서 보는 중이면 자동 펼침
+    if files:
+        with st.expander(f"🗂 지난 리포트 보기 ({len(files)}개)", expanded=not is_latest):
             dates = [_report_date(f) for f in files]
             lo, hi = min(dates), max(dates)
-            date_range = st.date_input("기간", value=(lo, hi),
-                                       min_value=lo, max_value=hi, key="rpt_dates")
-            start = end = None
-            if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
-                start, end = date_range
-            filtered = [f for f in files
-                        if (not start or _report_date(f) >= start)
-                        and (not end or _report_date(f) <= end)]
+            # 날짜가 2종 이상일 때만 기간 필터 노출 (1종이면 range 입력이 어색함)
+            if lo != hi:
+                date_range = st.date_input("기간", value=(lo, hi),
+                                           min_value=lo, max_value=hi, key="rpt_dates")
+                start = end = None
+                if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
+                    start, end = date_range
+                filtered = [f for f in files
+                            if (not start or _report_date(f) >= start)
+                            and (not end or _report_date(f) <= end)]
+            else:
+                filtered = list(files)
             if filtered:
                 cur_idx = filtered.index(selected) if selected in filtered else 0
                 idx = st.selectbox(
