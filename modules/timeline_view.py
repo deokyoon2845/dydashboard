@@ -31,6 +31,8 @@ _TL_CSS = """
 .tl-row.tl-bottom { align-items:start; }
 .tl-card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:9px 10px; }
 .tl-card.tl-latest { border-color:#C2410C; border-width:1.5px; }
+.tl-link { display:block; text-decoration:none; color:inherit; cursor:pointer; transition:border-color .15s, box-shadow .15s, transform .1s; }
+.tl-link:hover { border-color:var(--sage-deep,#7E9A83); box-shadow:0 2px 10px rgba(0,0,0,.06); transform:translateY(-1px); }
 .tl-dt { font-size:10.5px; font-weight:700; color:var(--muted); margin-bottom:3px; }
 .tl-idx { font-size:10px; color:var(--muted); margin-bottom:4px; line-height:1.5; }
 .tl-idx b { font-weight:700; color:var(--ink); }
@@ -111,15 +113,17 @@ def load_timeline_entries(limit: int, sig: str) -> list:
                 rep = json.load(f)
         except Exception:
             continue
-        by_date[date] = (sort_key, rep)
+        by_date[date] = (sort_key, rep, os.path.basename(path))
 
     entries = []
     for date in sorted(by_date.keys())[-limit:]:
         rep = by_date[date][1]
+        fname = by_date[date][2]
         mood_raw = str(rep.get("mood", "")).lower()
         label, cls, color = _MOOD_MAP.get(mood_raw, _MOOD_MAP["neutral"])
         entries.append({
             "date": date,
+            "report": fname,
             "headline": str(rep.get("headline", "")).strip() or "(헤드라인 없음)",
             "sections": _section_titles(rep),
             "mood_label": label, "mood_cls": cls, "mood_color": color,
@@ -215,12 +219,16 @@ def _card_html(e: dict, idx_rec, latest: bool, mobile: bool = False) -> str:
     latest_cls = " tl-latest" if latest else ""
     latest_tag = " · 최신" if latest else ""
     dot = f' style="--dot:{e["mood_color"]}"' if mobile else ""
-    return (f'<div class="tl-card{latest_cls}"{dot}>'
-            f'<div class="tl-dt">{_fmt_date(e["date"])}{latest_tag}</div>'
-            f'{_idx_line_html(idx_rec)}'
-            f'<div class="tl-hl">{html.escape(e["headline"])}</div>'
-            f'{secs_html}'
-            f'<span class="tl-md {e["mood_cls"]}">{e["mood_label"]}</span></div>')
+    # 카드 클릭 → ?rpt=파일명 (app.py가 읽어 전략·시황 탭의 선택 보고서로 반영)
+    rpt = html.escape(e.get("report", ""), quote=True)
+    href = f'?rpt={rpt}' if rpt else '#'
+    inner = (f'<div class="tl-dt">{_fmt_date(e["date"])}{latest_tag}</div>'
+             f'{_idx_line_html(idx_rec)}'
+             f'<div class="tl-hl">{html.escape(e["headline"])}</div>'
+             f'{secs_html}'
+             f'<span class="tl-md {e["mood_cls"]}">{e["mood_label"]}</span>')
+    return (f'<a class="tl-card{latest_cls} tl-link"{dot} href="{href}" target="_self">'
+            f'{inner}</a>')
 
 
 def _svg_html(entries: list) -> str:
@@ -283,5 +291,6 @@ def render_timeline():
 
     st.markdown(desktop + mobile, unsafe_allow_html=True)
     st.markdown('<div class="data-asof">노드 색 = 보고서 mood (긍정·중립·주의) · '
-                '날짜 아래 = 코스피·코스닥 당일 마감 종가와 등락률 · 같은 날 보고서는 최신만 표시</div>',
+                '날짜 아래 = 코스피·코스닥 당일 마감 종가와 등락률 · 같은 날 보고서는 최신만 표시 · '
+                '💡 카드를 클릭하면 전략·시황 탭에서 해당 보고서를 볼 수 있어요</div>',
                 unsafe_allow_html=True)
