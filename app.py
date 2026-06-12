@@ -202,9 +202,11 @@ def _card_html(name, data):
         return (f'<div class="mkt-card"><div class="mkt-name">{name}</div>'
                 f'<div class="mkt-na">데이터 없음</div></div>')
     is_up = data["change"] >= 0
-    cls = "up" if is_up else "down"
-    tint = "mkt-up" if is_up else "mkt-down"
-    v = "--up" if is_up else "--down"
+    # invert_color(예: VIX)는 하락이 시장에 '긍정'이므로 색을 반전 (화살표·수치는 그대로)
+    good = (not is_up) if data.get("invert_color") else is_up
+    cls = "up" if good else "down"
+    tint = "mkt-up" if good else "mkt-down"
+    v = "--up" if good else "--down"
     arrow = "▲" if data["change"] > 0 else ("▼" if data["change"] < 0 else "▬")
     pts = sparkline_points(data["series"])
     spark = ""
