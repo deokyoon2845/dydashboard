@@ -36,12 +36,16 @@ _SCALE = {"JPYKRW=X": 100.0}
 # 색 반전 티커: 하락이 시장에 '긍정'인 지표 (예: 공포지수 VIX)
 _INVERT_COLOR = {"^VIX"}
 
+# 조회 기간 (기본 1개월, 국내 지수는 6개월 추세를 카드에 표시)
+_PERIOD = {"^KS11": "6mo", "^KQ11": "6mo"}
+
 
 @st.cache_data(ttl=600)  # 10분 동안 결과 재사용 -> 야후 과다 호출 방지
 def fetch_index(ticker: str):
     """티커 1개의 현재값/등락/최근 추이를 가져온다. 실패하면 None을 반환."""
     try:
-        df = yf.Ticker(ticker).history(period="1mo", interval="1d")
+        period = _PERIOD.get(ticker, "1mo")
+        df = yf.Ticker(ticker).history(period=period, interval="1d")
         if df.empty or len(df) < 2:
             return None
 
@@ -67,9 +71,10 @@ def fetch_index(ticker: str):
             "current": current,
             "change": change,
             "pct": pct,
-            "series": close,  # 차트에 쓸 최근 1개월 종가 흐름
+            "series": close,  # 차트에 쓸 종가 흐름 (기간은 _PERIOD 기준)
             "asof": asof,
             "invert_color": ticker in _INVERT_COLOR,  # 하락=긍정 색 표시
+            "spark_n": 130 if period == "6mo" else 20,  # 카드 차트에 쓸 포인트 수
         }
     except Exception:
         # 야후가 일시적으로 막거나 티커가 잘못된 경우
