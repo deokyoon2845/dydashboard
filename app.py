@@ -26,6 +26,24 @@ from modules.ticker_tape import render_ticker_tape
 load_dotenv()
 st.set_page_config(page_title="DY Monitoring", page_icon="📈", layout="wide")
 
+# ── 타임라인 카드 클릭(?rpt=파일명) → 해당 보고서 선택 ──
+# 추세 탭 타임라인의 카드는 ?rpt=YYYY-MM-DD_HHMM.json 링크로 연결됨.
+# 여기서 읽어 선택 상태로 반영하고, URL은 정리(중복 rerun 방지).
+try:
+    _rpt_param = st.query_params.get("rpt")
+except Exception:
+    _rpt_param = None
+if _rpt_param:
+    from pathlib import Path as _Path
+    _cand = _Path("reports") / _rpt_param
+    if _cand.exists():
+        st.session_state["rpt_picked_path"] = str(_cand)
+        st.session_state["rpt_jump_notice"] = _rpt_param
+    try:
+        del st.query_params["rpt"]
+    except Exception:
+        pass
+
 if "dark" not in st.session_state:
     st.session_state["dark"] = False
 dark = st.session_state["dark"]
@@ -443,6 +461,12 @@ def _can_generate():
 def render_report_tab():
     st.markdown('<div class="rpt-bar"></div>', unsafe_allow_html=True)
     st.title("전략·시황 보고서")
+
+    # 타임라인에서 카드 클릭으로 넘어온 경우 안내
+    jumped = st.session_state.pop("rpt_jump_notice", None)
+    if jumped:
+        st.info(f"📍 추세 타임라인에서 선택한 보고서를 표시하고 있어요. "
+                f"최신 보고서로 돌아가려면 아래 '지난 리포트 보기'에서 변경하세요.")
 
     # 1) 리포트 먼저 표시 (좌 2/3 본문 · 우 1/3 내 종목/주목 테마)
     render_reports()
