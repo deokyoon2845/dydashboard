@@ -7,6 +7,10 @@ URL을 새로 만들지 않으므로 가짜 링크가 생기지 않습니다.
 - 키워드 15개, 키워드당 대표 기사 최대 3개
 - '코스피 1.2% 상승' 같은 단순 시세/등락 뉴스는 사전 필터로 제외
 - 의미가 겹치는 키워드는 대표어로 통합하도록 지시
+- 같은 '사건'에서 파생된 키워드(원인↔결과)도 하나로 통합
+- 카테고리 균형 (거시 편중 방지)
+- 같은 기사가 여러 키워드에 중복 배정되지 않도록 코드 레벨 차단
+- 오늘 처음 등장한 키워드에 is_new 플래그 (뷰어의 NEW 배지용)
 """
 
 import json
@@ -66,7 +70,6 @@ def _compute_streaks(today_keywords, now):
     def _norm(k):
         return k.lower().replace(" ", "")
 
-    today_set = {_norm(k) for k in today_keywords}
     streaks = {k: 1 for k in today_keywords}        # 오늘 포함 최소 1
 
     if not KW_ARCHIVE_DIR.exists():
@@ -100,6 +103,22 @@ def _compute_streaks(today_keywords, now):
     return consecutive_days
 
 
+def _has_prev_archive(now) -> bool:
+    """오늘 이전 날짜의 키워드 아카이브가 하나라도 있는지 (NEW 배지 오발동 방지)."""
+    if not KW_ARCHIVE_DIR.exists():
+        return False
+    today = now.date()
+    for f in KW_ARCHIVE_DIR.glob("*.json"):
+        try:
+            y, m, d = f.stem.split("-")
+            from datetime import date as _date
+            if _date(int(y), int(m), int(d)) < today:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def build_today_keywords() -> dict:
     raw_articles = fetch_market_news()
     if not raw_articles:
@@ -121,6 +140,15 @@ def build_today_keywords() -> dict:
         "- 의미가 겹치는 키워드는 하나의 대표어로 통합하세요 "
         "(예: AI/인공지능/챗GPT → 'AI', 반도체/메모리/HBM → 적절한 대표어). "
         "절대 비슷한 키워드를 중복해서 만들지 마세요.\n"
+        "- ★사건 단위 통합: 같은 '사건'에서 파생된 원인과 결과를 별개 키워드로 쪼개지 마세요. "
+        "키워드는 '원인이 되는 사건' 기준 하나만 만들고, 그로 인한 지수 급등락·사이드카 발동·"
+        "투자심리 회복 같은 '결과 현상'은 그 키워드에 흡수시킵니다 "
+        "(나쁜 예: '중동 종전 기대' + '매수 사이드카' + '코스닥 회복'을 각각 생성 → "
+        "좋은 예: '중동 종전 기대감' 하나로 통합). 15개 슬롯은 서로 다른 사건·주제로 채우세요.\n"
+        "- ★카테고리 균형: 거시 키워드는 최대 6개까지만. 섹터와 종목 카테고리를 합쳐 "
+        "5개 이상 포함되도록, 덜 중요한 거시 이슈 대신 구체적인 섹터·개별 기업 이슈를 발굴하세요.\n"
+        "- 하나의 기사 번호는 가능한 한 키워드에만 배정하세요. 두 키워드가 같은 기사를 "
+        "공유해야 한다면 그 둘은 사실 같은 키워드라는 신호이니 통합을 먼저 검토하세요.\n"
         "- '코스피 1% 상승' 같은 단순 지수 등락은 키워드가 아닙니다. "
         "실적·정책·계약·기술·수급 등 '사건/원인'이 되는 키워드를 뽑으세요.\n"
         "- '관련주', '수혜주', '테마주' 같은 일반어는 키워드로 쓰지 마세요.\n"
@@ -146,6 +174,7 @@ def build_today_keywords() -> dict:
         return {"ok": False, "reason": "AI 응답을 해석하지 못했습니다. 다시 시도해주세요."}
 
     items, seen_kw = [], set()
+    used_urls = set()                             # 키워드 간 기사 중복 배정 차단
     for obj in parsed:
         kw = str(obj.get("keyword", "")).strip()
         if not kw:
@@ -155,7 +184,7 @@ def build_today_keywords() -> dict:
             continue
         seen_kw.add(norm)
 
-        # 기사 번호 → 실제 기사 (중복 url 제거, 최대 3개)
+        # 기사 번호 → 실제 기사 (카드 내 + 카드 간 중복 url 제거, 최대 3개)
         idxs = obj.get("article_indices") or obj.get("article_index")
         if isinstance(idxs, int):
             idxs = [idxs]
@@ -163,12 +192,13 @@ def build_today_keywords() -> dict:
         for idx in (idxs or []):
             if isinstance(idx, int) and 0 <= idx < len(articles):
                 art = articles[idx]
-                if art["url"] in news_seen:
+                if art["url"] in news_seen or art["url"] in used_urls:
                     continue
                 news_seen.add(art["url"])
                 news.append({"title": art["title"], "url": art["url"]})
             if len(news) >= 3:
                 break
+        used_urls.update(n["url"] for n in news)
 
         cat = str(obj.get("category", "")).strip()
         if cat not in CATEGORIES:
@@ -193,8 +223,11 @@ def build_today_keywords() -> dict:
 
     # 연속 등장(streak) 계산 — 아카이브의 직전 날짜들과 비교
     streaks = _compute_streaks([it["keyword"] for it in items], now)
+    prev_exists = _has_prev_archive(now)
     for it in items:
         it["streak"] = streaks.get(it["keyword"], 1)
+        # NEW: 과거 아카이브가 존재하는데 오늘 처음(연속 1일) 등장한 키워드
+        it["is_new"] = bool(prev_exists and it["streak"] <= 1)
 
     payload = {"generated": now.isoformat(), "items": items}
     KW_PATH.parent.mkdir(exist_ok=True)
