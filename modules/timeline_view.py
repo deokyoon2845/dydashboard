@@ -224,7 +224,7 @@ def _card_html(e: dict, idx_rec, latest: bool, mobile: bool = False) -> str:
 
 
 def _svg_html(entries: list) -> str:
-    """트랙 + 노드 사이 진행 화살표 + mood 노드. 노드는 균등 간격."""
+    """트랙 + mood 노드. 노드는 균등 간격."""
     n = len(entries)
     w = 960
     parts = [f'<svg class="tl-svg" viewBox="0 0 {w} 64" preserveAspectRatio="none">',
