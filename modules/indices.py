@@ -19,17 +19,23 @@ INDEX_GROUPS = {
     },
     "환율": {
         "원/달러": "KRW=X",
-        "원/엔": "KRWJPY=X",
-        "원/유로": "KRWEUR=X",
-        "원/위안": "KRWCNY=X",
+        "원/100엔": "JPYKRW=X",   # 1엔당 원화 × 100 (한국 관행 표기)
+        "원/유로": "EURKRW=X",
+        "원/위안": "CNYKRW=X",
         "달러 인덱스": "DX-Y.NYB",
     },
     "변동성·원자재": {
         "VIX": "^VIX",
-        "금": "GC=F",
-        "WTI 유가": "CL=F",
+        "금 ($/oz)": "GC=F",
+        "WTI 유가 ($/bbl)": "CL=F",
     },
 }
+
+# 표시 배율: 100엔당 원화 표기를 위해 JPYKRW=X 는 ×100
+_SCALE = {"JPYKRW=X": 100.0}
+
+# 색 반전 티커: 하락이 시장에 '긍정'인 지표 (예: 공포지수 VIX)
+_INVERT_COLOR = {"^VIX"}
 
 
 @st.cache_data(ttl=600)  # 10분 동안 결과 재사용 -> 야후 과다 호출 방지
@@ -41,6 +47,12 @@ def fetch_index(ticker: str):
             return None
 
         close = df["Close"].dropna()
+
+        # 표시 배율 적용 (예: 원/100엔)
+        scale = _SCALE.get(ticker, 1.0)
+        if scale != 1.0:
+            close = close * scale
+
         current = float(close.iloc[-1])   # 가장 최근 종가
         prev = float(close.iloc[-2])      # 그 전 거래일 종가
         change = current - prev
@@ -58,6 +70,7 @@ def fetch_index(ticker: str):
             "pct": pct,
             "series": close,  # 차트에 쓸 최근 1개월 종가 흐름
             "asof": asof,
+            "invert_color": ticker in _INVERT_COLOR,  # 하락=긍정 색 표시
         }
     except Exception:
         # 야후가 일시적으로 막거나 티커가 잘못된 경우
