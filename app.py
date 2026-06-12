@@ -256,21 +256,38 @@ def _supply_html(supply_data: dict) -> str:
 
 
 # ── 국내 지수 대형 차트 (코스피·코스닥, 기간 선택) ──
-_KRX_PERIODS = {"1개월": "1mo", "3개월": "3mo", "6개월": "6mo", "1년": "1y"}
+_KRX_PERIODS = {"1개월": 31, "3개월": 92, "6개월": 183, "1년": 366}  # 일수 기준 슬라이스
 
 
-def _big_index_chart(name: str, ticker: str, period: str, dark: bool):
-    """기간 선택형 대형 지수 차트 + 현재가/전일 대비 헤더."""
-    close = fetch_history(ticker, period)
+def _big_index_chart(name: str, ticker: str, days: int, dark: bool):
+    """기간 선택형 대형 지수 차트 + 현재가/전일 대비 헤더.
+
+    1년치를 한 번만 받아 날짜로 잘라 쓴다 (yfinance period 문자열의 들쭉날쭉함 회피).
+    y축은 Altair 자동 스케일(zero=False) — 수동 domain 계산으로 인한 렌더 깨짐 방지.
+    """
+    close = fetch_history(ticker, "1y")
     if close is None or len(close) < 2:
-        st.caption(f"{name} 데이터를 불러오지 못했어요.")
+        st.caption(f"{name} 데이터를 불러오지 못했어요. (잠시 후 새로고침)")
         return
 
-    cur, prev = float(close.iloc[-1]), float(close.iloc[-2])
+    # 숫자/날짜 정제 — NaN·이상치가 한 점이라도 섞이면 차트가 깨질 수 있어 방어
+    df = pd.DataFrame({"날짜": pd.to_datetime(close.index),
+                       "종가": pd.to_numeric(close.values, errors="coerce")}).dropna()
+    if len(df) < 2:
+        st.caption(f"{name} 데이터가 부족해요.")
+        return
+
+    # 기간 슬라이스 (마지막 거래일 기준 N일)
+    cutoff = df["날짜"].max() - pd.Timedelta(days=days)
+    seg = df[df["날짜"] >= cutoff]
+    if len(seg) < 2:
+        seg = df
+
+    cur, prev = float(seg["종가"].iloc[-1]), float(seg["종가"].iloc[-2])
     change = cur - prev
     pct = (change / prev) * 100 if prev else 0.0
     day_up = change >= 0
-    period_up = cur >= float(close.iloc[0])   # 차트 색은 '기간 전체' 방향 기준
+    period_up = cur >= float(seg["종가"].iloc[0])   # 차트 색은 '기간 전체' 방향 기준
 
     up_c = "#F0A3AB" if dark else "#B65F5A"
     down_c = "#94B6EA" if dark else "#5A7CA0"
@@ -287,17 +304,13 @@ def _big_index_chart(name: str, ticker: str, period: str, dark: bool):
         f'<span class="mkt-chg {chg_cls}">{arrow} {change:+,.2f} ({pct:+.2f}%)</span>'
         f'</div>', unsafe_allow_html=True)
 
-    df = pd.DataFrame({"날짜": close.index, "종가": close.values})
-    lo, hi = float(close.min()), float(close.max())
-    pad = (hi - lo) * 0.05 or 1.0
-
-    chart = alt.Chart(df).mark_area(
+    chart = alt.Chart(seg).mark_area(
         color=line_c, opacity=0.13,
         line={"color": line_c, "strokeWidth": 2},
     ).encode(
         x=alt.X("날짜:T", axis=alt.Axis(title=None, format="%m/%d",
                                        labelColor=axis_c, grid=False)),
-        y=alt.Y("종가:Q", scale=alt.Scale(domain=[lo - pad, hi + pad]),
+        y=alt.Y("종가:Q", scale=alt.Scale(zero=False, nice=True),
                 axis=alt.Axis(title=None, labelColor=axis_c, gridColor=grid_c,
                               format=",.0f")),
         tooltip=[alt.Tooltip("날짜:T", format="%Y-%m-%d"),
@@ -311,14 +324,14 @@ def _render_domestic_charts():
     period_label = st.radio(
         "조회 기간", list(_KRX_PERIODS.keys()), index=2, horizontal=True,
         key="krx_chart_period", label_visibility="collapsed")
-    period = _KRX_PERIODS[period_label]
+    days = _KRX_PERIODS[period_label]
     dark = st.session_state.get("dark", False)
 
     c1, c2 = st.columns(2, gap="medium")
     with c1:
-        _big_index_chart("코스피", "^KS11", period, dark)
+        _big_index_chart("코스피", "^KS11", days, dark)
     with c2:
-        _big_index_chart("코스닥", "^KQ11", period, dark)
+        _big_index_chart("코스닥", "^KQ11", days, dark)
 
 
 # ── 지수 현황 탭 렌더 ──
