@@ -4,12 +4,14 @@ import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import altair as alt
+import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
 from modules.indices import (
     INDEX_GROUPS, fetch_index, sparkline_points,
-    fetch_supply_demand_summary,
+    fetch_supply_demand_summary, fetch_history,
 )
 from modules.calendar_view import render_calendar
 from modules.timeline_view import render_timeline
@@ -253,6 +255,72 @@ def _supply_html(supply_data: dict) -> str:
     return "".join(parts)
 
 
+# ── 국내 지수 대형 차트 (코스피·코스닥, 기간 선택) ──
+_KRX_PERIODS = {"1개월": "1mo", "3개월": "3mo", "6개월": "6mo", "1년": "1y"}
+
+
+def _big_index_chart(name: str, ticker: str, period: str, dark: bool):
+    """기간 선택형 대형 지수 차트 + 현재가/전일 대비 헤더."""
+    close = fetch_history(ticker, period)
+    if close is None or len(close) < 2:
+        st.caption(f"{name} 데이터를 불러오지 못했어요.")
+        return
+
+    cur, prev = float(close.iloc[-1]), float(close.iloc[-2])
+    change = cur - prev
+    pct = (change / prev) * 100 if prev else 0.0
+    day_up = change >= 0
+    period_up = cur >= float(close.iloc[0])   # 차트 색은 '기간 전체' 방향 기준
+
+    up_c = "#F0A3AB" if dark else "#B65F5A"
+    down_c = "#94B6EA" if dark else "#5A7CA0"
+    line_c = up_c if period_up else down_c
+    axis_c = "#9A9CAB" if dark else "#9a9b92"
+    grid_c = "#3A3D49" if dark else "#ECEDE7"
+
+    arrow = "▲" if change > 0 else ("▼" if change < 0 else "▬")
+    chg_cls = "up" if day_up else "down"
+    st.markdown(
+        f'<div style="margin-bottom:2px;">'
+        f'<span class="mkt-name">{name}</span><br>'
+        f'<span class="mkt-val" style="font-size:24px;">{cur:,.2f}</span> '
+        f'<span class="mkt-chg {chg_cls}">{arrow} {change:+,.2f} ({pct:+.2f}%)</span>'
+        f'</div>', unsafe_allow_html=True)
+
+    df = pd.DataFrame({"날짜": close.index, "종가": close.values})
+    lo, hi = float(close.min()), float(close.max())
+    pad = (hi - lo) * 0.05 or 1.0
+
+    chart = alt.Chart(df).mark_area(
+        color=line_c, opacity=0.13,
+        line={"color": line_c, "strokeWidth": 2},
+    ).encode(
+        x=alt.X("날짜:T", axis=alt.Axis(title=None, format="%m/%d",
+                                       labelColor=axis_c, grid=False)),
+        y=alt.Y("종가:Q", scale=alt.Scale(domain=[lo - pad, hi + pad]),
+                axis=alt.Axis(title=None, labelColor=axis_c, gridColor=grid_c,
+                              format=",.0f")),
+        tooltip=[alt.Tooltip("날짜:T", format="%Y-%m-%d"),
+                 alt.Tooltip("종가:Q", format=",.2f")],
+    ).properties(height=260, background="transparent").configure_view(strokeWidth=0)
+    st.altair_chart(chart, use_container_width=True)
+
+
+def _render_domestic_charts():
+    """코스피·코스닥 대형 차트 (좌우 반반, 전체 폭). 기간 선택 공유."""
+    period_label = st.radio(
+        "조회 기간", list(_KRX_PERIODS.keys()), index=2, horizontal=True,
+        key="krx_chart_period", label_visibility="collapsed")
+    period = _KRX_PERIODS[period_label]
+    dark = st.session_state.get("dark", False)
+
+    c1, c2 = st.columns(2, gap="medium")
+    with c1:
+        _big_index_chart("코스피", "^KS11", period, dark)
+    with c2:
+        _big_index_chart("코스닥", "^KQ11", period, dark)
+
+
 # ── 지수 현황 탭 렌더 ──
 def render_indices():
     st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
@@ -280,14 +348,19 @@ def render_indices():
             f'<div class="data-asof">데이터 기준 {next(iter(distinct))} · '
             f'해외 지수·환율은 직전 거래일 종가</div>', unsafe_allow_html=True)
 
-    # 3) 그룹별 렌더 (INDEX_GROUPS 정의 순서 그대로)
+    # 3) 그룹별 렌더 (INDEX_GROUPS 정의 순서 그대로 · 국내는 대형 차트)
     for group_name, datas in group_data.items():
-        items = list(datas.items())
         head = f'<div class="mkt-group">{group_name}'
         if not unified and group_asof[group_name]:
             head += f'<span class="grp-asof">기준 {group_asof[group_name]}</span>'
         head += "</div>"
         st.markdown(head, unsafe_allow_html=True)
+
+        if group_name == "국내":
+            _render_domestic_charts()
+            continue
+
+        items = list(datas.items())
         cards = "".join(_card_html(name, d) for name, d in items)
         st.markdown(f'<div class="mkt-grid">{cards}</div>', unsafe_allow_html=True)
 
