@@ -19,6 +19,7 @@ from modules.keywords_view import render_keywords
 from modules.trends import render_trends
 from modules.verify import render_verify
 from modules.usage import total_cost_usd
+from modules.ticker_tape import render_ticker_tape
 
 load_dotenv()
 st.set_page_config(page_title="DY Monitoring", page_icon="📈", layout="wide")
@@ -190,6 +191,9 @@ with hc2:
     st.toggle("🌙 다크", key="dark")
 st.markdown('<hr style="border:none;border-top:1px solid var(--line);margin:6px 0 14px;">',
             unsafe_allow_html=True)
+
+# ── 전광판 (모든 탭 공통, 헤더와 탭 사이) ──
+render_ticker_tape()
 
 
 # ── 지수 카드 HTML ──
