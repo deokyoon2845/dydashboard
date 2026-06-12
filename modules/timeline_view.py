@@ -23,7 +23,7 @@ _MOOD_MAP = {"positive": ("긍정", "pos", "#2E7D5B"),
              "cautious": ("주의", "cau", "#C2410C")}
 _SEC_TITLE_KEYS = ("title", "name", "heading", "제목")
 _MAX_SECTIONS = 5
-_TRUNC = 20
+_TRUNC = 60
 
 _TL_CSS = """
 <style>
@@ -130,8 +130,10 @@ def load_timeline_entries(limit: int, sig: str) -> list:
 @st.cache_data(ttl=1800)
 def _index_daily_map() -> dict:
     """날짜(YYYY-MM-DD) → {'ks_close','ks_pct','kq_close','kq_pct'}.
-    코스피(^KS11)·코스닥(^KQ11) 일별 종가와 등락률. 실패한 지수는 키 없음."""
+    코스피·코스닥 일별 종가와 등락률. 1차 yfinance, 빠진 날짜는 pykrx로 보충.
+    (당일은 장 마감 전이면 종가가 없어 표시되지 않음 — 정상)"""
     out = {}
+    # 1차: yfinance
     for prefix, ticker in (("ks", "^KS11"), ("kq", "^KQ11")):
         try:
             close = fetch_history(ticker, "3mo")
@@ -147,6 +149,29 @@ def _index_daily_map() -> dict:
                     rec[f"{prefix}_pct"] = float(p)
         except Exception:
             continue
+    # 2차: pykrx — yfinance가 빼먹은 최근 날짜 보충 (1001=코스피, 2001=코스닥)
+    try:
+        from datetime import date, timedelta
+        from pykrx import stock as _krx
+        end = date.today().strftime("%Y%m%d")
+        start = (date.today() - timedelta(days=100)).strftime("%Y%m%d")
+        for prefix, code in (("ks", "1001"), ("kq", "2001")):
+            try:
+                df = _krx.get_index_ohlcv(start, end, code)
+                closes = df["종가"].dropna()
+                pcts = closes.pct_change() * 100
+                for ts, c in closes.items():
+                    key = ts.strftime("%Y-%m-%d")
+                    rec = out.setdefault(key, {})
+                    if f"{prefix}_close" not in rec:
+                        rec[f"{prefix}_close"] = float(c)
+                        p = pcts.get(ts)
+                        if p == p:
+                            rec[f"{prefix}_pct"] = float(p)
+            except Exception:
+                continue
+    except Exception:
+        pass
     return out
 
 
@@ -206,15 +231,6 @@ def _svg_html(entries: list) -> str:
              f'<line x1="10" y1="40" x2="{w-20}" y2="40" stroke="#D3D1C7" stroke-width="2"/>',
              f'<path d="M{w-20},40 l-12,-7 v14 z" fill="#D3D1C7"/>']
     xs = [(i + 0.5) / n * w for i in range(n)]
-    # 노드 사이 진행 화살표
-    arrows = []
-    for i in range(n - 1):
-        mx = (xs[i] + xs[i + 1]) / 2
-        arrows.append(f'<path d="M{mx:.0f},22 l14,-7 m0,0 l-14,-7 m14,7 h-26"/>')
-    if arrows:
-        parts.append('<g fill="none" stroke="#B4B2A9" stroke-width="2" '
-                     'stroke-linecap="round" stroke-linejoin="round">'
-                     + "".join(arrows) + "</g>")
     for i, (x, e) in enumerate(zip(xs, entries)):
         r = 11 if i == n - 1 else 8
         parts.append(f'<circle cx="{x:.0f}" cy="40" r="{r}" fill="{e["mood_color"]}" '
