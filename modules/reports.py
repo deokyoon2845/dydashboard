@@ -1,4 +1,8 @@
-"""전략·시황 보고서 뷰어 — 삭제·PDF 다운로드 지원, 미니멀 미스트 디자인."""
+"""전략·시황 보고서 뷰어 — 삭제·PDF 다운로드 지원, 미니멀 미스트 디자인.
+
+레이아웃: render_reports() = 리포트 표시 (좌 2/3 본문 · 우 1/3 내 종목/주목 테마)
+        render_reports_manage() = 지난 리포트 보기 + 삭제 UI (하단 배치용)
+"""
 
 import json
 import re
@@ -30,12 +34,15 @@ __MOOD_BADGE_CSS__
 .rpt-sec{margin:20px 0 0;}
 .rpt-sec-title{font-size:15.5px;font-weight:700;color:var(--ink,#34352f);border-bottom:2px solid var(--sage,#A7BBA9);padding-bottom:5px;margin-bottom:9px;}
 .rpt-sec-body{font-size:14px;line-height:1.9;color:var(--ink,#34352f);margin:0;}
-.rpt-group-label{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted,#9a9b92);margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--line,#ECEDE7);}
+.rpt-group-label{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted,#9a9b92);margin:0 0 12px;padding-bottom:6px;border-bottom:1px solid var(--line,#ECEDE7);}
+.rpt-side .rpt-group-label{margin-top:4px;}
+.rpt-side .rpt-group-label + .theme-card{margin-top:0;}
 .theme-card{background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);border-left:3px solid var(--sage,#A7BBA9);border-radius:0 13px 13px 0;padding:13px 16px 11px;margin-bottom:10px;}
 .theme-name{font-size:14px;font-weight:700;color:var(--ink,#34352f);margin-bottom:5px;}
 .theme-detail{font-size:13px;line-height:1.75;color:var(--ink,#34352f);margin-bottom:8px;}
 .theme-tickers{font-size:11.5px;color:var(--muted,#9a9b92);}
 .theme-tickers a{color:var(--sage-deep,#7E9A83);font-weight:600;text-decoration:none;background:var(--pill-bg,#F1F2EC);padding:2px 8px;border-radius:6px;border:1px solid var(--line,#ECEDE7);margin-right:4px;}
+.rpt-side-gap{height:20px;}
 </style>
 """
 
@@ -98,7 +105,7 @@ def _label_with_headline(path: Path) -> str:
 
 
 def _extract_stocks(text: str) -> list:
-    """종목명 추출 — JSON·구형 MD 양쪽 지원. (trends.py 호환용)"""
+    """종목명 추출 — JSON·구형 MD 양쪽 지원. (외부 모듈 호환용)"""
     try:
         data = json.loads(text)
         stocks = set()
@@ -122,9 +129,19 @@ def _extract_stocks(text: str) -> list:
             if p.strip() and len(p.strip()) <= 20 and not p.strip().startswith("#")]
 
 
-# ── 렌더링 ──────────────────────────────────────────────────
+def _selected_report(files):
+    """현재 선택된 리포트 (기본 = 최신). render_reports / render_reports_manage 공용."""
+    selected = files[0]
+    picked_key = st.session_state.get("rpt_picked_path")
+    if picked_key and Path(picked_key).exists() and Path(picked_key) in files:
+        selected = Path(picked_key)
+    return selected
 
-def _render_report(data: dict):
+
+# ── 렌더링: 본문 (좌측 2/3) ──────────────────────────────────
+
+def _render_report_main(data: dict):
+    """헤드라인 · 오늘의 관전 · 본문 섹션."""
     mood     = data.get("mood", "neutral")
     mood_ko  = MOOD_KO.get(mood, mood)
     mood_cls = MOOD_CLS.get(mood, "mood-neu")
@@ -162,9 +179,18 @@ def _render_report(data: dict):
             f'<div class="rpt-sec-body">{body}</div>'
             f'</div>', unsafe_allow_html=True)
 
+
+# ── 렌더링: 사이드 (우측 1/3) ────────────────────────────────
+
+def _render_report_side(data: dict):
+    """내 종목 · 주목 테마."""
+    rendered = False
+
     wl = data.get("watchlist_mentions", [])
     if wl:
-        st.markdown('<div class="rpt-group-label">⭐ 내 종목</div>', unsafe_allow_html=True)
+        st.markdown('<div class="rpt-side">'
+                    '<div class="rpt-group-label">⭐ 내 종목</div></div>',
+                    unsafe_allow_html=True)
         for w in wl:
             stock = w.get("stock", "")
             summary = w.get("summary", "")
@@ -176,10 +202,15 @@ def _render_report(data: dict):
                 f'style="color:inherit;text-decoration:none;">{stock}</a></div>'
                 f'<div class="theme-detail">{summary}</div>'
                 f'</div>', unsafe_allow_html=True)
+        rendered = True
 
     themes = data.get("themes", [])
     if themes:
-        st.markdown('<div class="rpt-group-label">주목 테마</div>', unsafe_allow_html=True)
+        if rendered:
+            st.markdown('<div class="rpt-side-gap"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="rpt-side">'
+                    '<div class="rpt-group-label">주목 테마</div></div>',
+                    unsafe_allow_html=True)
         for th in themes:
             name    = th.get("name", "")
             detail  = th.get("detail", "")
@@ -193,6 +224,10 @@ def _render_report(data: dict):
                 f'<div class="theme-detail">{detail}</div>'
                 + (f'<div class="theme-tickers">관련: {tickers_html}</div>' if tickers_html else "")
                 + '</div>', unsafe_allow_html=True)
+        rendered = True
+
+    if not rendered:
+        st.caption("이 리포트에는 내 종목·테마 정보가 없어요.")
 
 
 # ── 삭제 UI ─────────────────────────────────────────────────
@@ -221,9 +256,10 @@ def _render_delete_ui(files):
                 st.rerun()
 
 
-# ── 메인 ────────────────────────────────────────────────────
+# ── 메인: 리포트 표시 (탭 상단 배치용) ───────────────────────
 
 def render_reports():
+    """최신(또는 선택된) 리포트를 좌 2/3 본문 · 우 1/3 사이드로 표시."""
     st.markdown(_RPT_CSS, unsafe_allow_html=True)
 
     files = list_reports()
@@ -231,17 +267,57 @@ def render_reports():
         st.markdown(
             '<div class="empty"><div class="ico">📰</div>'
             '<div class="msg">아직 생성된 리포트가 없어요</div>'
-            '<div class="hint">📝 리포트 생성 버튼으로 첫 리포트를 만들어보세요</div></div>',
+            '<div class="hint">📝 아래 리포트 생성 버튼으로 첫 리포트를 만들어보세요</div></div>',
             unsafe_allow_html=True)
         return
 
-    # files 는 최신순 정렬 → 기본은 최신 리포트
-    selected = files[0]
-    picked_key = st.session_state.get("rpt_picked_path")
-    if picked_key and Path(picked_key).exists() and Path(picked_key) in files:
-        selected = Path(picked_key)
-
+    selected = _selected_report(files)
     is_latest = (selected == files[0])
+
+    try:
+        data = _load(selected)
+    except Exception as e:
+        st.error(f"리포트를 불러오지 못했어요: {e}")
+        return
+
+    # 최신/과거 표시 배지 + PDF 다운로드 (한 줄 정렬)
+    badge = "최신" if is_latest else f"과거 · {_label(selected)}"
+    meta_col, pdf_col = st.columns([3, 1])
+    with meta_col:
+        st.caption(f"📄 {badge} 리포트")
+    with pdf_col:
+        try:
+            from modules.report_pdf import build_pdf
+            pdf_bytes = build_pdf(data)
+            st.download_button(
+                "📄 PDF",
+                data=pdf_bytes,
+                file_name=f"{selected.stem}.pdf",
+                mime="application/pdf",
+                key="rpt_pdf_dl",
+                use_container_width=True)
+        except Exception as e:
+            st.caption(f"PDF 불가: {e}")
+
+    # 좌 2/3 본문 · 우 1/3 내 종목/주목 테마 (모바일에선 자동 세로 스택)
+    left, right = st.columns([2, 1], gap="large")
+    with left:
+        _render_report_main(data)
+    with right:
+        _render_report_side(data)
+
+
+# ── 메인: 리포트 관리 (탭 하단 배치용) ───────────────────────
+
+def render_reports_manage():
+    """지난 리포트 보기 + 삭제 UI. render_reports() 아래쪽에 배치."""
+    files = list_reports()
+    if not files:
+        return
+
+    selected = _selected_report(files)
+    is_latest = (selected == files[0])
+    picked_key = st.session_state.get("rpt_picked_path")
 
     # 과거 리포트 탐색 (접이식)
     if len(files) > 1:
@@ -273,33 +349,5 @@ def render_reports():
             else:
                 st.caption("해당 기간에 리포트가 없습니다.")
 
-    try:
-        data = _load(selected)
-    except Exception as e:
-        st.error(f"리포트를 불러오지 못했어요: {e}")
-        return
-
-    # 최신/과거 표시 배지 + PDF 다운로드 (한 줄 정렬)
-    badge = "최신" if is_latest else f"과거 · {_label(selected)}"
-    meta_col, pdf_col = st.columns([3, 1])
-    with meta_col:
-        st.caption(f"📄 {badge} 리포트")
-    with pdf_col:
-        try:
-            from modules.report_pdf import build_pdf
-            pdf_bytes = build_pdf(data)
-            st.download_button(
-                "📄 PDF",
-                data=pdf_bytes,
-                file_name=f"{selected.stem}.pdf",
-                mime="application/pdf",
-                key="rpt_pdf_dl",
-                use_container_width=True)
-        except Exception as e:
-            st.caption(f"PDF 불가: {e}")
-
-    _render_report(data)
-
-    # 삭제 UI (하단)
-    st.divider()
+    # 삭제 UI
     _render_delete_ui(files)
