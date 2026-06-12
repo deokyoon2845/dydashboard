@@ -169,7 +169,12 @@ def _render_items(items, show_quote, watch_set, cat_filter="전체"):
                 f'{html.escape(n.get("title",""))} ↗</a>'
                 for n in news_list[:2] if n.get("url"))
             news_html = f'<div class="kw-news">{links}</div>'
-        weak_html = '<div class="kw-weak">근거 기사 1건 — 참고만 하세요</div>' if n_news <= 1 else ""
+        if n_news == 0:
+            weak_html = '<div class="kw-weak">대표 기사 없음 — 상위 키워드와 겹치는 주제일 수 있어요</div>'
+        elif n_news == 1:
+            weak_html = '<div class="kw-weak">근거 기사 1건 — 참고만 하세요</div>'
+        else:
+            weak_html = ""
 
         cards.append(
             f'<div class="{card_cls}">'
