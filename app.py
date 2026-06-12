@@ -208,7 +208,7 @@ def _card_html(name, data):
     tint = "mkt-up" if good else "mkt-down"
     v = "--up" if good else "--down"
     arrow = "▲" if data["change"] > 0 else ("▼" if data["change"] < 0 else "▬")
-    pts = sparkline_points(data["series"])
+    pts = sparkline_points(data["series"], n=data.get("spark_n", 20))
     spark = ""
     if pts:
         spark = (f'<svg class="mkt-spark" viewBox="0 0 100 28" preserveAspectRatio="none">'
