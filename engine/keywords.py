@@ -185,19 +185,26 @@ def build_today_keywords() -> dict:
         seen_kw.add(norm)
 
         # 기사 번호 → 실제 기사 (카드 내 + 카드 간 중복 url 제거, 최대 3개)
+        # 단, 전부 상위 키워드와 겹쳐도 카드당 최소 1건은 보장 (공유 허용)
         idxs = obj.get("article_indices") or obj.get("article_index")
         if isinstance(idxs, int):
             idxs = [idxs]
-        news, news_seen = [], set()
+        news, news_seen, shared_pool = [], set(), []
         for idx in (idxs or []):
             if isinstance(idx, int) and 0 <= idx < len(articles):
                 art = articles[idx]
-                if art["url"] in news_seen or art["url"] in used_urls:
+                if art["url"] in news_seen:
+                    continue
+                if art["url"] in used_urls:
+                    shared_pool.append(art)       # 이미 다른 카드에 배정된 기사
                     continue
                 news_seen.add(art["url"])
                 news.append({"title": art["title"], "url": art["url"]})
             if len(news) >= 3:
                 break
+        if not news and shared_pool:              # 최소 1건 보장
+            art = shared_pool[0]
+            news.append({"title": art["title"], "url": art["url"]})
         used_urls.update(n["url"] for n in news)
 
         cat = str(obj.get("category", "")).strip()
