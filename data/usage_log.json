@@ -25,5 +25,14 @@
     "cost_usd": 0.008926,
     "kind": "keywords",
     "count": 15
+  },
+  {
+    "time": "2026-06-12T21:03:12.520061+09:00",
+    "model": "claude-haiku-4-5",
+    "input_tokens": 5576,
+    "output_tokens": 1033,
+    "cost_usd": 0.010741,
+    "kind": "keywords",
+    "count": 15
   }
 ]
