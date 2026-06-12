@@ -7,13 +7,16 @@
 
 import calendar as _pycal
 import html as _html
+import json
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 import streamlit as st
 
 from engine.calendar_events import upcoming_events, fetch_next_earnings
 
-_CAT_CHIP = {"미국": "calm-us", "한국": "calm-kr", "실적": "calm-earn"}
+_CAL_PATH = Path("data/calendar.json")
+_CAT_CHIP = {"미국": "calm-us", "한국": "calm-kr", "실적": "calm-earn", "기타": "calm-etc"}
 _CAT_CLASS = {"미국": "cal-us", "한국": "cal-kr", "실적": "cal-earn"}  # 모바일 리스트용
 _WD_HEAD = ["일", "월", "화", "수", "목", "금", "토"]
 _MAX_MONTH_AHEAD = 2  # 이번 달 + 2개월까지 탐색
@@ -39,6 +42,7 @@ _CAL_CSS = """
 .calm-us{background:var(--tint-down,#F1F5F9);color:#2C5F7C;}
 .calm-kr{background:var(--tint-up,#FBF2F2);color:#B65F5A;}
 .calm-earn{background:var(--summary-bg,#F6F7F2);color:var(--sage-deep,#7E9A83);}
+.calm-etc{background:var(--pill-bg,#F1F2EC);color:var(--pill-ink,#5d6258);}
 .app.dark .calm-us{color:#9CC4DC;} .app.dark .calm-kr{color:#F0A3AB;}
 .calm-next{font-size:12px;color:var(--muted,#9a9b92);margin:4px 2px 8px;}
 .calm-next b{color:var(--ink,#34352f);}
@@ -193,3 +197,70 @@ def render_calendar(days: int = 90):
         '<div class="data-asof">FOMC·금통위·CPI는 공식 발표 일정 (연 1회 수동 갱신) · '
         '실적일은 yfinance 추정으로 변동 가능 · 칩에 마우스를 올리면 상세 표시</div>',
         unsafe_allow_html=True)
+
+    _render_event_editor()
+
+
+# ── 내 일정 추가·관리 ────────────────────────────────────────
+
+def _load_cal_raw() -> dict:
+    try:
+        return json.loads(_CAL_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {"events": [], "earnings_tickers": {}}
+
+
+def _save_cal_raw(data: dict):
+    _CAL_PATH.parent.mkdir(exist_ok=True)
+    _CAL_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _render_event_editor():
+    """사용자 일정 추가/삭제. data/calendar.json의 events에 custom=True로 저장."""
+    with st.expander("➕ 내 일정 추가·관리"):
+        st.caption("⚠️ 여기서 추가한 일정은 서버 재시작(Reboot·재배포) 시 사라질 수 있어요. "
+                   "영구 보관이 필요한 일정은 깃허브 저장소의 data/calendar.json에 직접 추가하세요.")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            d = st.date_input("날짜", min_value=date.today(), key="calx_date")
+        with c2:
+            cat = st.selectbox("카테고리", ["한국", "미국", "실적", "기타"], key="calx_cat")
+        name = st.text_input("일정 이름", placeholder="예: 삼성전자 실적 발표, 선물옵션 만기",
+                             key="calx_name")
+        note = st.text_input("메모 (선택)", placeholder="예: 장 마감 후 발표", key="calx_note")
+
+        if st.button("일정 추가", key="calx_add"):
+            if not name.strip():
+                st.warning("일정 이름을 입력해주세요.")
+            else:
+                raw = _load_cal_raw()
+                raw.setdefault("events", []).append({
+                    "date": d.strftime("%Y-%m-%d"),
+                    "name": name.strip(),
+                    "category": cat,
+                    "note": note.strip(),
+                    "custom": True,
+                })
+                _save_cal_raw(raw)
+                _load_all.clear()          # 일정 캐시 무효화 → 달력 즉시 반영
+                st.success("일정을 추가했어요.")
+                st.rerun()
+
+        customs = [(i, ev) for i, ev in enumerate(_load_cal_raw().get("events", []))
+                   if ev.get("custom")]
+        if customs:
+            st.markdown("**내가 추가한 일정**")
+            for i, ev in customs:
+                cc1, cc2 = st.columns([5, 1])
+                cc1.markdown(f"- {ev.get('date', '')} · {ev.get('name', '')} "
+                             f"({ev.get('category', '')})"
+                             + (f" — {ev['note']}" if ev.get("note") else ""))
+                if cc2.button("삭제", key=f"calx_del_{i}"):
+                    raw = _load_cal_raw()
+                    evs = raw.get("events", [])
+                    if 0 <= i < len(evs) and evs[i].get("custom"):
+                        evs.pop(i)
+                        _save_cal_raw(raw)
+                        _load_all.clear()
+                        st.rerun()
