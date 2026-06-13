@@ -25,12 +25,8 @@ _CAL_CSS = """
 <style>
 /* ── 달력 공통 ─────────────────────────────── */
 .calm-outer{background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);border-radius:14px;padding:12px 14px 14px;}
-.calm-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
-.calm-title{font-family:'Fraunces','Noto Sans KR',Georgia,serif;font-size:15px;font-weight:600;color:var(--ink,#34352f);}
-.calm-nav{display:flex;gap:6px;}
-.calm-btn{background:var(--pill-bg,#F1F2EC);border:1px solid var(--line,#ECEDE7);border-radius:7px;
-  color:var(--ink,#34352f);font-size:13px;font-weight:700;padding:4px 12px;cursor:pointer;line-height:1.4;}
-.calm-btn:disabled{opacity:.3;cursor:default;}
+.calm-navtitle{font-family:'Fraunces','Noto Sans KR',Georgia,serif;font-size:16px;font-weight:600;
+  color:var(--ink,#34352f);text-align:center;padding-top:6px;}
 .calm-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;}
 .calm-wd{font-size:10px;font-weight:700;color:var(--muted,#9a9b92);text-align:center;padding:2px 0 4px;}
 .calm-wd.sun{color:var(--up,#B65F5A);} .calm-wd.sat{color:var(--down,#5A7CA0);}
@@ -54,7 +50,6 @@ _CAL_CSS = """
 .calm-kr{background:var(--tint-up,#FBF2F2);color:#B65F5A;}
 .calm-earn{background:var(--summary-bg,#F6F7F2);color:var(--sage-deep,#7E9A83);}
 .calm-etc{background:var(--pill-bg,#F1F2EC);color:var(--pill-ink,#5d6258);}
-.app.dark .calm-us{color:#9CC4DC;} .app.dark .calm-kr{color:#F0A3AB;}
 .calm-next{font-size:12px;color:var(--muted,#9a9b92);margin:4px 2px 8px;}
 .calm-next b{color:var(--ink,#34352f);}
 </style>
@@ -95,19 +90,10 @@ def _chip_html(ev) -> str:
     return f'<span class="calm-chip {cls}" title="{tip}">{name}</span>'
 
 
-def _month_grid_html(year: int, month: int, ev_by_date: dict, today: date, off: int) -> str:
+def _month_grid_html(year: int, month: int, ev_by_date: dict, today: date) -> str:
+    """달력 본체(요일 헤더 + 날짜 칸)만 렌더. 월 이동 ◀▶ 와 제목은 상단 네이티브 행에서 처리."""
     cal = _pycal.Calendar(firstweekday=6)  # 일요일 시작
     weeks = cal.monthdayscalendar(year, month)
-
-    # ◀▶ 버튼은 HTML form + query_params 방식 대신 Streamlit hidden input trick 없이
-    # 순수 HTML로 렌더 — 버튼 클릭은 URL 파라미터 없이 st.session_state로 관리하므로
-    # 버튼을 HTML에 넣고 Streamlit button은 따로 숨긴 채 유지하는 방식이 가장 안전.
-    # → 결국 HTML 전용 버튼이 아닌 Streamlit 버튼을 달력 헤더 옆에 배치하되
-    #   columns 대신 순수 HTML flex row 안에 묶는다.
-    prev_dis = 'disabled' if off <= 0 else ''
-    next_dis = 'disabled' if off >= _MAX_MONTH_AHEAD else ''
-    prev_id = f"calm_prev_{year}_{month}"
-    next_id = f"calm_next_{year}_{month}"
 
     head = "".join(
         f'<div class="calm-wd{" sun" if i == 0 else (" sat" if i == 6 else "")}">{w}</div>'
@@ -131,13 +117,6 @@ def _month_grid_html(year: int, month: int, ev_by_date: dict, today: date, off: 
                          f'<div class="{day_cls}">{day}</div>{chips}</div>')
 
     return (f'<div class="calm-outer">'
-            f'<div class="calm-header">'
-            f'<button class="calm-btn" id="{prev_id}" {prev_dis} '
-            f'onclick="window.parent.document.querySelector(\'[data-testid=\\\"stButton\\\"] button[kind=\\\"secondary\\\"]:first-of-type\').click()">◀</button>'
-            f'<span class="calm-title">{year}년 {month}월</span>'
-            f'<button class="calm-btn" id="{next_id}" {next_dis} '
-            f'onclick="window.parent.document.querySelector(\'[data-testid=\\\"stButton\\\"] button[kind=\\\"secondary\\\"]:last-of-type\').click()">▶</button>'
-            f'</div>'
             f'<div class="calm-grid">{head}{"".join(cells)}</div>'
             f'</div>')
 
@@ -195,24 +174,24 @@ def render_calendar(days: int = 90):
     today = date.today()
     y, m = _add_months(today.replace(day=1), off)
 
-    # 달력 그리드 HTML (◀▶ 헤더 포함) — 모바일/데스크톱 구분 없이 동일 컴포넌트
-    ev_by_date = _events_by_date(events)
-    grid = _month_grid_html(y, m, ev_by_date, today, off)
-    st.markdown(grid, unsafe_allow_html=True)
-
-    # 숨겨진 Streamlit 버튼 (HTML 버튼의 onclick이 트리거)
-    # — 화면에서 안 보이게 CSS로 0px로 줄이는 대신, 그냥 표준 버튼으로 노출
-    #   (HTML onclick이 iframe cross-origin에서 막히는 경우를 대비해 일반 버튼으로 남김)
-    bc1, _, bc2 = st.columns([1, 8, 1])
-    with bc1:
+    # ── 상단 월 이동: ◀  YYYY년 M월  ▶ (네이티브 버튼 한 세트) ──
+    nav_prev, nav_title, nav_next = st.columns([1, 6, 1])
+    with nav_prev:
         if st.button("◀", key="cal_prev", disabled=(off <= 0), use_container_width=True):
             st.session_state["cal_month_off"] = off - 1
             st.rerun()
-    with bc2:
+    with nav_title:
+        st.markdown(f'<div class="calm-navtitle">{y}년 {m}월</div>', unsafe_allow_html=True)
+    with nav_next:
         if st.button("▶", key="cal_next", disabled=(off >= _MAX_MONTH_AHEAD),
                      use_container_width=True):
             st.session_state["cal_month_off"] = off + 1
             st.rerun()
+
+    # 달력 그리드 HTML (요일 헤더 + 날짜 칸)
+    ev_by_date = _events_by_date(events)
+    grid = _month_grid_html(y, m, ev_by_date, today)
+    st.markdown(grid, unsafe_allow_html=True)
 
     st.markdown(
         '<div class="data-asof">FOMC·금통위·CPI는 공식 발표 일정 (연 1회 수동 갱신) · '
