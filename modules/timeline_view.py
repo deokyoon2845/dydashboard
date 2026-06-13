@@ -73,6 +73,40 @@ _TL_CSS = """
   .tl-mobile .tl-card::before { content:""; position:absolute; left:-25px; top:13px;
     width:11px; height:11px; border-radius:50%; border:2.5px solid var(--bg); background:var(--dot,#A7BBA9); }
 }
+
+/* ── 마이크로 인터랙션 (미니멀 미스트) ── */
+/* 카드: 과거(왼쪽)→현재(오른쪽) 순서로 떠오름. --i 인덱스로 시차 */
+@keyframes tl-fade-up{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:translateY(0);}}
+.tl-card{animation:tl-fade-up .5s cubic-bezier(.22,.61,.36,1) both;
+  animation-delay:calc(.45s + var(--i,0) * .12s);}
+/* 호버 시엔 등장 transform과 충돌하지 않도록, 등장이 끝난 뒤 hover가 자연히 우선됨 */
+
+/* SVG 트랙 라인: 왼쪽부터 그려짐 (dasharray 트릭) */
+.tl-track{stroke-dasharray:var(--len,940);stroke-dashoffset:var(--len,940);
+  animation:tl-draw .9s ease forwards;}
+@keyframes tl-draw{to{stroke-dashoffset:0;}}
+/* 화살촉: 라인이 다 그려진 뒤 등장 */
+.tl-arrow{opacity:0;animation:tl-arrow-in .3s ease .85s forwards;}
+@keyframes tl-arrow-in{to{opacity:1;}}
+/* 노드: 라인 그려지는 동안 순차 등장 (--i 인덱스) */
+.tl-node{opacity:0;transform-box:fill-box;transform-origin:center;
+  animation:tl-node-in .4s cubic-bezier(.34,1.56,.64,1) forwards;
+  animation-delay:calc(.4s + var(--i,0) * .14s);}
+@keyframes tl-node-in{from{opacity:0;transform:scale(.2);}to{opacity:1;transform:scale(1);}}
+/* 최신 노드: 등장 후 은은한 맥동 링 */
+.tl-pulse{transform-box:fill-box;transform-origin:center;
+  animation:tl-pulse 2.4s ease-in-out 1.4s infinite;}
+@keyframes tl-pulse{
+  0%{opacity:.5;transform:scale(1);}
+  50%{opacity:0;transform:scale(2.1);}
+  100%{opacity:0;transform:scale(2.1);}}
+
+@media(prefers-reduced-motion:reduce){
+  .tl-card,.tl-track,.tl-arrow,.tl-node,.tl-pulse{animation:none !important;}
+  .tl-card,.tl-node,.tl-arrow{opacity:1 !important;}
+  .tl-track{stroke-dashoffset:0 !important;}
+  .tl-pulse{display:none !important;}
+}
 </style>
 """
 
@@ -251,12 +285,12 @@ def _idx_line_html(rec: dict) -> str:
     return f'<div class="tl-idx">{" · ".join(items)}</div>'
 
 
-def _card_html(e: dict, idx_rec, latest: bool, mobile: bool = False) -> str:
+def _card_html(e: dict, idx_rec, latest: bool, mobile: bool = False, order: int = 0) -> str:
     secs = "".join(f"<li>{html.escape(s)}</li>" for s in e["sections"])
     secs_html = f'<ul class="tl-secs">{secs}</ul>' if secs else ""
     latest_cls = " tl-latest" if latest else ""
     latest_tag = " · 최신" if latest else ""
-    dot = f' style="--dot:{e["mood_color"]}"' if mobile else ""
+    dot = f' style="--dot:{e["mood_color"]}"' if mobile else f' style="--i:{order}"'
     kind_tag = f'<span class="tl-kind">{e.get("kind_label", "")}</span>' if e.get("kind_label") else ""
     inner = (f'<div class="tl-dt">{_fmt_date(e["date"])}{latest_tag}</div>'
              f'{_idx_line_html(idx_rec)}'
@@ -267,17 +301,24 @@ def _card_html(e: dict, idx_rec, latest: bool, mobile: bool = False) -> str:
 
 
 def _svg_html(entries: list) -> str:
-    """트랙 + mood 노드. 노드는 균등 간격."""
+    """트랙 + mood 노드. 노드는 균등 간격. 라인은 왼쪽부터 그려지고 노드는 순차 등장."""
     n = len(entries)
     w = 960
+    track_len = w - 20  # 라인 길이(대략) → dasharray 기준
     parts = [f'<svg class="tl-svg" viewBox="0 0 {w} 64" preserveAspectRatio="none">',
-             f'<line x1="10" y1="40" x2="{w-20}" y2="40" stroke="#D3D1C7" stroke-width="2"/>',
-             f'<path d="M{w-20},40 l-12,-7 v14 z" fill="#D3D1C7"/>']
+             f'<line class="tl-track" style="--len:{track_len}" '
+             f'x1="10" y1="40" x2="{w-20}" y2="40" stroke="#D3D1C7" stroke-width="2"/>',
+             f'<path class="tl-arrow" d="M{w-20},40 l-12,-7 v14 z" fill="#D3D1C7"/>']
     xs = [(i + 0.5) / n * w for i in range(n)]
     for i, (x, e) in enumerate(zip(xs, entries)):
-        r = 11 if i == n - 1 else 8
-        parts.append(f'<circle cx="{x:.0f}" cy="40" r="{r}" fill="{e["mood_color"]}" '
-                     f'stroke="var(--bg)" stroke-width="3"/>')
+        is_last = i == n - 1
+        r = 11 if is_last else 8
+        # 최신 노드: 맥동 링을 노드 뒤에 먼저 그림(같은 색, 점점 커지며 사라짐)
+        if is_last:
+            parts.append(f'<circle class="tl-pulse" cx="{x:.0f}" cy="40" r="{r}" '
+                         f'fill="{e["mood_color"]}"/>')
+        parts.append(f'<circle class="tl-node" style="--i:{i}" cx="{x:.0f}" cy="40" r="{r}" '
+                     f'fill="{e["mood_color"]}" stroke="var(--bg)" stroke-width="3"/>')
     parts.append("</svg>")
     return "".join(parts)
 
@@ -316,7 +357,7 @@ def render_timeline():
 
     top_cells, bottom_cells = [], []
     for i, e in enumerate(entries):
-        card = _card_html(e, idx_map.get(e["date"]), i == last_i)
+        card = _card_html(e, idx_map.get(e["date"]), i == last_i, order=i)
         if i % 2 == 1:
             top_cells.append(card)
             bottom_cells.append("<div></div>")
@@ -328,7 +369,7 @@ def render_timeline():
                f'{_svg_html(entries)}'
                f'<div class="tl-row tl-bottom" style="{grid}">{"".join(bottom_cells)}</div>')
 
-    mobile_cards = "".join(_card_html(e, idx_map.get(e["date"]), i == last_i, mobile=True)
+    mobile_cards = "".join(_card_html(e, idx_map.get(e["date"]), i == last_i, mobile=True, order=i)
                            for i, e in enumerate(entries))
     mobile = f'<div class="tl-mobile">{mobile_cards}</div>'
 
