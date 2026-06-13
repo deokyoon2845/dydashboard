@@ -436,7 +436,7 @@ def render_report_tab():
         st.success(flash)
 
     authed = _can_generate()
-    st.markdown('<div class="mkt-group">📝 리포트 생성</div>', unsafe_allow_html=True)
+    st.markdown('<div class="mkt-group">📝 리포트 관리</div>', unsafe_allow_html=True)
     gc1, gc2 = st.columns(2)
     with gc1:
         pre_clicked = st.button(
