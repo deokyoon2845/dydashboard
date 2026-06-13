@@ -175,6 +175,109 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 .empty .ico { font-size:32px; }
 .empty .msg { font-size:14px; margin-top:10px; color:var(--ink); }
 .empty .hint { font-size:12px; margin-top:5px; color:var(--muted); }
+
+/* ═══════════════════════════════════════════════════════
+   마이크로 인터랙션 (미니멀 미스트 · 은은하게)
+   기존 스타일은 그대로 두고 동작·전환만 덧붙임
+   ═══════════════════════════════════════════════════════ */
+
+/* ── 1. 카드 등장: 페이드 + 슬라이드업 ── */
+@keyframes mm-fade-up {
+  from { opacity:0; transform:translateY(10px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+.mkt-card, .kw-row, .theme-card, .supply-wrap, .cal-wrap, .rpt-kt-box {
+  animation: mm-fade-up .5s cubic-bezier(.22,.61,.36,1) both;
+}
+/* staggered: 그리드 안에서 위→아래 시차 (최대 8개) */
+.mkt-grid .mkt-card:nth-child(1){ animation-delay:.02s; }
+.mkt-grid .mkt-card:nth-child(2){ animation-delay:.06s; }
+.mkt-grid .mkt-card:nth-child(3){ animation-delay:.10s; }
+.mkt-grid .mkt-card:nth-child(4){ animation-delay:.14s; }
+.mkt-grid .mkt-card:nth-child(5){ animation-delay:.18s; }
+.mkt-grid .mkt-card:nth-child(6){ animation-delay:.22s; }
+.mkt-grid .mkt-card:nth-child(7){ animation-delay:.26s; }
+.mkt-grid .mkt-card:nth-child(8){ animation-delay:.30s; }
+/* 키워드 행 시차 (각 컬럼 처음 7개) */
+.kw-row:nth-child(1){ animation-delay:.03s; }
+.kw-row:nth-child(2){ animation-delay:.07s; }
+.kw-row:nth-child(3){ animation-delay:.11s; }
+.kw-row:nth-child(4){ animation-delay:.15s; }
+.kw-row:nth-child(5){ animation-delay:.19s; }
+.kw-row:nth-child(6){ animation-delay:.23s; }
+.kw-row:nth-child(7){ animation-delay:.27s; }
+
+/* ── 2. 호버 리프트 ── */
+.mkt-card, .theme-card, .cal-wrap, .supply-wrap {
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+.mkt-card:hover, .theme-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(52,53,47,.08);
+  border-color: var(--sage);
+}
+.cal-wrap:hover, .supply-wrap:hover {
+  box-shadow: 0 4px 14px rgba(52,53,47,.06);
+}
+/* 키워드 뉴스 링크 호버: 화살표 살짝 밀림 */
+.kw-news a { transition: color .15s ease, transform .15s ease; }
+.kw-news a:hover { transform: translateX(2px); }
+
+/* ── 3. 게이지 / 바 채우기 ── */
+@keyframes mm-bar-grow {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+@keyframes mm-marker-in {
+  from { opacity:0; transform:translateX(-50%) scaleY(.3); }
+  to   { opacity:1; transform:translateX(-50%) scaleY(1); }
+}
+.gauge, .rsi-gauge {
+  transform-origin: left center;
+  animation: mm-bar-grow .7s cubic-bezier(.22,.61,.36,1) both;
+}
+.gauge i, .rsi-gauge i {
+  animation: mm-marker-in .5s ease .55s both;
+}
+
+/* ── 4. 등락률 펄스 (로드 시 1회 톡) ── */
+@keyframes mm-pulse {
+  0%   { opacity:.55; }
+  40%  { opacity:1; }
+  100% { opacity:1; }
+}
+.mkt-chg { animation: mm-pulse .9s ease both; }
+
+/* pill 호버: 부드럽게 떠오름 */
+.pill, .src-pill {
+  transition: background .15s ease, border-color .15s ease,
+              transform .15s ease, box-shadow .15s ease;
+}
+.pill:hover, .src-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(52,53,47,.07);
+}
+
+/* ── 5. 버튼 호버 미세 반응 ── */
+.stButton > button {
+  transition: transform .12s ease, box-shadow .15s ease,
+              background .15s ease, border-color .15s ease !important;
+}
+.stButton > button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(52,53,47,.10);
+}
+.stButton > button:active { transform: translateY(0); }
+
+/* ── 접근성: 움직임 최소화 선호 시 모두 비활성화 ── */
+@media (prefers-reduced-motion: reduce) {
+  .mkt-card, .kw-row, .theme-card, .supply-wrap, .cal-wrap,
+  .rpt-kt-box, .gauge, .rsi-gauge, .gauge i, .rsi-gauge i,
+  .mkt-chg {
+    animation: none !important;
+  }
+  * { transition: none !important; }
+}
 </style>
 """
 st.markdown(CSS.replace("__VARS__", LIGHT_VARS), unsafe_allow_html=True)
