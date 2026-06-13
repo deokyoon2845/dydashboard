@@ -1,51 +1,55 @@
 """오늘의 키워드 관계 그래프 — 공통 종목·공통 키워드로 키워드를 잇는 SVG 네트워크.
 
 연결 규칙 (B: 텍스트 공통어 기반):
-  · 공통 종목 ≥ 1            → 진한 sage 실선 (가장 강한 연결, 종목 수에 비례해 굵게)
+  · 공통 종목 ≥ 1            → 진한 sage 실선 (가장 강한 연결)
   · 키워드+뉴스 제목의 공통 토큰 → 중간 톤 실선 (공유 토큰 수에 비례)
-  · (카테고리 단독 연결은 제거 — 점선 거미줄의 주범이었음)
 
-솎아내기 (D):
-  · 공통 종목 연결은 항상 표시
-  · 토큰 연결은 점수 상위 max_edges개만 (약한 연결이 화면을 덮지 않게)
+솎아내기:
+  · 공통 종목 연결은 항상 표시 / 토큰 연결은 점수 상위 max_edges개만
 
-노드:
-  · 크기 = weight(중요도, 1~10)
-  · 색   = 카테고리(거시/섹터/종목/정책)
-  · 금색 링 = 워치리스트 종목이 엮인 키워드
+배치 (force-directed, 파이썬에서 정적 계산):
+  · 반발력(겹침 방지) + 인력(연결된 것끼리 뭉침) + 중심력(중앙 수렴)
+  · 연결 많은 노드가 자연히 중앙으로 → "오늘의 허브" 가시화
+  · seed 고정으로 새로고침해도 같은 배치 (결정적)
 
-레이아웃:
-  · 항상 펼쳐서 표시(expander 제거)
-  · 라벨은 작은 폰트 + 두 줄 허용 + 노드 간격 확대로 잘림 방지
+라벨 (A):
+  · 핵심 명사구까지만(괄호·수식어 제거), 작은 폰트 + 두 줄, 풀 제목은 호버 툴팁
 
-외부 패키지 없음. st.markdown(SVG) 한 번으로 렌더.
+노드: 크기=중요도, 색=카테고리, 금색 링=워치리스트 종목 포함
+외부 패키지 없음.
 """
 
 import html
 import math
+import random
 import re
 
 import streamlit as st
 
-# 카테고리별 노드 색
 _CAT_COLOR = {
     "거시": "#2C5F7C", "섹터": "#4A6B4F", "종목": "#7C5F2C", "정책": "#6B4A7C",
 }
 _CAT_DEFAULT = "#7E9A83"
+_EDGE_STOCK = "#5E7E64"
+_EDGE_TOKEN = "#A7BBA9"
 
-_EDGE_STOCK = "#5E7E64"    # 공통 종목 선 (진한 sage)
-_EDGE_TOKEN = "#A7BBA9"    # 공통 토큰 선 (중간 sage)
-
-# 토큰화에서 거를 불용어 (흔한 시황 표현·조사·단위)
 _STOP = {
     "강세", "약세", "급등", "급락", "상승", "하락", "조정", "회복", "돌파", "전망",
     "기대", "확대", "축소", "증가", "감소", "우려", "리스크", "이슈", "관련", "전후",
     "당일", "오늘", "이번", "지난", "최근", "대비", "복귀", "시도", "성공", "수혜",
     "결과", "장세", "수급", "경쟁", "완화", "긴축", "발표", "예정", "가능", "지속",
+    "주가", "종목", "전망치", "분석", "마감",
     "및", "등", "과", "와", "의", "를", "을", "은", "는", "이", "가", "에", "로",
     "으로", "만에", "만", "달러", "억", "조", "선", "개", "년", "월", "일",
     "지정학적", "기업", "금융", "순자산", "한달여", "한달",
 }
+
+# 라벨에서 떼어낼 흔한 수식·접미 (그래프 라벨 단축용)
+_LABEL_TRIM_SUFFIX = (
+    "및 변동성 장세", "및 금리 전망", "및 배터리 섹터 약세", "및 금융권 대출 증가",
+    "회복 및 변동성", "회복 시도", "조정 및 변동성", "순매수 복귀",
+    "강세", "급등", "급락", "회복", "조정", "장세", "전망",
+)
 
 
 def _norm(s: str) -> str:
@@ -61,14 +65,12 @@ def _watch_set() -> set:
 
 
 def _tokens(text: str) -> set:
-    """제목에서 의미 있는 토큰(2글자 이상 명사류) 추출. 형태소 분석기 없이 휴리스틱."""
     text = re.sub(r"[^가-힣A-Za-z0-9 ]", " ", str(text))
     out = set()
     for w in text.split():
         w = w.strip()
         if not w:
             continue
-        # 영문/숫자 토큰: 2글자 이상 그대로(대문자 정규화)
         if re.fullmatch(r"[A-Za-z0-9]+", w):
             if len(w) >= 2:
                 out.add(w.upper())
@@ -77,7 +79,6 @@ def _tokens(text: str) -> set:
             continue
         if len(w) >= 2:
             out.add(w)
-        # 복합어 접미 제거로 핵심 명사 분리 (광통신주→광통신 등)
         for suf in ("주", "株", "기업", "산업", "시장", "지수", "정책"):
             if w.endswith(suf) and len(w) > len(suf) + 1:
                 stem = w[:-len(suf)]
@@ -87,12 +88,10 @@ def _tokens(text: str) -> set:
 
 
 def _item_tokens(it: dict) -> set:
-    """키워드 + 뉴스 제목들을 합쳐 토큰 추출. 종목명은 별도 처리하므로 제외하지 않음."""
     parts = [it.get("keyword", "")]
     for n in (it.get("news") or []):
-        t = n.get("title")
-        if t:
-            parts.append(t)
+        if n.get("title"):
+            parts.append(n["title"])
     if it.get("news_title"):
         parts.append(it["news_title"])
     toks = set()
@@ -101,8 +100,20 @@ def _item_tokens(it: dict) -> set:
     return toks
 
 
+def _short_label(label: str) -> str:
+    """그래프용 짧은 라벨: 괄호 앞에서 끊고, 흔한 수식 접미 제거."""
+    label = label.strip()
+    m = re.match(r"^(.*?)\s*[\(（]", label)
+    if m and len(m.group(1).strip()) >= 2:
+        label = m.group(1).strip()
+    for suf in _LABEL_TRIM_SUFFIX:
+        if label.endswith(suf) and len(label) > len(suf) + 1:
+            label = label[: -len(suf)].strip()
+            break
+    return label
+
+
 def _build_graph(items, watch_set, max_edges=14):
-    """items → (nodes, edges). B+D 적용."""
     nodes = []
     for it in items:
         kw = (it.get("keyword") or "").strip()
@@ -113,14 +124,10 @@ def _build_graph(items, watch_set, max_edges=14):
         w = it.get("weight")
         w = w if isinstance(w, int) and w > 0 else 5
         nodes.append({
-            "id": len(nodes),
-            "label": kw,
-            "cat": cat,
-            "color": _CAT_COLOR.get(cat, _CAT_DEFAULT),
-            "weight": w,
-            "stocks": stocks,
-            "tokens": _item_tokens(it),
-            "watch": bool(stocks & watch_set),
+            "id": len(nodes), "label": kw, "short": _short_label(kw),
+            "cat": cat, "color": _CAT_COLOR.get(cat, _CAT_DEFAULT),
+            "weight": w, "stocks": stocks, "tokens": _item_tokens(it),
+            "watch": bool(stocks & watch_set), "deg": 0,
         })
 
     stock_edges, token_edges = [], []
@@ -129,35 +136,78 @@ def _build_graph(items, watch_set, max_edges=14):
             a, b = nodes[i], nodes[j]
             shared_stock = a["stocks"] & b["stocks"]
             if shared_stock:
-                stock_edges.append({
-                    "a": i, "b": j, "kind": "stock",
-                    "shared": len(shared_stock),
-                    "shared_names": sorted(shared_stock),
-                    "score": 100 + len(shared_stock) * 10,
-                })
-                continue  # 종목으로 이미 연결되면 토큰 중복 연결 안 함
+                stock_edges.append({"a": i, "b": j, "kind": "stock",
+                                    "shared": len(shared_stock),
+                                    "shared_names": sorted(shared_stock),
+                                    "score": 100 + len(shared_stock) * 10})
+                continue
             shared_tok = a["tokens"] & b["tokens"]
             if shared_tok:
-                token_edges.append({
-                    "a": i, "b": j, "kind": "token",
-                    "shared": len(shared_tok),
-                    "shared_names": sorted(shared_tok),
-                    "score": len(shared_tok) * 10,
-                })
+                token_edges.append({"a": i, "b": j, "kind": "token",
+                                    "shared": len(shared_tok),
+                                    "shared_names": sorted(shared_tok),
+                                    "score": len(shared_tok) * 10})
 
-    # D: 종목 연결은 모두, 토큰 연결은 점수 상위 (max_edges - 종목수)개만
     token_edges.sort(key=lambda e: e["score"], reverse=True)
     room = max(0, max_edges - len(stock_edges))
     edges = stock_edges + token_edges[:room]
+
+    # 연결 차수(degree) 계산 → 허브 식별
+    for e in edges:
+        nodes[e["a"]]["deg"] += 1
+        nodes[e["b"]]["deg"] += 1
     return nodes, edges
 
 
-def _layout_circle(n, cx, cy, radius):
-    pts = []
+def _force_layout(n, edges, W, H, iters=320, seed=42):
+    """파이썬 정적 force-directed 레이아웃. 같은 입력엔 같은 출력(seed 고정)."""
+    rnd = random.Random(seed)
+    cx, cy = W / 2, H / 2
+    pos = []
     for i in range(n):
-        ang = -math.pi / 2 + (2 * math.pi * i / n)
-        pts.append((cx + radius * math.cos(ang), cy + radius * math.sin(ang)))
-    return pts
+        ang = -math.pi / 2 + 2 * math.pi * i / n
+        r = min(W, H) * 0.32
+        pos.append([cx + r * math.cos(ang) + rnd.uniform(-8, 8),
+                    cy + r * math.sin(ang) + rnd.uniform(-8, 8)])
+    adj = {}
+    for e in edges:
+        s = 1 + (e["shared"] if e["kind"] == "stock" else 0)
+        adj[(e["a"], e["b"])] = s
+        adj[(e["b"], e["a"])] = s
+
+    k_rep, k_att, k_ctr = 9000.0, 0.006, 0.01
+    for it in range(iters):
+        cool = 1.0 - it / iters
+        disp = [[0.0, 0.0] for _ in range(n)]
+        for i in range(n):
+            for j in range(i + 1, n):
+                dx = pos[i][0] - pos[j][0]
+                dy = pos[i][1] - pos[j][1]
+                d2 = dx * dx + dy * dy + 0.01
+                d = math.sqrt(d2)
+                f = k_rep / d2
+                ux, uy = dx / d, dy / d
+                disp[i][0] += ux * f; disp[i][1] += uy * f
+                disp[j][0] -= ux * f; disp[j][1] -= uy * f
+        for (a, b), s in adj.items():
+            if a < b:
+                dx = pos[a][0] - pos[b][0]
+                dy = pos[a][1] - pos[b][1]
+                d = math.sqrt(dx * dx + dy * dy) + 0.01
+                f = k_att * d * (1 + s)
+                ux, uy = dx / d, dy / d
+                disp[a][0] -= ux * f; disp[a][1] -= uy * f
+                disp[b][0] += ux * f; disp[b][1] += uy * f
+        for i in range(n):
+            disp[i][0] += (cx - pos[i][0]) * k_ctr
+            disp[i][1] += (cy - pos[i][1]) * k_ctr
+            mag = math.sqrt(disp[i][0] ** 2 + disp[i][1] ** 2) + 1e-9
+            step = min(mag, 18 * cool)
+            pos[i][0] += disp[i][0] / mag * step
+            pos[i][1] += disp[i][1] / mag * step
+            pos[i][0] = max(72, min(W - 72, pos[i][0]))
+            pos[i][1] = max(82, min(H - 82, pos[i][1]))
+    return [(p[0], p[1]) for p in pos]
 
 
 def _graph_css() -> str:
@@ -170,9 +220,10 @@ def _graph_css() -> str:
 .kg-node-g{cursor:default;}
 .kg-node{transition:opacity .18s ease;transform-box:fill-box;transform-origin:center;
   animation:kg-pop .42s cubic-bezier(.34,1.56,.64,1) both;}
-.kg-node-ring{transition:opacity .18s ease;}
+.kg-node-ring,.kg-hub-halo{transition:opacity .18s ease;}
 .kg-label{font-family:'Hanken Grotesk','Noto Sans KR',sans-serif;font-weight:700;
-  fill:var(--ink,#34352f);transition:opacity .18s ease;pointer-events:none;}
+  fill:var(--ink,#34352f);transition:opacity .18s ease;pointer-events:none;
+  paint-order:stroke;stroke:var(--bg,#FCFCFA);stroke-width:3px;stroke-linejoin:round;}
 @keyframes kg-pop{from{opacity:0;transform:scale(.3);}to{opacity:1;transform:scale(1);}}
 .kg-dim{opacity:.12 !important;}
 .kg-edge.kg-hot{opacity:1 !important;}
@@ -209,14 +260,14 @@ def _graph_js() -> str:
       g.addEventListener('mouseenter', function(){
         const linked = new Set([id]);
         edges.forEach(function(e){
-          const a = e.getAttribute('data-a'), b = e.getAttribute('data-b');
-          if (a===id || b===id){ e.classList.add('kg-hot'); linked.add(a); linked.add(b); }
+          const a=e.getAttribute('data-a'), b=e.getAttribute('data-b');
+          if (a===id||b===id){ e.classList.add('kg-hot'); linked.add(a); linked.add(b); }
           else { e.classList.add('kg-dim'); }
         });
         nodes.forEach(function(nn){
-          if (!linked.has(nn.getAttribute('data-id'))) nn.classList.add('kg-dim');});
+          if(!linked.has(nn.getAttribute('data-id'))) nn.classList.add('kg-dim');});
         labels.forEach(function(lb){
-          if (!linked.has(lb.getAttribute('data-id'))) lb.classList.add('kg-dim');});
+          if(!linked.has(lb.getAttribute('data-id'))) lb.classList.add('kg-dim');});
       });
       g.addEventListener('mouseleave', clear);
     });
@@ -231,56 +282,62 @@ def _graph_js() -> str:
 """
 
 
-def _wrap_label(label, max_per_line=8, max_lines=2):
-    """라벨을 글자수 기준으로 줄바꿈. 넘치면 …로 자름. (줄 리스트 반환)"""
+def _wrap_short(label, max_per_line=7, max_lines=2):
+    """짧은 라벨을 줄바꿈. 단어 경계 우선, 넘치면 … 부착."""
     label = label.strip()
-    # 괄호 앞에서 우선 끊기 (예: '반도체 강세 (삼성전자…)' → '반도체 강세')
-    m = re.match(r"^(.*?)\s*[\(（]", label)
-    head = m.group(1).strip() if m and len(m.group(1).strip()) >= 2 else label
+    if not label:
+        return [""]
+    words = label.split()
     lines, cur = [], ""
-    for ch in head:
-        if len(cur) >= max_per_line:
+    for w in words:
+        cand = (cur + " " + w).strip()
+        if len(cand) <= max_per_line or not cur:
+            cur = cand
+        else:
             lines.append(cur)
-            cur = ""
+            cur = w
             if len(lines) >= max_lines:
                 break
-        cur += ch
     if cur and len(lines) < max_lines:
         lines.append(cur)
-    # 원본이 더 길어서 잘렸으면 마지막 줄에 … 부착
-    consumed = sum(len(x) for x in lines)
-    if consumed < len(head):
-        if lines:
-            lines[-1] = lines[-1].rstrip() + "…"
-    return lines[:max_lines]
+    # 단어 하나가 너무 길면 글자 단위로 자름
+    fixed = []
+    for ln in lines[:max_lines]:
+        if len(ln) > max_per_line + 2:
+            ln = ln[:max_per_line + 1] + "…"
+        fixed.append(ln)
+    consumed = " ".join(fixed).replace("…", "")
+    if len(consumed.replace(" ", "")) < len(label.replace(" ", "")) and fixed:
+        if not fixed[-1].endswith("…"):
+            fixed[-1] += "…"
+    return fixed[:max_lines]
 
 
 def _svg(nodes, edges) -> str:
-    W, H = 760, 600          # 세로를 늘려 라벨 두 줄 공간 확보
-    cx, cy = W / 2, H / 2
+    W, H = 760, 620
     n = len(nodes)
-    radius = min(W, H) * 0.34
-    pts = _layout_circle(n, cx, cy, radius)
+    pos = _force_layout(n, edges, W, H)
+    cy = H / 2
+
+    max_deg = max((nd["deg"] for nd in nodes), default=0)
 
     def node_r(w):
-        return 12 + (max(1, min(10, w)) - 1) / 9 * 11   # 12~23px (살짝 줄임)
+        return 12 + (max(1, min(10, w)) - 1) / 9 * 11
 
     parts = [f'<svg class="kg-svg" viewBox="0 0 {W} {H}" '
              f'xmlns="http://www.w3.org/2000/svg">']
 
     # 엣지
     for e in edges:
-        ax, ay = pts[e["a"]]
-        bx, by = pts[e["b"]]
+        ax, ay = pos[e["a"]]
+        bx, by = pos[e["b"]]
         if e["kind"] == "stock":
             width = 2.0 + min(e["shared"], 4) * 1.0
-            color = _EDGE_STOCK
-            op = 0.7
+            color, op = _EDGE_STOCK, 0.7
             title = "공통 종목: " + ", ".join(e.get("shared_names", []))
         else:
             width = 1.2 + min(e["shared"], 3) * 0.7
-            color = _EDGE_TOKEN
-            op = 0.5
+            color, op = _EDGE_TOKEN, 0.5
             title = "공통어: " + ", ".join(e.get("shared_names", []))
         parts.append(
             f'<line class="kg-edge" data-a="{e["a"]}" data-b="{e["b"]}" '
@@ -290,17 +347,21 @@ def _svg(nodes, edges) -> str:
         )
 
     # 노드 + 라벨
-    for nd, (x, y) in zip(nodes, pts):
+    for nd, (x, y) in zip(nodes, pos):
         r = node_r(nd["weight"])
         delay = nd["id"] * 0.05
+        # 허브 후광: 연결이 가장 많은 노드(들)에 옅은 sage 후광
+        halo = ""
+        if max_deg >= 2 and nd["deg"] == max_deg:
+            halo = (f'<circle class="kg-hub-halo" cx="{x:.1f}" cy="{y:.1f}" '
+                    f'r="{r+9:.1f}" fill="#A7BBA9" fill-opacity="0.16"/>')
         ring = ""
         if nd["watch"]:
             ring = (f'<circle class="kg-node-ring" cx="{x:.1f}" cy="{y:.1f}" '
                     f'r="{r+3.5:.1f}" fill="none" stroke="#D9A93C" stroke-width="2"/>')
-        # 라벨 위/아래 배치
         above = y < cy
         line_h = 13
-        label_lines = _wrap_label(nd["label"])
+        label_lines = _wrap_short(nd["short"])
         n_lines = len(label_lines)
         if above:
             base_y = y - r - 8 - (n_lines - 1) * line_h
@@ -311,17 +372,17 @@ def _svg(nodes, edges) -> str:
             for k, ln in enumerate(label_lines))
         parts.append(
             f'<g class="kg-node-g" data-id="{nd["id"]}">'
-            f'{ring}'
+            f'{halo}{ring}'
             f'<circle class="kg-node" cx="{x:.1f}" cy="{y:.1f}" r="{r:.1f}" '
             f'fill="{nd["color"]}" fill-opacity="0.88" '
             f'stroke="var(--bg,#FCFCFA)" stroke-width="2.5" '
             f'style="animation-delay:{delay:.2f}s">'
-            f'<title>{html.escape(nd["label"])} · {html.escape(nd["cat"])}</title></circle>'
+            f'<title>{html.escape(nd["label"])} · {html.escape(nd["cat"])}'
+            f' · 연결 {nd["deg"]}개</title></circle>'
             f'<text class="kg-label" data-id="{nd["id"]}" x="{x:.1f}" y="{base_y:.1f}" '
             f'text-anchor="middle" font-size="10.5">{tspans}</text>'
             f'</g>'
         )
-
     parts.append("</svg>")
     return "".join(parts)
 
@@ -335,18 +396,25 @@ def _legend_html(nodes, edges) -> str:
         for c in cats_present)
     n_stock = sum(1 for e in edges if e["kind"] == "stock")
     n_tok = sum(1 for e in edges if e["kind"] == "token")
+    # 허브 키워드(연결 최다) 안내
+    max_deg = max((nd["deg"] for nd in nodes), default=0)
+    hub = ""
+    if max_deg >= 2:
+        hubs = [nd["short"] for nd in nodes if nd["deg"] == max_deg]
+        hub = (f'<span class="kg-leg-item">🌐 오늘의 허브: '
+               f'<b style="color:var(--ink,#34352f)">{html.escape(", ".join(hubs[:2]))}</b> '
+               f'(연결 {max_deg}개)</span>')
     return (
         f'<div class="kg-legend">{cat_items}'
         f'<span class="kg-leg-item"><span class="kg-line stk"></span>공통 종목 ({n_stock})</span>'
         f'<span class="kg-leg-item"><span class="kg-line tok"></span>공통 키워드 ({n_tok})</span>'
-        f'<span class="kg-leg-item">⭐ 워치리스트 종목 포함</span>'
+        f'<span class="kg-leg-item">⭐ 워치리스트 포함</span>'
         f'<span class="kg-leg-item">노드 크기 = 중요도</span>'
-        f'</div>'
+        f'{hub}</div>'
     )
 
 
 def render_keyword_graph(items, max_nodes=14, max_edges=14):
-    """키워드 관계 그래프(항상 펼침). items: keywords_today.json의 items 리스트."""
     items = [it for it in (items or []) if (it.get("keyword") or "").strip()][:max_nodes]
     if len(items) < 2:
         st.caption("관계 그래프는 키워드가 2개 이상일 때 표시돼요.")
@@ -366,8 +434,9 @@ def render_keyword_graph(items, max_nodes=14, max_edges=14):
 
     st.markdown(
         f'<div class="kg-wrap">{svg}{legend}'
-        f'<div class="kg-hint">노드에 마우스를 올리면 연결된 키워드만 밝아져요. '
-        f'진한 선 = 같은 종목 공유(테마 클러스터), 연한 선 = 제목·뉴스의 공통 키워드.</div>'
+        f'<div class="kg-hint">연결이 많은 키워드일수록 가운데로 모여요(=오늘의 중심). '
+        f'노드에 마우스를 올리면 연결된 키워드만 밝아지고, 선에 올리면 무엇을 공유하는지 보여요. '
+        f'진한 선 = 같은 종목, 연한 선 = 제목·뉴스의 공통 키워드.</div>'
         f'</div>',
         unsafe_allow_html=True)
 
