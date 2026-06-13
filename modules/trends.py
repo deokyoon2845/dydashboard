@@ -11,6 +11,19 @@ from modules.reports import list_reports, _report_date
 
 DIGEST_DIR = Path("digests")
 
+# 감성 추세 차트 등장 연출: 차트 영역을 왼쪽→오른쪽으로 공개(clip reveal).
+# 데이터는 그대로 그려지고 마스크만 걷히므로 값 왜곡이 없다.
+_TREND_CSS = """
+<style>
+@keyframes tr-reveal{from{clip-path:inset(0 100% 0 0);}to{clip-path:inset(0 0 0 0);}}
+/* 추세 차트가 들어가는 첫 vega 차트에만 적용 (감성 추세) */
+.tr-anim [data-testid="stVegaLiteChart"]{
+  animation:tr-reveal 1.1s cubic-bezier(.22,.61,.36,1) both;}
+@media(prefers-reduced-motion:reduce){
+  .tr-anim [data-testid="stVegaLiteChart"]{animation:none !important;}}
+</style>
+"""
+
 
 def _empty(ico, msg, hint=""):
     st.markdown(
@@ -81,6 +94,7 @@ def _latest_digest():
 
 
 def render_trends():
+    st.markdown(_TREND_CSS, unsafe_allow_html=True)
     st.markdown('<div class="rpt-bar"></div>', unsafe_allow_html=True)
     st.title("추세")
 
@@ -94,7 +108,11 @@ def render_trends():
     st.markdown('<div class="mkt-group">시장 분위기 추세</div>', unsafe_allow_html=True)
     series = _sentiment_series()
     if len(series) >= 2:
-        st.altair_chart(_sentiment_chart(series, dark), use_container_width=True)
+        # 차트 등장 연출(clip reveal)을 위해 래퍼 컨테이너로 감싼다.
+        with st.container():
+            st.markdown('<div class="tr-anim">', unsafe_allow_html=True)
+            st.altair_chart(_sentiment_chart(series, dark), use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
         st.caption("긍정 +1 · 중립 0 · 부정 −1 (리포트의 '시장 분위기' 기반)")
     elif len(series) == 1:
         st.caption(f"현재 리포트 1개(점수 {series[0][1]:+.1f}). 며칠 쌓이면 추세선이 그려져요.")
