@@ -1,51 +1,163 @@
-name: 전략시황 보고서 자동 생성
+"""[엔진] 리포트 생성 통합 — 장전/장후 구분, 정량 스냅샷 + 뉴스 + 워치리스트 결합, 예측 채점 갱신.
 
-on:
-  schedule:
-    # 평일(KST) 장전 07:50  = UTC 전일 22:50 (UTC 일~목 → KST 월~금 아침)
-    - cron: "50 22 * * 0-4"
-    # 평일(KST) 장마감 후 17:00 = UTC 당일 08:00 (UTC 월~금 → KST 월~금 저녁)
-    - cron: "0 8 * * 1-5"
-    # ※ 두 cron 모두 요일 지정으로 토·일(KST)에는 실행되지 않음.
-    #   장전/장후 구분은 generate.py가 생성 시각(KST)으로 자동 판별(오전=장전, 오후=장후).
-  workflow_dispatch:        # GitHub에서 수동 실행 버튼도 제공
+- kind="pre"  (장전): 직전 거래일 마감(15:30) ~ 지금. 월요일이면 금요일 15:30까지 소급.
+- kind="post" (장후): 당일 07:50 ~ 지금.
+- kind 미지정 시 생성 시각으로 자동 판별(오전=장전, 오후=장후).
+"""
 
-permissions:
-  contents: write
+import json
+import os
+from datetime import datetime, timedelta
+from pathlib import Path
+from zoneinfo import ZoneInfo
 
-jobs:
-  generate:
-    runs-on: ubuntu-latest
-    steps:
-      - name: 저장소 체크아웃
-        uses: actions/checkout@v4
+from dotenv import load_dotenv
 
-      - name: 파이썬 설정
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+from engine.fetch_telegram import fetch_since
+from engine.analyze import analyze_messages
+from engine.channels import load_channels, channel_label
+from modules.usage import estimate_cost_usd, append_usage
+from modules.watchlist import load_watchlist
 
-      - name: 라이브러리 설치
-        run: pip install -r requirements.txt
+load_dotenv()
 
-      - name: 보고서·키워드 생성 + 텔레그램 발송
-        env:
-          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
-          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
-          TELEGRAM_SESSION: ${{ secrets.TELEGRAM_SESSION }}
-          TELEGRAM_CHANNEL: ${{ secrets.TELEGRAM_CHANNEL }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          REPORT_MODEL: ${{ secrets.REPORT_MODEL }}
-          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
-          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
-        run: python -m engine.run_all
+KST = ZoneInfo("Asia/Seoul")
+REPORTS_DIR = Path("reports")
 
-      - name: 결과 커밋 & 푸시
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add reports/ data/
-          git diff --staged --quiet || git commit -m "자동 생성: $(date -u +%Y-%m-%d) ($(date -u +%H:%MUTC))"
-          git push
+_KIND_KO = {"pre": "장전", "post": "장마감 후"}
+
+
+def detect_kind(now=None) -> str:
+    """생성 시각으로 장전/장후 자동 판별 (오전=장전, 오후=장후)."""
+    now = now or datetime.now(KST)
+    return "pre" if now.hour < 12 else "post"
+
+
+def collection_window(kind: str, now=None) -> datetime:
+    """분석 구간 시작 시각(KST).
+
+    - 장전(pre): 직전 거래일 마감 15:30. 월요일이면 금요일 15:30(3일 전)까지 소급.
+                 (공휴일은 자동 처리하지 않음 — 필요 시 별도 보완)
+    - 장후(post): 당일 07:50.
+    """
+    now = now or datetime.now(KST)
+    if kind == "pre":
+        days_back = 3 if now.weekday() == 0 else 1  # 0=월요일 → 금요일까지
+        return (now - timedelta(days=days_back)).replace(
+            hour=15, minute=30, second=0, microsecond=0)
+    # post
+    return now.replace(hour=7, minute=50, second=0, microsecond=0)
+
+
+def generate_report(kind: str = None, send_telegram: bool = False) -> dict:
+    now = datetime.now(KST)
+    if kind not in ("pre", "post"):
+        kind = detect_kind(now)
+
+    channels = load_channels()
+    label = channel_label()
+    if not channels:
+        return {"ok": False, "reason": "채널이 설정되지 않았습니다."}
+
+    since = collection_window(kind, now)
+    messages = fetch_since(channels, since)
+    if not messages:
+        return {"ok": False, "reason": "해당 기간에 메시지가 없습니다.", "kind": kind}
+
+    # 정량 스냅샷 (실패해도 리포트는 계속)
+    snapshot_text = ""
+    try:
+        from engine.market_snapshot import build_snapshot_text
+        snapshot_text = build_snapshot_text()
+    except Exception:
+        pass
+
+    # 뉴스 헤드라인 (멀티소스 교차)
+    news_titles = []
+    try:
+        from engine.news import fetch_market_news
+        news_titles = [a["title"] for a in fetch_market_news()[:25]]
+    except Exception:
+        pass
+
+    watchlist = load_watchlist()
+
+    report_data, usage = analyze_messages(
+        messages, kind=kind, channel_name=label,
+        snapshot_text=snapshot_text, news_titles=news_titles, watchlist=watchlist)
+
+    cost_usd = sum(
+        estimate_cost_usd(c["model"], c["input_tokens"], c["output_tokens"])
+        for c in usage.get("calls", []))
+
+    report_data["report_kind"] = kind
+    report_data["generated_at"] = now.strftime("%Y-%m-%d %H:%M")
+    report_data["channel"] = label
+    report_data["analysis_since"] = since.strftime("%Y-%m-%d %H:%M")
+    report_data["analysis_until"] = now.strftime("%Y-%m-%d %H:%M")
+    report_data["messages_count"] = len(messages)
+    report_data["source_channels"] = list(
+        {m.get("channel", label) for m in messages if m.get("channel")})
+    report_data["data_enriched"] = bool(snapshot_text)
+
+    REPORTS_DIR.mkdir(exist_ok=True)
+    # 파일명은 하루 여러 번 생성해도 보존되도록 HHMM 유지. 장전/장후 구분은 report_kind 필드.
+    path = REPORTS_DIR / f"{now:%Y-%m-%d_%H%M}.json"
+    path.write_text(json.dumps(report_data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    append_usage({
+        "time": now.isoformat(),
+        "model": usage["model"],
+        "input_tokens": usage["input_tokens"],
+        "output_tokens": usage["output_tokens"],
+        "cost_usd": cost_usd,
+        "messages": len(messages),
+        "report": path.name,
+        "kind": kind,
+    })
+
+    # 예측 채점 갱신 (실패 무시)
+    try:
+        from engine.predictions import update_scores
+        update_scores()
+    except Exception:
+        pass
+
+    # 텔레그램 발송 (자동화에서만)
+    telegram_result = None
+    if send_telegram:
+        try:
+            from modules.report_pdf import build_pdf
+            from engine.telegram_send import send_report
+            pdf_bytes = build_pdf(report_data)
+            mood_ko = {"positive": "긍정", "neutral": "중립", "cautious": "주의"}.get(
+                report_data.get("mood", "neutral"), "중립")
+            kind_ko = _KIND_KO.get(kind, "")
+            caption = (
+                f"📊 <b>전략/시황 보고서 · {kind_ko}</b> ({mood_ko})\n"
+                f"{report_data.get('headline', '')}\n\n"
+                f"{report_data.get('key_takeaway', '')[:500]}\n\n"
+                f"🕒 {now:%Y-%m-%d %H:%M} KST · {len(messages)}개 메시지 분석"
+            )
+            telegram_result = send_report(
+                pdf_bytes, caption,
+                filename=f"전략시황보고서_{kind_ko}_{now:%Y%m%d}.pdf")
+        except Exception as e:
+            telegram_result = {"ok": False, "reason": str(e)}
+
+    return {
+        "ok": True, "path": str(path), "kind": kind, "messages": len(messages),
+        "since": since, "now": now, "usage": usage, "cost_usd": cost_usd,
+        "telegram": telegram_result,
+    }
+
+
+if __name__ == "__main__":
+    import sys
+    arg_kind = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] in ("pre", "post") else None
+    res = generate_report(kind=arg_kind)
+    if res.get("ok"):
+        print(f"완료({res['kind']}): {res['path']} · {res['messages']}개 · "
+              f"예상 ${res['cost_usd']:.4f}")
+    else:
+        print(f"실패: {res.get('reason')}")
