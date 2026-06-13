@@ -10,6 +10,11 @@
 핵심 지시: 채널 '의견'과 실제 '데이터·사실'을 교차 검증하고 불일치를 짚는다.
 누락 금지: 분량을 이유로 메시지 내용을 빼지 않는다(중복만 압축).
 추가: 오늘의 시장 동력 매트릭스(단기/장기 × 상승/하락) — 프레임 고정, 내용은 보고서별 생성.
+
+잘림 방지(2026-06 보강):
+- 2차 Opus 출력 토큰을 16000으로 상향(장후처럼 입력이 많은 날 sections가 잘리던 문제).
+- 응답이 max_tokens로 잘리면 한 번 이어받아(continuation) JSON을 완성.
+- 그래도 sections가 비면 명시적 에러(조용히 빈 보고서로 저장되는 것 방지).
 """
 
 import json
@@ -23,6 +28,8 @@ from anthropic import Anthropic
 MODEL = os.environ.get("REPORT_MODEL", "claude-opus-4-8")
 HAIKU = "claude-haiku-4-5"
 CLUSTER_THRESHOLD = int(os.environ.get("CLUSTER_THRESHOLD", "15"))  # 이 수↑면 1차 정제
+MAX_TOKENS = int(os.environ.get("REPORT_MAX_TOKENS", "16000"))     # 2차 Opus 출력 상한
+MAX_CONTINUE = 2  # 잘렸을 때 이어받기 최대 횟수
 
 _WD = "월화수목금토일"
 
@@ -105,6 +112,47 @@ def _strip_fence(raw):
             raw = raw.lstrip()[4:]
         raw = raw.strip()
     return raw
+
+
+# ── Opus 호출 + 잘림 이어받기 ──────────────────────────────────
+
+def _create_with_continuation(client, model, prompt, max_tokens):
+    """messages.create 호출. 응답이 max_tokens로 잘리면 이어받아 텍스트를 합친다.
+
+    반환: (합쳐진 텍스트, [usage_dict ...], truncated: bool)
+    truncated=True 면 MAX_CONTINUE 번 이어받고도 끝까지 못 받은 것.
+    """
+    msgs = [{"role": "user", "content": prompt}]
+    full = ""
+    calls = []
+    truncated = False
+
+    for attempt in range(MAX_CONTINUE + 1):
+        resp = client.messages.create(
+            model=model, max_tokens=max_tokens, messages=msgs)
+        calls.append({"model": model,
+                      "input_tokens": resp.usage.input_tokens,
+                      "output_tokens": resp.usage.output_tokens})
+        piece = resp.content[0].text if resp.content else ""
+        full += piece
+
+        if resp.stop_reason != "max_tokens":
+            truncated = False
+            break
+
+        # 잘림 → 지금까지의 출력을 assistant 메시지로 넣고 "이어서" 요청.
+        # (모델이 직전 글자에 곧바로 이어붙이도록 유도)
+        truncated = True
+        msgs = [
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": full},
+            {"role": "user", "content":
+                "위 JSON이 중간에 끊겼습니다. 끊긴 바로 다음 글자부터 이어서 출력하세요. "
+                "이미 출력한 부분을 절대 반복하지 말고, 설명·코드펜스 없이 JSON 나머지만 "
+                "이어 붙이세요. 끝까지 완성해 닫는 중괄호까지 출력하세요."},
+        ]
+
+    return full, calls, truncated
 
 
 # ── 추가 컨텍스트 빌더 (실패해도 보고서 생성에 영향 없음) ──────
@@ -275,11 +323,6 @@ def analyze_messages(messages, kind: str = "pre", channel_name: str = "",
         '"data_fact":"실제 정량 데이터·뉴스가 말하는 사실을 1~2문장 요약",'
         '"verdict":"align 또는 diverge 또는 mixed",'
         '"insight":"둘을 대조한 결론·시사점 1~2문장"},'
-        '"market_drivers":{'
-        '"short_term":{"up":[{"label":"요인 핵심어","desc":"근거 한 줄"}],'
-        '"down":[{"label":"요인 핵심어","desc":"근거 한 줄"}]},'
-        '"long_term":{"up":[{"label":"요인 핵심어","desc":"근거 한 줄"}],'
-        '"down":[{"label":"요인 핵심어","desc":"근거 한 줄"}]}},'
         '"sections":['
         '{"title":"섹션 제목(오늘 내용에 맞게 직접 작명)",'
         '"body":"본문 4~7문장. 주요 변동은 원인→결과→시사점의 인과 사슬로 서술"}'
@@ -290,7 +333,12 @@ def analyze_messages(messages, kind: str = "pre", channel_name: str = "",
         '"keywords":['
         '{"keyword":"핵심 키워드","desc":"왜 거론되는지 배경 한 줄(45자 이내)",'
         '"news_headline":"근본 원인 뉴스 헤드라인(주가 등락 표현 금지)","weight":10,"related":"관련종목"}'
-        ']'
+        '],'
+        '"market_drivers":{'
+        '"short_term":{"up":[{"label":"요인 핵심어","desc":"근거 한 줄"}],'
+        '"down":[{"label":"요인 핵심어","desc":"근거 한 줄"}]},'
+        '"long_term":{"up":[{"label":"요인 핵심어","desc":"근거 한 줄"}],'
+        '"down":[{"label":"요인 핵심어","desc":"근거 한 줄"}]}}'
         f'{watch_schema},'
         '"mood":"positive 또는 neutral 또는 cautious"}\n\n'
         "sections는 내용에 맞게 충분히(보통 4~8개), keywords 정확히 10개(자주·중요 순), "
@@ -299,17 +347,25 @@ def analyze_messages(messages, kind: str = "pre", channel_name: str = "",
            else ". 단, 정량 데이터가 없으면 market_view 위주로 쓰고 data_fact 는 뉴스 기반으로 채우세요.")
     )
 
-    resp = client.messages.create(
-        model=MODEL, max_tokens=8000,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    calls.append({"model": MODEL,
-                  "input_tokens": resp.usage.input_tokens,
-                  "output_tokens": resp.usage.output_tokens})
+    # 2차 Opus — 잘리면 이어받기
+    text, opus_calls, truncated = _create_with_continuation(
+        client, MODEL, prompt, MAX_TOKENS)
+    calls.extend(opus_calls)
 
-    result = _safe_json_parse(_strip_fence(resp.content[0].text))
+    result = _safe_json_parse(_strip_fence(text))
     if result is None:
-        raise ValueError("JSON 파싱 실패. 다시 시도해주세요.")
+        raise ValueError(
+            "JSON 파싱 실패. 응답이 잘렸을 수 있어요. 다시 시도하거나 "
+            "REPORT_MAX_TOKENS 를 더 늘려보세요."
+            if truncated else "JSON 파싱 실패. 다시 시도해주세요.")
+
+    # 본문이 비면(잘림으로 인한 빈 보고서) 조용히 저장하지 말고 알린다.
+    if not result.get("sections"):
+        raise ValueError(
+            "보고서 본문(sections)이 비어 있습니다. 응답이 출력 한도에서 잘린 것으로 보여요. "
+            "다시 생성하거나, 메시지가 많은 날은 REPORT_MAX_TOKENS 를 더 늘려주세요."
+            if truncated else
+            "보고서 본문(sections)이 비어 있습니다. 다시 생성해주세요.")
 
     result.setdefault("headline", "전략·시황 보고서")
     result.setdefault("key_takeaway", "")
@@ -324,7 +380,8 @@ def analyze_messages(messages, kind: str = "pre", channel_name: str = "",
     result.setdefault("report_kind", kind)
 
     usage = {
-        "model": MODEL + (" + haiku 정제" if len(calls) > 1 else ""),
+        "model": MODEL + (" + haiku 정제" if len(calls) > len(opus_calls) else "")
+                 + (" + 이어받기" if len(opus_calls) > 1 else ""),
         "calls": calls,
         "input_tokens": sum(c["input_tokens"] for c in calls),
         "output_tokens": sum(c["output_tokens"] for c in calls),
