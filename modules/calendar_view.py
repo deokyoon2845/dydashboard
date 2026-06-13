@@ -1,8 +1,9 @@
 """[뷰어] 다가오는 주요 일정 — 월간 달력 그리드.
 
-- 데스크톱: 7열 월간 캘린더 (이벤트 칩을 날짜 칸에 표시, 이번 달~+2개월 탐색)
+- 데스크톱: 7열 월간 캘린더 (이벤트 칩을 날짜 칸에 표시, 이전 달~+2개월 탐색)
 - 모바일(640px 이하): 기존 D-day 리스트로 자동 폴백
-- 데이터: engine.calendar_events (고정 일정 + yfinance 실적일)
+- 데이터: engine.calendar_events (고정 일정 + yfinance 실적)
+- 지난 일정도 달력에 표시(흐리게) · 오늘은 빨간 동그라미 + 'Today' 뱃지
 """
 
 import calendar as _pycal
@@ -19,7 +20,9 @@ _CAL_PATH = Path("data/calendar.json")
 _CAT_CHIP = {"미국": "calm-us", "한국": "calm-kr", "실적": "calm-earn", "기타": "calm-etc"}
 _CAT_CLASS = {"미국": "cal-us", "한국": "cal-kr", "실적": "cal-earn"}  # 모바일 리스트용
 _WD_HEAD = ["일", "월", "화", "수", "목", "금", "토"]
-_MAX_MONTH_AHEAD = 2  # 이번 달 + 2개월까지 탐색
+_MAX_MONTH_AHEAD = 2   # 이번 달 + 2개월까지 탐색
+_MAX_MONTH_BACK = 2    # 이번 달 - 2개월까지 탐색 (지난 일정 확인용)
+_PAST_DAYS = 120       # 지난 일정 로드 범위 (달력에서 과거 칸 채우기용)
 
 _CAL_CSS = """
 <style>
@@ -30,14 +33,19 @@ _CAL_CSS = """
 .calm-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;}
 .calm-wd{font-size:10px;font-weight:700;color:var(--muted,#9a9b92);text-align:center;padding:2px 0 4px;}
 .calm-wd.sun{color:var(--up,#B65F5A);} .calm-wd.sat{color:var(--down,#5A7CA0);}
-.calm-cell{min-height:52px;border:1px solid var(--line,#ECEDE7);border-radius:7px;padding:3px 4px;
+.calm-cell{position:relative;min-height:52px;border:1px solid var(--line,#ECEDE7);border-radius:7px;padding:3px 4px;
   background:var(--card,#fff);overflow:hidden;}
 .calm-cell.calm-empty{border:none;background:transparent;}
-.calm-cell.calm-past{opacity:.4;}
-.calm-cell.calm-today{border-color:var(--sage-deep,#7E9A83);border-width:2px;padding:2px 3px;}
-.calm-day{font-size:10px;font-weight:700;color:var(--muted,#9a9b92);line-height:1.2;}
+.calm-cell.calm-past{opacity:.45;}
+/* 오늘: 빨간 동그라미 테두리 + Today 뱃지 */
+.calm-cell.calm-today{border:2px solid var(--up,#B65F5A);padding:2px 3px;box-shadow:0 0 0 2px var(--tint-up,#FBF2F2);}
+.calm-day{font-size:10px;font-weight:700;color:var(--muted,#9a9b92);line-height:1.2;
+  display:flex;align-items:center;gap:3px;}
 .calm-day.sun{color:var(--up,#B65F5A);} .calm-day.sat{color:var(--down,#5A7CA0);}
-.calm-today .calm-day{color:var(--sage-deep,#7E9A83);}
+.calm-today .calm-daynum{display:inline-flex;align-items:center;justify-content:center;
+  width:16px;height:16px;border-radius:50%;background:var(--up,#B65F5A);color:#fff;font-weight:700;}
+.calm-todaylab{font-size:8px;font-weight:800;letter-spacing:.02em;color:var(--up,#B65F5A);
+  text-transform:uppercase;}
 .calm-chip{display:block;font-size:9px;font-weight:700;line-height:1.3;margin-top:2px;padding:1px 4px;
   border-radius:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default;}
 /* ── 모바일 달력 칩 크기 조정 ── */
@@ -45,6 +53,7 @@ _CAL_CSS = """
   .calm-cell{min-height:40px;padding:2px 3px;}
   .calm-chip{font-size:8px;padding:1px 3px;}
   .calm-day{font-size:9px;}
+  .calm-todaylab{display:none;}
 }
 .calm-us{background:var(--tint-down,#F1F5F9);color:#2C5F7C;}
 .calm-kr{background:var(--tint-up,#FBF2F2);color:#B65F5A;}
@@ -57,9 +66,10 @@ _CAL_CSS = """
 
 
 @st.cache_data(ttl=3600)
-def _load_all(days: int = 90):
-    """고정 일정 + 실적일 합쳐서 반환 (1시간 캐시)."""
-    events = upcoming_events(days)
+def _load_all(days: int = 90, past_days: int = _PAST_DAYS):
+    """고정 일정(과거 포함) + 실적일 합쳐서 반환 (1시간 캐시).
+    past_days만큼 지난 일정도 포함 → 달력에서 지난 칸도 채워짐."""
+    events = upcoming_events(days, past_days=past_days)
     try:
         events += [e for e in fetch_next_earnings() if e["dday"] <= days]
     except Exception:
@@ -107,14 +117,21 @@ def _month_grid_html(year: int, month: int, ev_by_date: dict, today: date) -> st
                 continue
             d = date(year, month, day)
             classes = ["calm-cell"]
-            if d == today:
+            is_today = (d == today)
+            if is_today:
                 classes.append("calm-today")
             elif d < today:
                 classes.append("calm-past")
             day_cls = "calm-day" + (" sun" if i == 0 else (" sat" if i == 6 else ""))
+            # 오늘이면 숫자에 빨간 동그라미 + Today 라벨
+            if is_today:
+                day_inner = (f'<span class="calm-daynum">{day}</span>'
+                             f'<span class="calm-todaylab">Today</span>')
+            else:
+                day_inner = f'{day}'
             chips = "".join(_chip_html(ev) for ev in ev_by_date.get(d.strftime("%Y-%m-%d"), []))
             cells.append(f'<div class="{" ".join(classes)}">'
-                         f'<div class="{day_cls}">{day}</div>{chips}</div>')
+                         f'<div class="{day_cls}">{day_inner}</div>{chips}</div>')
 
     return (f'<div class="calm-outer">'
             f'<div class="calm-grid">{head}{"".join(cells)}</div>'
@@ -122,10 +139,10 @@ def _month_grid_html(year: int, month: int, ev_by_date: dict, today: date) -> st
 
 
 def _mobile_list_html(events) -> str:
-    """모바일 폴백: 기존 D-day 리스트 (app.py의 cal-* CSS 재사용)."""
+    """모바일 폴백: D-day 리스트 (app.py의 cal-* CSS 재사용). 다가오는 일정만."""
     rows = []
     for ev in events:
-        if ev["dday"] > 30:
+        if ev["dday"] < 0 or ev["dday"] > 30:
             continue
         dday = ev["dday"]
         if dday == 0:
@@ -160,12 +177,14 @@ def render_calendar(days: int = 90):
     st.markdown(_CAL_CSS, unsafe_allow_html=True)
     st.markdown('<div class="mkt-group">📅 다가오는 주요 일정</div>', unsafe_allow_html=True)
 
-    # 가장 임박한 일정 한 줄
-    nxt = events[0]
-    dd = "오늘" if nxt["dday"] == 0 else f"D-{nxt['dday']}"
-    st.markdown(
-        f'<div class="calm-next">다음 일정: <b>{dd} {_html.escape(nxt["name"])}</b>'
-        f' ({nxt["date"][5:].replace("-", "/")})</div>', unsafe_allow_html=True)
+    # 가장 임박한 '다가오는' 일정 한 줄 (과거 제외)
+    upcoming = [e for e in events if e["dday"] >= 0]
+    if upcoming:
+        nxt = upcoming[0]
+        dd = "오늘" if nxt["dday"] == 0 else f"D-{nxt['dday']}"
+        st.markdown(
+            f'<div class="calm-next">다음 일정: <b>{dd} {_html.escape(nxt["name"])}</b>'
+            f' ({nxt["date"][5:].replace("-", "/")})</div>', unsafe_allow_html=True)
 
     # 월 상태
     if "cal_month_off" not in st.session_state:
@@ -177,7 +196,8 @@ def render_calendar(days: int = 90):
     # ── 상단 월 이동: ◀  YYYY년 M월  ▶ (네이티브 버튼 한 세트) ──
     nav_prev, nav_title, nav_next = st.columns([1, 6, 1])
     with nav_prev:
-        if st.button("◀", key="cal_prev", disabled=(off <= 0), use_container_width=True):
+        if st.button("◀", key="cal_prev", disabled=(off <= -_MAX_MONTH_BACK),
+                     use_container_width=True):
             st.session_state["cal_month_off"] = off - 1
             st.rerun()
     with nav_title:
@@ -194,8 +214,8 @@ def render_calendar(days: int = 90):
     st.markdown(grid, unsafe_allow_html=True)
 
     st.markdown(
-        '<div class="data-asof">FOMC·금통위·CPI는 공식 발표 일정 (연 1회 수동 갱신) · '
-        '실적일은 yfinance 추정으로 변동 가능</div>',
+        '<div class="data-asof">FOMC·금통위·CPI·고용·PPI·GDP·소매판매는 공식 발표 일정 (연 1회 수동 갱신) · '
+        '실적일은 yfinance 추정으로 변동 가능 · 지난 일정도 흐리게 표시</div>',
         unsafe_allow_html=True)
 
     _render_event_editor()
