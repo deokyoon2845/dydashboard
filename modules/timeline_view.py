@@ -135,7 +135,27 @@ def _infer_kind(fname: str, rep: dict) -> str:
 
 
 def _section_titles(report: dict) -> list:
-    """sections[]에서 제목만 추출 (키 이름이 달라도 방어적으로)."""
+    """카드에 표시할 소제목 목록 추출.
+
+    신형 보고서(topics 스키마)는 중요도 순 topics[].title을, 구형은 sections[].title을 쓴다.
+    타임라인 카드에 헤드라인 밑 요약 불릿으로 표시된다.
+    """
+    # 신형: topics (이미 중요도 내림차순으로 저장됨)
+    topics = report.get("topics")
+    if isinstance(topics, list) and topics:
+        out = []
+        for tp in topics[:_MAX_SECTIONS]:
+            if not isinstance(tp, dict):
+                continue
+            title = str(tp.get("title", "")).strip()
+            if title:
+                if len(title) > _TRUNC:
+                    title = title[:_TRUNC] + "…"
+                out.append(title)
+        if out:
+            return out
+
+    # 구형: sections
     out = []
     for sec in report.get("sections", [])[:_MAX_SECTIONS]:
         title = None
