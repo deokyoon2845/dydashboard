@@ -1,6 +1,7 @@
-"""오늘의 키워드 뷰 — 카테고리·중요도·연속배지·NEW배지·워치리스트★·필터·인라인시세·아카이브.
+"""오늘의 키워드 뷰 — 카테고리·중요도·연속배지·NEW배지·워치리스트★·인라인종목·아카이브.
 
 데스크톱: 3열 그리드 카드 (TOP15 → 3×5) / 모바일: 1열로 자동 전환.
+뉴스 제목은 카드 높이 균일화를 위해 1줄로 표시(말줄임).
 """
 
 import html
@@ -16,7 +17,6 @@ KW_PATH = Path("data/keywords_today.json")
 KW_ARCHIVE_DIR = Path("data/keywords_archive")
 
 CAT_CLS = {"거시": "cat-macro", "섹터": "cat-sector", "종목": "cat-stock", "정책": "cat-policy"}
-CAT_FILTERS = ["전체", "거시", "섹터", "종목", "정책"]
 
 _KW_CSS = """
 <style>
@@ -47,20 +47,14 @@ _KW_CSS = """
 .kw-stk{font-size:11px;font-weight:600;text-decoration:none;background:var(--pill-bg,#F1F2EC);
   color:var(--pill-ink,#5d6258);border:1px solid var(--line,#ECEDE7);padding:2px 8px;border-radius:7px;}
 .kw-stk.kw-stk-watch{border-color:#D9A93C;}
-.kw-stk .up{color:#B65F5A;} .kw-stk .down{color:#5A7CA0;} .kw-stk .flat{color:#9a9b92;}
 .kw-news{margin-top:auto;}
-.kw-news a{display:block;font-size:12px;line-height:1.45;color:var(--sage-deep,#7E9A83);
-  text-decoration:none;margin-bottom:4px;padding-left:11px;position:relative;
-  overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+/* 뉴스 제목: 1줄 고정 + 말줄임 (카드 높이 균일) */
+.kw-news a{display:block;font-size:12px;line-height:1.5;color:var(--sage-deep,#7E9A83);
+  text-decoration:none;margin-bottom:5px;padding-left:11px;position:relative;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .kw-news a:before{content:"›";position:absolute;left:0;color:var(--muted,#9a9b92);}
 .kw-news a:hover{text-decoration:underline;}
 .kw-weak{font-size:10.5px;color:var(--muted,#9a9b92);margin-top:6px;}
-.app.dark .cat-macro{background:#21303B;color:#9CC4DC;}
-.app.dark .cat-sector{background:#243025;color:#A9C9AE;}
-.app.dark .cat-stock{background:#332B1E;color:#D9BC8C;}
-.app.dark .cat-policy{background:#2E2436;color:#C9A9D9;}
-.app.dark .kw-streak{background:#3D2412;color:#F0A36B;}
-.app.dark .kw-new{background:#085041;color:#9fe1cb;}
 </style>
 """
 
@@ -98,30 +92,15 @@ def _watch_set() -> set:
         return set()
 
 
-def _stock_html(names, show_quote, watch_set):
-    """종목 pill — show_quote면 당일 등락률 인라인 표시, 워치리스트 종목은 ★ 테두리."""
+def _stock_html(names, watch_set):
+    """종목 pill — 이름 + 네이버 시세 링크. 워치리스트 종목은 ★ 테두리."""
     parts = []
-    fetch = None
-    if show_quote:
-        try:
-            from modules.stock_quote import fetch_stock_change
-            fetch = fetch_stock_change
-        except Exception:
-            fetch = None
-
     for n in names or []:
         n = (n or "").strip()
         if not n:
             continue
         is_watch = _norm_name(n) in watch_set
         label = ("⭐ " if is_watch else "") + html.escape(n)
-        if fetch:
-            q = fetch(n)
-            if q and q.get("pct") is not None:
-                pct = q["pct"]
-                cls = "up" if pct > 0 else ("down" if pct < 0 else "flat")
-                arrow = "▲" if pct > 0 else ("▼" if pct < 0 else "·")
-                label += f' <span class="{cls}">{arrow}{abs(pct):.1f}%</span>'
         watch_cls = " kw-stk-watch" if is_watch else ""
         parts.append(
             f'<a class="kw-stk{watch_cls}" href="{html.escape(naver_stock_url(n))}" '
@@ -130,13 +109,10 @@ def _stock_html(names, show_quote, watch_set):
     return f'<div class="kw-stocks">{"".join(parts)}</div>' if parts else ""
 
 
-def _render_items(items, show_quote, watch_set, cat_filter="전체"):
+def _render_items(items, watch_set):
     cards = []
     for i, it in enumerate(items[:15], start=1):
         cat = it.get("category", "")
-        if cat_filter != "전체" and cat != cat_filter:
-            continue
-
         kw = html.escape(it.get("keyword", ""))
         cat_html = (f'<span class="kw-cat {CAT_CLS.get(cat, "cat-sector")}">{html.escape(cat)}</span>'
                     if cat else "")
@@ -155,7 +131,7 @@ def _render_items(items, show_quote, watch_set, cat_filter="전체"):
         if isinstance(weight, int):
             wbar = f'<div class="kw-wbar"><span style="width:{weight*10}%"></span></div>'
 
-        stocks_html = _stock_html(stocks, show_quote, watch_set)
+        stocks_html = _stock_html(stocks, watch_set)
 
         news_list = it.get("news")
         if not news_list and it.get("news_url"):
@@ -186,7 +162,7 @@ def _render_items(items, show_quote, watch_set, cat_filter="전체"):
         )
 
     if not cards:
-        st.caption("이 카테고리의 키워드가 오늘은 없어요.")
+        st.caption("표시할 키워드가 없어요.")
         return
     st.markdown(f'<div class="kw-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
 
@@ -231,18 +207,10 @@ def render_keywords():
         return
 
     when = str(data.get("generated", ""))[:16].replace("T", " ")
-
-    fc1, fc2 = st.columns([3, 2])
-    with fc1:
-        cat_filter = st.radio("카테고리", CAT_FILTERS, horizontal=True,
-                              key="kw_cat_filter", label_visibility="collapsed")
-    with fc2:
-        show_quote = st.toggle("종목 당일 등락률 표시", value=True, key="kw_quote",
-                               help="국내 종목의 당일 등락률을 인라인으로 보여줘요 (KRX 조회, 첫 로딩 느릴 수 있음)")
     st.caption(f"기준: {when} · 네이버 뉴스 기반")
 
     watch_set = _watch_set()
-    _render_items(data["items"], show_quote, watch_set, cat_filter)
+    _render_items(data["items"], watch_set)
     st.caption("※ 키워드·종목·카테고리·중요도는 AI 추출, 링크는 네이버 뉴스 실제 기사. "
                "🔥 = 연속 등장 일수, NEW = 오늘 첫 등장, ⭐ = 내 워치리스트 종목 포함, "
                "막대 = 중요도. 뉴스는 카드당 2건 표시.")
