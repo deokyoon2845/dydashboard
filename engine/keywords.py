@@ -1,14 +1,15 @@
-"""[엔진] 오늘의 증시 키워드 추출 (15개, 키워드당 뉴스 3개).
+"""[엔진] 오늘의 증시 키워드 추출 (최대 15개, 키워드당 뉴스 3개).
 
 안전장치: AI는 우리가 건넨 '실제 기사 목록'에서 번호만 고릅니다.
 URL을 새로 만들지 않으므로 가짜 링크가 생기지 않습니다.
 
 개선:
-- 키워드 15개, 키워드당 대표 기사 최대 3개
+- 키워드 최대 15개(16개 받아 중복 제거 후 상위 15), 키워드당 대표 기사 최대 3개
 - '코스피 1.2% 상승' 같은 단순 시세/등락 뉴스는 사전 필터로 제외
 - 의미가 겹치는 키워드는 대표어로 통합하도록 지시
 - 같은 '사건'에서 파생된 키워드(원인↔결과)도 하나로 통합
-- 카테고리 균형 (거시 편중 방지)
+- ★코드 레벨 사건 중복 제거: 근거 기사군이 겹치는 키워드는 같은 사건으로 보고 병합
+- 카테고리 균형 (거시 편중 방지, 거시 최대 5개)
 - 같은 기사가 여러 키워드에 중복 배정되지 않도록 코드 레벨 차단
 - 오늘 처음 등장한 키워드에 is_new 플래그 (뷰어의 NEW 배지용)
 """
@@ -30,6 +31,7 @@ KW_ARCHIVE_DIR = Path("data/keywords_archive")
 MODEL = "claude-haiku-4-5"
 
 CATEGORIES = ["거시", "섹터", "종목", "정책"]
+MAX_KEYWORDS = 15
 
 SYSTEM = "당신은 한국 증시 애널리스트입니다. 오늘 뉴스 헤드라인에서 핵심 키워드를 추출합니다."
 
@@ -61,6 +63,83 @@ def _parse_json(text: str):
         text = m.group(0)
     return json.loads(text)
 
+
+# ── 사건 중복 제거 (기사군 겹침 기반) ─────────────────────────
+
+def _weight_of(obj) -> int:
+    try:
+        return max(1, min(10, int(obj.get("weight", 5))))
+    except (ValueError, TypeError):
+        return 5
+
+
+def _idx_set(obj, n_articles) -> set:
+    """obj가 가리키는 유효 기사 인덱스 집합."""
+    idxs = obj.get("article_indices") or obj.get("article_index")
+    if isinstance(idxs, int):
+        idxs = [idxs]
+    return {i for i in (idxs or []) if isinstance(i, int) and 0 <= i < n_articles}
+
+
+def _stock_set(obj) -> set:
+    return {str(s).strip().lower().replace(" ", "")
+            for s in (obj.get("stocks") or []) if str(s).strip()}
+
+
+def _dedupe_events(parsed, n_articles, limit=MAX_KEYWORDS):
+    """근거 기사군이 겹치는 키워드는 같은 사건으로 보고 weight 높은 쪽만 남김.
+
+    같은 사건 판정 기준 (하나라도 충족):
+      - 두 키워드가 근거 기사를 2건 이상 공유
+      - 기사를 1건 이상 공유하고, 적은 쪽 기사 수의 절반 이상이 겹침
+      - 종목 집합이 (비어있지 않게) 완전히 같고 기사도 1건 이상 겹침
+    """
+    if not isinstance(parsed, list):
+        return []
+    # weight 내림차순 (동률은 원래 순서 보존)
+    order = sorted(range(len(parsed)), key=lambda i: (-_weight_of(parsed[i]), i))
+
+    accepted = []          # [(idx_set, stock_set), ...]
+    result, seen_kw = [], set()
+    for i in order:
+        obj = parsed[i]
+        if not isinstance(obj, dict):
+            continue
+        kw = str(obj.get("keyword", "")).strip()
+        if not kw:
+            continue
+        norm = kw.lower().replace(" ", "")
+        if norm in seen_kw:
+            continue
+
+        idxs = _idx_set(obj, n_articles)
+        stocks = _stock_set(obj)
+
+        is_dup = False
+        for a_idx, a_stk in accepted:
+            shared = idxs & a_idx
+            if len(shared) >= 2:
+                is_dup = True
+                break
+            denom = min(len(idxs), len(a_idx))
+            if shared and denom and len(shared) / denom >= 0.5:
+                is_dup = True
+                break
+            if stocks and stocks == a_stk and shared:
+                is_dup = True
+                break
+        if is_dup:
+            continue
+
+        seen_kw.add(norm)
+        accepted.append((idxs, stocks))
+        result.append(obj)
+        if len(result) >= limit:
+            break
+    return result
+
+
+# ── 연속 등장 / NEW 배지 ─────────────────────────────────────
 
 def _compute_streaks(today_keywords, now):
     """오늘 키워드별 '연속 등장 일수' 계산.
@@ -133,20 +212,25 @@ def build_today_keywords() -> dict:
     prompt = (
         "다음은 오늘의 증시 관련 뉴스 헤드라인 목록입니다 (번호: 제목).\n\n"
         f"{listing}\n\n"
-        "이 중에서 오늘 증시에서 가장 중요한 키워드 15개를 중요도 순으로 뽑아주세요.\n"
+        "이 중에서 오늘 증시에서 가장 중요한 키워드 16개를 중요도 순으로 뽑아주세요 "
+        "(서로 확실히 다른 사건·주제여야 합니다).\n"
         "각 키워드마다 (1) 관련 한국 종목명 0~3개, (2) 그 키워드를 대표하는 "
         "헤드라인 번호를 중요도 순으로 최대 3개, (3) 카테고리, (4) 중요도 점수를 매기세요.\n\n"
         "규칙:\n"
         "- 의미가 겹치는 키워드는 하나의 대표어로 통합하세요 "
         "(예: AI/인공지능/챗GPT → 'AI', 반도체/메모리/HBM → 적절한 대표어). "
         "절대 비슷한 키워드를 중복해서 만들지 마세요.\n"
-        "- ★사건 단위 통합: 같은 '사건'에서 파생된 원인과 결과를 별개 키워드로 쪼개지 마세요. "
-        "키워드는 '원인이 되는 사건' 기준 하나만 만들고, 그로 인한 지수 급등락·사이드카 발동·"
-        "투자심리 회복 같은 '결과 현상'은 그 키워드에 흡수시킵니다 "
-        "(나쁜 예: '중동 종전 기대' + '매수 사이드카' + '코스닥 회복'을 각각 생성 → "
-        "좋은 예: '중동 종전 기대감' 하나로 통합). 15개 슬롯은 서로 다른 사건·주제로 채우세요.\n"
-        "- ★카테고리 균형: 거시 키워드는 최대 6개까지만. 섹터와 종목 카테고리를 합쳐 "
-        "5개 이상 포함되도록, 덜 중요한 거시 이슈 대신 구체적인 섹터·개별 기업 이슈를 발굴하세요.\n"
+        "- ★사건 단위 통합(가장 중요): 같은 '사건'에서 파생된 원인과 결과를 별개 키워드로 쪼개지 마세요. "
+        "키워드는 '원인이 되는 사건' 하나만 만들고, 그로 인한 지수 급등락·지수 레벨 돌파(예: 8000선 회복)·"
+        "사이드카 발동·수급 주체 변화(외국인/개인 순매수)·투자심리 회복 같은 '결과 현상'은 "
+        "그 키워드에 흡수시키세요.\n"
+        "  나쁜 예) '외국인 순매수 전환' + '코스피 8000선 회복' + '개인투자자 순매수' 를 각각 생성 "
+        "→ 셋 다 '외국인 복귀로 코스피 8천선 회복'이라는 한 사건입니다. 하나로 합치세요.\n"
+        "  나쁜 예) 종목이 같고 근거 기사가 겹치는 두 키워드(예: 같은 반도체 기사를 공유) "
+        "→ 같은 키워드일 가능성이 큽니다. 통합을 먼저 검토하세요.\n"
+        "  합칠 게 있으면 차라리 16개를 못 채우고 개수가 줄어도 좋습니다. 중복보다 적은 게 낫습니다.\n"
+        "- ★카테고리 균형: 거시 키워드는 최대 5개까지만. 섹터와 종목 카테고리를 합쳐 "
+        "7개 이상 포함되도록, 덜 중요한 거시 이슈 대신 구체적인 섹터·개별 기업 이슈를 발굴하세요.\n"
         "- 하나의 기사 번호는 가능한 한 키워드에만 배정하세요. 두 키워드가 같은 기사를 "
         "공유해야 한다면 그 둘은 사실 같은 키워드라는 신호이니 통합을 먼저 검토하세요.\n"
         "- '코스피 1% 상승' 같은 단순 지수 등락은 키워드가 아닙니다. "
@@ -164,7 +248,7 @@ def build_today_keywords() -> dict:
 
     client = Anthropic()
     resp = client.messages.create(
-        model=MODEL, max_tokens=2500, system=SYSTEM,
+        model=MODEL, max_tokens=3000, system=SYSTEM,
         messages=[{"role": "user", "content": prompt}],
     )
 
@@ -172,6 +256,9 @@ def build_today_keywords() -> dict:
         parsed = _parse_json(resp.content[0].text)
     except Exception:
         return {"ok": False, "reason": "AI 응답을 해석하지 못했습니다. 다시 시도해주세요."}
+
+    # ★ 사건 중복 제거: 근거 기사군이 겹치는 키워드 병합 후 상위 15개
+    parsed = _dedupe_events(parsed, len(articles), limit=MAX_KEYWORDS)
 
     items, seen_kw = [], set()
     used_urls = set()                             # 키워드 간 기사 중복 배정 차단
@@ -210,11 +297,7 @@ def build_today_keywords() -> dict:
         cat = str(obj.get("category", "")).strip()
         if cat not in CATEGORIES:
             cat = "섹터"
-        try:
-            weight = int(obj.get("weight", 5))
-        except (ValueError, TypeError):
-            weight = 5
-        weight = max(1, min(10, weight))
+        weight = _weight_of(obj)
 
         items.append({
             "keyword": kw,
@@ -223,7 +306,7 @@ def build_today_keywords() -> dict:
             "stocks": [str(s).strip() for s in (obj.get("stocks") or [])][:3],
             "news": news,
         })
-        if len(items) >= 15:
+        if len(items) >= MAX_KEYWORDS:
             break
 
     now = datetime.now(KST)
