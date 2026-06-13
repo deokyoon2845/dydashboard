@@ -51,6 +51,11 @@
       "active": true
     },
     {
+      "id": "@globaletfi",
+      "name": "[하나 Global ETF] 박승진",
+      "active": true
+    },
+    {
       "id": "@yuantais",
       "name": "《유안타 투자전략》",
       "active": true
