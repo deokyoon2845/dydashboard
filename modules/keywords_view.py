@@ -1,6 +1,6 @@
 """오늘의 키워드 뷰 — 카테고리·중요도·연속배지·NEW배지·워치리스트★·인라인종목·아카이브.
 
-데스크톱: 3열 그리드 카드 (TOP15 → 3×5) / 모바일: 1열로 자동 전환.
+데스크톱: 2열 그리드 카드 (TOP15) / 모바일: 1열로 자동 전환.
 뉴스 제목은 카드 높이 균일화를 위해 1줄로 표시(말줄임).
 """
 
@@ -20,10 +20,9 @@ CAT_CLS = {"거시": "cat-macro", "섹터": "cat-sector", "종목": "cat-stock",
 
 _KW_CSS = """
 <style>
-/* 3열 그리드 (데스크톱) → 좁아지면 2열 → 1열 */
-.kw-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:6px;}
-@media(max-width:900px){.kw-grid{grid-template-columns:repeat(2,1fr);}}
-@media(max-width:600px){.kw-grid{grid-template-columns:1fr;}}
+/* 2열 그리드 (데스크톱) → 좁아지면 1열 */
+.kw-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:6px;}
+@media(max-width:680px){.kw-grid{grid-template-columns:1fr;}}
 
 .kw-card{background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);border-radius:14px;
   padding:14px 15px;display:flex;flex-direction:column;gap:0;}
