@@ -16,6 +16,11 @@
       "active": true
     },
     {
+      "id": "@TNBfolio",
+      "name": "TNBfolio",
+      "active": true
+    },
+    {
       "id": "@Meritz_strategy",
       "name": "메리츠증권 투자전략팀",
       "active": true
@@ -58,6 +63,11 @@
     {
       "id": "@yuantais",
       "name": "《유안타 투자전략》",
+      "active": true
+    },
+    {
+      "id": "@haribo_market",
+      "name": "한화PLUS 김수연",
       "active": true
     },
     {
