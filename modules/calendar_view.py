@@ -237,7 +237,7 @@ def _save_cal_raw(data: dict):
 
 def _render_event_editor():
     """사용자 일정 추가/삭제. data/calendar.json의 events에 custom=True로 저장."""
-    with st.expander("➕ 내 일정 추가·관리"):
+    with st.expander("➕ 일정 추가·관리"):
         st.caption("⚠️ 여기서 추가한 일정은 서버 재시작(Reboot·재배포) 시 사라질 수 있어요. "
                    "영구 보관이 필요한 일정은 깃허브 저장소의 data/calendar.json에 직접 추가하세요.")
 
