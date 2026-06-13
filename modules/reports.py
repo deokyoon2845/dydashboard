@@ -32,6 +32,8 @@ _RPT_CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Hanken+Grotesk:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap');
 .rpt-wrap{font-family:'Hanken Grotesk','Noto Sans KR',sans-serif;}
+/* 데스크탑 본문 폭 확장 (전역 · 현재 대비 약 10% ↑) */
+[data-testid="stMainBlockContainer"],.block-container{max-width:1500px !important;padding-left:2.4rem !important;padding-right:2.4rem !important;}
 .mood-badge{font-size:10.5px;font-weight:700;letter-spacing:.06em;padding:3px 11px;border-radius:20px;display:inline-block;}
 __MOOD_BADGE_CSS__
 .rpt2-bar{height:3px;width:34px;background:var(--sage,#A7BBA9);border-radius:3px;margin:0 0 10px;}
@@ -103,7 +105,7 @@ __MOOD_BADGE_CSS__
 .rc-empty .eta{font-size:11.5px;margin-top:10px;background:var(--pill-bg,#F1F2EC);color:var(--pill-ink,#5d6258);border:1px solid var(--line,#ECEDE7);padding:3px 11px;border-radius:20px;}
 
 /* 교차 검증 (장전/장후 카드 내부) */
-.rcc{margin:2px 0 14px;}
+.rcc{margin:14px 0 12px;padding-top:14px;border-top:1px solid var(--line,#ECEDE7);}
 .rcc-lab{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--sage-deep,#7E9A83);margin-bottom:7px;}
 .rcc-grid{display:flex;gap:9px;flex-wrap:wrap;}
 .rcc-col{flex:1;min-width:185px;border:1px solid var(--line,#ECEDE7);border-radius:11px;padding:10px 13px;background:#fff;}
@@ -117,7 +119,9 @@ __MOOD_BADGE_CSS__
 .rcc-vbadge{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:20px;background:var(--pill-bg,#F1F2EC);color:var(--pill-ink,#5d6258);margin-right:7px;border:1px solid var(--line,#ECEDE7);}
 
 /* 주목 테마 (하단 전체 폭) */
-.rpt-theme-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;}
+.rpt-theme-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+@media(max-width:900px){.rpt-theme-grid{grid-template-columns:repeat(2,1fr);}}
+@media(max-width:560px){.rpt-theme-grid{grid-template-columns:1fr;}}
 .theme-card{background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);border-left:3px solid var(--sage,#A7BBA9);border-radius:0 13px 13px 0;padding:13px 16px 11px;}
 .theme-name{font-size:14px;font-weight:700;color:var(--ink,#34352f);margin-bottom:5px;}
 .theme-detail{font-size:13px;line-height:1.7;color:var(--ink,#34352f);margin-bottom:8px;}
@@ -269,8 +273,6 @@ def _render_tldr(pre_data, post_data, latest, latest_kind):
         return
 
     kt = html.escape(str(latest.get("key_takeaway", "")).strip())
-    if len(kt) > 100:
-        kt = kt[:98].rstrip() + "…"
 
     def _step(label, d):
         m = d.get("mood", "neutral")
@@ -432,14 +434,14 @@ def _render_report_card(data: dict, kind: str, path: Path):
 
     kt_html = (f'<div class="rc-ktlab">{kt_lab}</div><div class="rc-ktbox">{kt}</div>'
                if kt else "")
-    cc_html = _cross_check_html(data)   # 교차 검증 (관전 박스 다음, 본문 섹션 앞)
+    cc_html = _cross_check_html(data)   # 교차 검증 (본문 섹션 다음, 출처 칩 바로 위)
     st.markdown(
         f'<div class="rc">'
         f'<div class="rc-head"><span class="rc-kind">{icon} {kind_ko}</span>'
         f'<span class="mood-badge {mood_cls}">{mood_ko.upper()}</span></div>'
         f'<div class="rc-win">{win}</div>'
         f'<div class="rc-headline">{headline}</div>'
-        f'{kt_html}{cc_html}{secs_html}'
+        f'{kt_html}{secs_html}{cc_html}'
         f'<div class="rc-src">{src_html}</div>'
         f'</div>', unsafe_allow_html=True)
 
@@ -557,9 +559,7 @@ def render_reports():
         _render_matrix(latest, latest_kind)
 
     # ② 좌 장전 / 우 장마감 후
-    st.markdown('<div class="rpt2-grp">📑 장전 · 장마감 후 보고서 '
-                '<span class="sub">데스크톱: 좌 장전 · 우 장후 / 모바일: 위아래</span></div>',
-                unsafe_allow_html=True)
+    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
     left, right = st.columns(2, gap="large")
     with left:
         if pre_data:
