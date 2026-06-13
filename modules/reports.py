@@ -54,33 +54,50 @@ __MOOD_BADGE_CSS__
 .rpt-tldr .hl{font-family:'Fraunces','Noto Sans KR',serif;font-size:19px;font-weight:600;line-height:1.42;color:var(--ink,#34352f);}
 .rpt-tldr .kt{font-size:12.5px;color:var(--muted,#9a9b92);line-height:1.62;margin-top:7px;}
 
-/* 시장 동력 매트릭스 */
-.dvm{display:grid;grid-template-columns:0.82fr 1.09fr 1.09fr;background:#fff;border:1px solid var(--line,#ECEDE7);border-radius:16px;overflow:hidden;}
-.dvm-h{font-size:12.5px;font-weight:700;padding:12px 15px;display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--line,#ECEDE7);}
+/* 시장 동력 매트릭스 (재디자인) — 시계열 열 좁게, 상승/하락 열 넓게 */
+.dvm{display:grid;grid-template-columns:0.58fr 1.21fr 1.21fr;background:#fff;
+  border:1px solid var(--line,#ECEDE7);border-radius:16px;overflow:hidden;}
+/* 헤더 행 */
+.dvm-h{font-size:12.5px;font-weight:700;padding:11px 16px;display:flex;align-items:center;gap:6px;
+  border-bottom:1px solid var(--line,#ECEDE7);}
 .dvm-h em{font-style:normal;font-size:10px;font-weight:600;color:var(--muted,#9a9b92);margin-left:2px;}
-.dvm-h0{background:var(--summary-bg,#F6F7F2);color:var(--ink,#34352f);}
+.dvm-h0{background:var(--summary-bg,#F6F7F2);color:var(--muted,#9a9b92);font-size:11px;
+  letter-spacing:.04em;text-transform:uppercase;}
 .dvm-hup{background:var(--tint-up,#FBF2F2);color:var(--up,#B65F5A);}
 .dvm-hdown{background:var(--tint-down,#F1F5F9);color:var(--down,#5A7CA0);}
-.dvm-tf{padding:15px;border-bottom:1px solid var(--line,#ECEDE7);background:var(--summary-bg,#F6F7F2);}
-.tf-name{font-size:14px;font-weight:700;color:var(--ink,#34352f);}
-.tf-name em{font-style:normal;font-size:10.5px;color:var(--muted,#9a9b92);font-weight:600;margin-left:4px;}
-.tf-sub{font-size:11px;color:var(--muted,#9a9b92);margin-top:5px;}
-.dvm-cell{padding:13px 15px;border-bottom:1px solid var(--line,#ECEDE7);border-left:1px solid var(--line,#ECEDE7);}
-.dvi{font-size:12.5px;line-height:1.62;color:var(--ink,#34352f);margin-bottom:11px;}
-.dvi:last-child{margin-bottom:0;}
-.dvi-lab{font-weight:700;}
-.dvi.up .dvi-lab{color:var(--up,#B65F5A);}
-.dvi.down .dvi-lab{color:var(--down,#5A7CA0);}
-.dvi-empty{font-size:12px;color:var(--muted,#9a9b92);}
+/* 시계열 라벨 칸 (좁게) */
+.dvm-tf{padding:14px 16px;border-bottom:1px solid var(--line,#ECEDE7);background:var(--summary-bg,#F6F7F2);
+  display:flex;flex-direction:column;justify-content:center;}
+.tf-name{font-size:15px;font-weight:700;color:var(--ink,#34352f);}
+.tf-name em{display:block;font-style:normal;font-size:10px;color:var(--muted,#9a9b92);
+  font-weight:600;margin:2px 0 0;letter-spacing:.02em;}
+.tf-sub{font-size:10.5px;color:var(--muted,#9a9b92);margin-top:6px;line-height:1.4;}
+/* 내용 칸 — 항목들을 세로로 쌓되 넉넉한 폭 */
+.dvm-cell{padding:11px 14px;border-bottom:1px solid var(--line,#ECEDE7);
+  border-left:1px solid var(--line,#ECEDE7);display:flex;flex-direction:column;gap:8px;}
+/* 개별 항목: 좌측 컬러바 + 라벨(칩) + 설명, 한 카드로 */
+.dvi{position:relative;padding:8px 11px 8px 13px;border-radius:9px;background:var(--summary-bg,#F6F7F2);
+  border:1px solid var(--line,#ECEDE7);}
+.dvi::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:3px;}
+.dvi.up::before{background:var(--up,#B65F5A);}
+.dvi.down::before{background:var(--down,#5A7CA0);}
+.dvi-lab{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:6px;
+  margin-bottom:4px;}
+.dvi.up .dvi-lab{background:var(--tint-up,#FBF2F2);color:var(--up,#B65F5A);}
+.dvi.down .dvi-lab{background:var(--tint-down,#F1F5F9);color:var(--down,#5A7CA0);}
+.dvi-desc{font-size:12.5px;line-height:1.55;color:var(--ink,#34352f);}
+.dvi-empty{font-size:12px;color:var(--muted,#9a9b92);padding:4px 2px;}
 .dvm-celldir{display:none;}
 .dvm > *:nth-last-child(-n+3){border-bottom:none;}
 @media(max-width:640px){
   .dvm{grid-template-columns:1fr;}
   .dvm-h{display:none;}
-  .dvm-cell{border-left:none;}
+  .dvm-tf{background:#fff;padding-bottom:4px;border-bottom:none;}
+  .tf-name{font-size:14px;}
+  .dvm-cell{border-left:none;padding-top:4px;}
   .dvm > *:nth-last-child(-n+3){border-bottom:1px solid var(--line,#ECEDE7);}
   .dvm > *:last-child{border-bottom:none;}
-  .dvm-celldir{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;margin-bottom:9px;}
+  .dvm-celldir{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;margin-bottom:4px;}
   .dvm-celldir.up{color:var(--up,#B65F5A);} .dvm-celldir.down{color:var(--down,#5A7CA0);}
 }
 
@@ -321,7 +338,7 @@ def _cell_html(items, direction, dir_label):
     head = f'<div class="dvm-celldir {direction}">{dir_label}</div>'
     items = items or []
     if not items:
-        return head + '<div class="dvi-empty">—</div>'
+        return head + '<div class="dvi-empty">해당 요인 없음</div>'
     rows = ""
     for it in items:
         if not isinstance(it, dict):
@@ -330,9 +347,10 @@ def _cell_html(items, direction, dir_label):
         desc = html.escape(str(it.get("desc", "")).strip())
         if not lab and not desc:
             continue
-        lab_html = f'<span class="dvi-lab">[{lab}]</span> ' if lab else ""
-        rows += f'<div class="dvi {direction}">{lab_html}{desc}</div>'
-    return head + (rows or '<div class="dvi-empty">—</div>')
+        lab_html = f'<span class="dvi-lab">{lab}</span>' if lab else ""
+        desc_html = f'<div class="dvi-desc">{desc}</div>' if desc else ""
+        rows += f'<div class="dvi {direction}">{lab_html}{desc_html}</div>'
+    return head + (rows or '<div class="dvi-empty">해당 요인 없음</div>')
 
 
 def _render_matrix(data: dict, kind: str):
@@ -351,9 +369,9 @@ def _render_matrix(data: dict, kind: str):
 
     grid = (
         '<div class="dvm">'
-        '<div class="dvm-h dvm-h0">🕒 시계열 구분</div>'
-        '<div class="dvm-h dvm-hup">📈 상승 · 모멘텀 요인 <em>Upward</em></div>'
-        '<div class="dvm-h dvm-hdown">📉 하락 · 리스크 요인 <em>Downward</em></div>'
+        '<div class="dvm-h dvm-h0">🕒 시계열</div>'
+        '<div class="dvm-h dvm-hup">📈 상승 · 모멘텀 <em>Upward</em></div>'
+        '<div class="dvm-h dvm-hdown">📉 하락 · 리스크 <em>Downward</em></div>'
         '<div class="dvm-tf"><div class="tf-name">단기 <em>Short-term</em></div>'
         '<div class="tf-sub">수급 · 심리 · 노이즈</div></div>'
         f'<div class="dvm-cell">{_cell_html(st_.get("up"), "up", "📈 상승 · 모멘텀")}</div>'
