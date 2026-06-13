@@ -1,4 +1,4 @@
-"""시장 현황 대시보드 - Streamlit 메인 앱 (라이트/다크 + 통일 헤더)."""
+"""시장 현황 대시보드 - Streamlit 메인 앱 (라이트 단일 테마, 통일 헤더)."""
 
 import os
 from datetime import datetime
@@ -27,8 +27,6 @@ load_dotenv()
 st.set_page_config(page_title="DY Monitoring", page_icon="📈", layout="wide")
 
 # ── 타임라인 카드 클릭(?rpt=파일명) → 해당 보고서 선택 ──
-# 추세 탭 타임라인의 카드는 ?rpt=YYYY-MM-DD_HHMM.json 링크로 연결됨.
-# 여기서 읽어 선택 상태로 반영하고, URL은 정리(중복 rerun 방지).
 try:
     _rpt_param = st.query_params.get("rpt")
 except Exception:
@@ -44,11 +42,7 @@ if _rpt_param:
     except Exception:
         pass
 
-if "dark" not in st.session_state:
-    st.session_state["dark"] = False
-dark = st.session_state["dark"]
-
-# ── 색 변수 ──
+# ── 색 변수 (라이트 단일 테마) ──
 LIGHT_VARS = """
 :root{
   --bg:#FCFCFA; --card:#ffffff; --ink:#34352f; --muted:#9a9b92; --line:#ECEDE7;
@@ -56,21 +50,6 @@ LIGHT_VARS = """
   --summary-bg:#F6F7F2; --pill-bg:#F1F2EC; --pill-ink:#5d6258;
   --tint-up:#FBF2F2; --tint-down:#F1F5F9; --pill-hover:#E6EBE2;
 }
-"""
-DARK_VARS = """
-:root{
-  --bg:#24262F; --card:#2E313C; --ink:#E8E8EF; --muted:#9A9CAB; --line:#3A3D49;
-  --sage:#A8D8C0; --sage-deep:#A8D8C0; --up:#F0A3AB; --down:#94B6EA;
-  --summary-bg:#2A2D38; --pill-bg:#343845; --pill-ink:#C7CAD6;
-  --tint-up:#33282C; --tint-down:#262D39; --pill-hover:#3C4150;
-}
-[data-testid="stAppViewContainer"], [data-testid="stHeader"]{ background: var(--bg) !important; }
-[data-testid="stAppViewContainer"]{ color: var(--ink); }
-.stButton > button{ background: var(--card) !important; color: var(--ink) !important; border:1px solid var(--line) !important; }
-.stTextInput input, .stDateInput input{ background: var(--card) !important; color: var(--ink) !important; }
-[data-baseweb="select"] > div{ background: var(--card) !important; color: var(--ink) !important; }
-.stTabs [data-baseweb="tab"]{ color: var(--muted); }
-[data-testid="stCaptionContainer"], small{ color: var(--muted) !important; }
 """
 
 CSS = """
@@ -157,9 +136,6 @@ h1,h2,h3 { font-family: 'Fraunces','Noto Sans KR',serif !important; letter-spaci
 .mood-pos { background:#e1f5ee; color:#0f6e56; }
 .mood-neu { background:#F1F2EC; color:#5d6258; }
 .mood-cau { background:#FAEEDA; color:#854F0B; }
-.app.dark .mood-pos { background:#085041; color:#9fe1cb; }
-.app.dark .mood-neu { background:#343845; color:#C7CAD6; }
-.app.dark .mood-cau { background:#633806; color:#FAC775; }
 .rpt-topmeta { font-size:11.5px; color:var(--muted); }
 .rpt-headline { font-family:'Fraunces','Noto Sans KR',serif; font-size:22px; font-weight:600; letter-spacing:-.02em; color:var(--ink); margin-bottom:14px; }
 .rpt-kt-label { font-size:11px; font-weight:700; letter-spacing:.06em; color:var(--sage-deep); margin-bottom:5px; }
@@ -196,19 +172,15 @@ h1,h2,h3 { font-family: 'Fraunces','Noto Sans KR',serif !important; letter-spaci
 .empty .hint { font-size:12px; margin-top:5px; color:var(--muted); }
 </style>
 """
-st.markdown(CSS.replace("__VARS__", DARK_VARS if dark else LIGHT_VARS), unsafe_allow_html=True)
+st.markdown(CSS.replace("__VARS__", LIGHT_VARS), unsafe_allow_html=True)
 
 # ── 상단 헤더 ──
 now = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")
-hc1, hc2 = st.columns([5, 1])
-with hc1:
-    st.markdown(
-        f'<div class="app-name">DY Monitoring</div>'
-        f'<div class="app-upd">조회 {now} KST · 데이터 기준일은 항목별 표기</div>',
-        unsafe_allow_html=True,
-    )
-with hc2:
-    st.toggle("🌙 다크", key="dark")
+st.markdown(
+    f'<div class="app-name">DY Monitoring</div>'
+    f'<div class="app-upd">조회 {now} KST · 데이터 기준일은 항목별 표기</div>',
+    unsafe_allow_html=True,
+)
 st.markdown('<hr style="border:none;border-top:1px solid var(--line);margin:6px 0 14px;">',
             unsafe_allow_html=True)
 
@@ -222,7 +194,6 @@ def _card_html(name, data):
         return (f'<div class="mkt-card"><div class="mkt-name">{name}</div>'
                 f'<div class="mkt-na">데이터 없음</div></div>')
     is_up = data["change"] >= 0
-    # invert_color(예: VIX)는 하락이 시장에 '긍정'이므로 색을 반전 (화살표·수치는 그대로)
     good = (not is_up) if data.get("invert_color") else is_up
     cls = "up" if good else "down"
     tint = "mkt-up" if good else "mkt-down"
@@ -274,28 +245,22 @@ def _supply_html(supply_data: dict) -> str:
 
 
 # ── 국내 지수 대형 차트 (코스피·코스닥, 기간 선택) ──
-_KRX_PERIODS = {"1개월": 31, "3개월": 92, "6개월": 183, "1년": 366}  # 일수 기준 슬라이스
+_KRX_PERIODS = {"1개월": 31, "3개월": 92, "6개월": 183, "1년": 366}
 
 
-def _big_index_chart(name: str, ticker: str, days: int, dark: bool):
-    """기간 선택형 대형 지수 차트 + 현재가/전일 대비 헤더.
-
-    1년치를 한 번만 받아 날짜로 잘라 쓴다 (yfinance period 문자열의 들쭉날쭉함 회피).
-    y축은 Altair 자동 스케일(zero=False) — 수동 domain 계산으로 인한 렌더 깨짐 방지.
-    """
+def _big_index_chart(name: str, ticker: str, days: int):
+    """기간 선택형 대형 지수 차트 + 현재가/전일 대비 헤더."""
     close = fetch_history(ticker, "1y")
     if close is None or len(close) < 2:
         st.caption(f"{name} 데이터를 불러오지 못했어요. (잠시 후 새로고침)")
         return
 
-    # 숫자/날짜 정제 — NaN·이상치가 한 점이라도 섞이면 차트가 깨질 수 있어 방어
     df = pd.DataFrame({"날짜": pd.to_datetime(close.index),
                        "종가": pd.to_numeric(close.values, errors="coerce")}).dropna()
     if len(df) < 2:
         st.caption(f"{name} 데이터가 부족해요.")
         return
 
-    # 기간 슬라이스 (마지막 거래일 기준 N일)
     cutoff = df["날짜"].max() - pd.Timedelta(days=days)
     seg = df[df["날짜"] >= cutoff]
     if len(seg) < 2:
@@ -305,13 +270,13 @@ def _big_index_chart(name: str, ticker: str, days: int, dark: bool):
     change = cur - prev
     pct = (change / prev) * 100 if prev else 0.0
     day_up = change >= 0
-    period_up = cur >= float(seg["종가"].iloc[0])   # 차트 색은 '기간 전체' 방향 기준
+    period_up = cur >= float(seg["종가"].iloc[0])
 
-    up_c = "#F0A3AB" if dark else "#B65F5A"
-    down_c = "#94B6EA" if dark else "#5A7CA0"
+    up_c = "#B65F5A"
+    down_c = "#5A7CA0"
     line_c = up_c if period_up else down_c
-    axis_c = "#9A9CAB" if dark else "#9a9b92"
-    grid_c = "#3A3D49" if dark else "#ECEDE7"
+    axis_c = "#9a9b92"
+    grid_c = "#ECEDE7"
 
     arrow = "▲" if change > 0 else ("▼" if change < 0 else "▬")
     chg_cls = "up" if day_up else "down"
@@ -343,13 +308,12 @@ def _render_domestic_charts():
         "조회 기간", list(_KRX_PERIODS.keys()), index=2, horizontal=True,
         key="krx_chart_period", label_visibility="collapsed")
     days = _KRX_PERIODS[period_label]
-    dark = st.session_state.get("dark", False)
 
     c1, c2 = st.columns(2, gap="medium")
     with c1:
-        _big_index_chart("코스피", "^KS11", days, dark)
+        _big_index_chart("코스피", "^KS11", days)
     with c2:
-        _big_index_chart("코스닥", "^KQ11", days, dark)
+        _big_index_chart("코스닥", "^KQ11", days)
 
 
 # ── 지수 현황 탭 렌더 ──
@@ -363,7 +327,6 @@ def render_indices():
     render_indicators()
     render_calendar()
 
-    # 1) 전체 조회 후 그룹별 기준일 계산
     group_data, group_asof = {}, {}
     for group_name, tickers in INDEX_GROUPS.items():
         datas = {name: fetch_index(t) for name, t in tickers.items()}
@@ -371,7 +334,6 @@ def render_indices():
         asofs = [d["asof"] for d in datas.values() if d and d.get("asof")]
         group_asof[group_name] = max(asofs) if asofs else None
 
-    # 2) 모든 그룹의 기준일이 같으면 상단에 한 번만 통합 표기
     distinct = {a for a in group_asof.values() if a}
     unified = len(distinct) == 1
     if unified:
@@ -379,7 +341,6 @@ def render_indices():
             f'<div class="data-asof">데이터 기준 {next(iter(distinct))} · '
             f'해외 지수·환율은 직전 거래일 종가</div>', unsafe_allow_html=True)
 
-    # 3) 그룹별 렌더 (INDEX_GROUPS 정의 순서 그대로 · 국내는 대형 차트)
     for group_name, datas in group_data.items():
         head = f'<div class="mkt-group">{group_name}'
         if not unified and group_asof[group_name]:
@@ -395,7 +356,6 @@ def render_indices():
         cards = "".join(_card_html(name, d) for name, d in items)
         st.markdown(f'<div class="mkt-grid">{cards}</div>', unsafe_allow_html=True)
 
-    # 4) 수급 상위 종목
     supply = fetch_supply_demand_summary()
     if supply:
         st.markdown('<div class="mkt-group">💰 수급 상위 종목</div>', unsafe_allow_html=True)
@@ -425,25 +385,17 @@ def render_usage_section():
 
 # ── 생성 권한 확인 (비밀번호) ──
 def _can_generate():
-    """리포트 생성 권한 확인. Secrets에 APP_PASSWORD가 있으면 인증 요구.
-
-    - APP_PASSWORD 미설정 시: 잠금 없음 (개인 로컬 사용 등)
-    - 설정 시: 비밀번호 일치한 세션에서만 생성 허용
-    """
+    """리포트 생성 권한 확인. Secrets에 APP_PASSWORD가 있으면 인증 요구."""
     try:
         pw_required = st.secrets.get("APP_PASSWORD", "")
     except Exception:
         pw_required = ""
 
-    # 비밀번호 미설정 → 잠금 없음
     if not pw_required:
         return True
-
-    # 이미 이 세션에서 인증됨
     if st.session_state.get("gen_authed"):
         return True
 
-    # 인증 UI
     with st.expander("🔒 리포트 생성은 잠겨 있어요 (소유자 전용)", expanded=False):
         st.caption("이 대시보드는 자유롭게 둘러볼 수 있어요. 리포트 생성만 소유자 비밀번호가 필요합니다.")
         pw = st.text_input("비밀번호", type="password", key="gen_pw")
@@ -459,19 +411,14 @@ def _can_generate():
 
 # ── 전략·시황 보고서 탭 ──
 def render_report_tab():
-    st.markdown('<div class="rpt-bar"></div>', unsafe_allow_html=True)
-    st.title("전략·시황 보고서")
-
-    # 타임라인에서 카드 클릭으로 넘어온 경우 안내
+    # 기준일·제목·매트릭스·좌우 보고서·테마는 render_reports() 가 그림
     jumped = st.session_state.pop("rpt_jump_notice", None)
     if jumped:
-        st.info(f"📍 추세 타임라인에서 선택한 보고서를 표시하고 있어요. "
-                f"최신 보고서로 돌아가려면 아래 '지난 리포트 보기'에서 변경하세요.")
+        st.info("📍 추세 타임라인에서 선택한 날짜의 보고서를 보고 있어요. "
+                "오늘로 돌아가려면 아래 '지난 보고서 보기'에서 '↩ 오늘로'를 누르세요.")
 
-    # 1) 리포트 먼저 표시 (좌 2/3 본문 · 우 1/3 내 종목/주목 테마)
     render_reports()
 
-    # 2) 하단: 생성·관리 영역
     st.divider()
 
     flash = st.session_state.pop("gen_flash", None)
@@ -479,22 +426,35 @@ def render_report_tab():
         st.success(flash)
 
     authed = _can_generate()
-    gen_clicked = st.button("📝 리포트 생성 (전일 15:40 ~ 지금)", disabled=not authed)
-    if gen_clicked and authed:
-        with st.spinner("텔레그램 수집 → Claude 분석 중... (메시지가 많으면 시간이 걸립니다)"):
+    st.markdown('<div class="mkt-group">📝 리포트 생성</div>', unsafe_allow_html=True)
+    gc1, gc2 = st.columns(2)
+    with gc1:
+        pre_clicked = st.button(
+            "🌅 장전 보고서 생성", disabled=not authed, use_container_width=True,
+            help="전일 15:30 ~ 지금 (월요일이면 금요일 15:30부터) 메시지 분석")
+    with gc2:
+        post_clicked = st.button(
+            "🌆 장마감 후 보고서 생성", disabled=not authed, use_container_width=True,
+            help="당일 07:50 ~ 지금 메시지 분석")
+
+    if (pre_clicked or post_clicked) and authed:
+        kind = "pre" if pre_clicked else "post"
+        kind_ko = "장전" if kind == "pre" else "장마감 후"
+        with st.spinner(f"{kind_ko} 보고서 생성 중... 텔레그램 수집 → Claude 분석 "
+                        f"(메시지가 많으면 시간이 걸립니다)"):
             try:
                 from engine.generate import generate_report
-                res = generate_report()
+                res = generate_report(kind=kind)
             except Exception as e:
                 res = {"ok": False, "reason": str(e)}
         st.session_state["last_gen"] = res
         if res.get("ok"):
-            # 새 리포트가 상단에 바로 보이도록 rerun (성공 메시지는 flash 로 전달)
-            st.session_state["gen_flash"] = f"생성 완료 · {res['messages']}개 메시지 분석"
+            st.session_state["gen_flash"] = (
+                f"{kind_ko} 보고서 생성 완료 · {res['messages']}개 메시지 분석")
             st.session_state["rpt_picked_path"] = None
             st.rerun()
         else:
-            st.warning(f"생성 실패 · {res.get('reason')}")
+            st.warning(f"{kind_ko} 생성 실패 · {res.get('reason')}")
 
     from modules.watchlist import render_watchlist_editor
     render_watchlist_editor()
