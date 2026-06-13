@@ -44,13 +44,6 @@ _STOP = {
     "지정학적", "기업", "금융", "순자산", "한달여", "한달",
 }
 
-# 라벨에서 떼어낼 흔한 수식·접미 (그래프 라벨 단축용)
-_LABEL_TRIM_SUFFIX = (
-    "및 변동성 장세", "및 금리 전망", "및 배터리 섹터 약세", "및 금융권 대출 증가",
-    "회복 및 변동성", "회복 시도", "조정 및 변동성", "순매수 복귀",
-    "강세", "급등", "급락", "회복", "조정", "장세", "전망",
-)
-
 
 def _norm(s: str) -> str:
     return "".join(str(s).split()).casefold()
@@ -101,15 +94,25 @@ def _item_tokens(it: dict) -> set:
 
 
 def _short_label(label: str) -> str:
-    """그래프용 짧은 라벨: 괄호 앞에서 끊고, 흔한 수식 접미 제거."""
+    """그래프용 짧은 라벨: 괄호 앞 + 구분자(및/·/,) 앞부분만 취해 핵심만 남김.
+
+    접미사 목록에 의존하지 않고, 어떤 제목이든 핵심 명사구로 줄인다.
+    예) '파운드리 및 전력반도체 성장전망' → '파운드리'
+        '삼성전기 및 광통신·부품소재 강세'   → '삼성전기'
+        '비트코인 변동성 및 암호화폐 약세'   → '비트코인 변동성'
+    """
     label = label.strip()
+    # 1) 괄호 앞에서 끊기
     m = re.match(r"^(.*?)\s*[\(（]", label)
     if m and len(m.group(1).strip()) >= 2:
         label = m.group(1).strip()
-    for suf in _LABEL_TRIM_SUFFIX:
-        if label.endswith(suf) and len(label) > len(suf) + 1:
-            label = label[: -len(suf)].strip()
-            break
+    # 2) 구분자 앞부분만 (너무 짧아지면 원본 유지)
+    for sep in (" 및 ", "·", ",", "/"):
+        if sep in label:
+            head = label.split(sep)[0].strip()
+            if len(head) >= 2:
+                label = head
+                break
     return label
 
 
@@ -205,8 +208,8 @@ def _force_layout(n, edges, W, H, iters=320, seed=42):
             step = min(mag, 18 * cool)
             pos[i][0] += disp[i][0] / mag * step
             pos[i][1] += disp[i][1] / mag * step
-            pos[i][0] = max(72, min(W - 72, pos[i][0]))
-            pos[i][1] = max(82, min(H - 82, pos[i][1]))
+            pos[i][0] = max(95, min(W - 95, pos[i][0]))
+            pos[i][1] = max(88, min(H - 88, pos[i][1]))
     return [(p[0], p[1]) for p in pos]
 
 
@@ -283,7 +286,11 @@ def _graph_js() -> str:
 
 
 def _wrap_short(label, max_per_line=7, max_lines=2):
-    """짧은 라벨을 줄바꿈. 단어 경계 우선, 넘치면 … 부착."""
+    """글자수 상한을 강제하는 줄바꿈. 최대 max_per_line*max_lines자.
+
+    어떤 긴 라벨이 와도 상한을 넘으면 …로 잘라 화면 밖으로 안 나간다(잘림 원천봉쇄).
+    단어 경계를 우선하되, 한 단어가 줄 폭을 넘으면 글자 단위로 분할.
+    """
     label = label.strip()
     if not label:
         return [""]
@@ -292,7 +299,18 @@ def _wrap_short(label, max_per_line=7, max_lines=2):
     for w in words:
         cand = (cur + " " + w).strip()
         if len(cand) <= max_per_line or not cur:
-            cur = cand
+            if len(cand) > max_per_line and not cur:
+                # 한 단어가 줄 폭 초과 → 글자 단위로 강제 분할
+                lines.append(cand[:max_per_line])
+                rest = cand[max_per_line:]
+                while rest and len(lines) < max_lines:
+                    lines.append(rest[:max_per_line])
+                    rest = rest[max_per_line:]
+                cur = ""
+                if len(lines) >= max_lines:
+                    break
+            else:
+                cur = cand
         else:
             lines.append(cur)
             cur = w
@@ -300,17 +318,17 @@ def _wrap_short(label, max_per_line=7, max_lines=2):
                 break
     if cur and len(lines) < max_lines:
         lines.append(cur)
-    # 단어 하나가 너무 길면 글자 단위로 자름
-    fixed = []
-    for ln in lines[:max_lines]:
-        if len(ln) > max_per_line + 2:
-            ln = ln[:max_per_line + 1] + "…"
-        fixed.append(ln)
-    consumed = " ".join(fixed).replace("…", "")
-    if len(consumed.replace(" ", "")) < len(label.replace(" ", "")) and fixed:
-        if not fixed[-1].endswith("…"):
-            fixed[-1] += "…"
-    return fixed[:max_lines]
+    lines = lines[:max_lines]
+    # 원본이 더 길어서 잘렸으면 마지막 줄 끝에 …
+    plain = label.replace(" ", "")
+    shown = "".join(lines).replace(" ", "").replace("…", "")
+    if len(shown) < len(plain) and lines:
+        if not lines[-1].endswith("…"):
+            if len(lines[-1]) >= max_per_line:
+                lines[-1] = lines[-1][:max_per_line - 1] + "…"
+            else:
+                lines[-1] += "…"
+    return lines[:max_lines]
 
 
 def _svg(nodes, edges) -> str:
@@ -380,7 +398,7 @@ def _svg(nodes, edges) -> str:
             f'<title>{html.escape(nd["label"])} · {html.escape(nd["cat"])}'
             f' · 연결 {nd["deg"]}개</title></circle>'
             f'<text class="kg-label" data-id="{nd["id"]}" x="{x:.1f}" y="{base_y:.1f}" '
-            f'text-anchor="middle" font-size="10.5">{tspans}</text>'
+            f'text-anchor="middle" font-size="10">{tspans}</text>'
             f'</g>'
         )
     parts.append("</svg>")
