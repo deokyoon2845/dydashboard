@@ -1,27 +1,58 @@
 {
-  "_comment": "주요 경제 일정. 연 1회 갱신 (FOMC: federalreserve.gov / 금통위: bok.or.kr / 미국CPI: bls.gov). date는 KST 기준 표기, FOMC 결과는 한국시간 익일 새벽 발표.",
+  "_comment": "고정 일정 = 공식 발표 일정 기반(연 1회 수동 갱신). 미국 거시지표는 BLS/BEA 공식 일정표(PFEI CY2026), FOMC는 연준 공식, 한국 금통위는 한은 발표 기준. earnings_tickers = yfinance 자동 수집 대상.",
   "events": [
-    {"date": "2026-06-17", "name": "FOMC 금리 결정", "category": "미국", "note": "SEP·점도표 발표 · 결과는 한국시간 18일 새벽"},
-    {"date": "2026-07-14", "name": "미국 CPI (6월분)", "category": "미국", "note": "한국시간 21:30 발표"},
-    {"date": "2026-07-16", "name": "한은 금통위 기준금리 결정", "category": "한국", "note": ""},
-    {"date": "2026-07-29", "name": "FOMC 금리 결정", "category": "미국", "note": "결과는 한국시간 30일 새벽"},
-    {"date": "2026-08-12", "name": "미국 CPI (7월분)", "category": "미국", "note": "한국시간 21:30 발표"},
-    {"date": "2026-08-27", "name": "한은 금통위 기준금리 결정", "category": "한국", "note": ""},
-    {"date": "2026-09-11", "name": "미국 CPI (8월분)", "category": "미국", "note": "한국시간 21:30 발표"},
-    {"date": "2026-09-16", "name": "FOMC 금리 결정", "category": "미국", "note": "SEP·점도표 발표 · 결과는 한국시간 17일 새벽"},
-    {"date": "2026-10-14", "name": "미국 CPI (9월분)", "category": "미국", "note": "한국시간 21:30 발표"},
-    {"date": "2026-10-22", "name": "한은 금통위 기준금리 결정", "category": "한국", "note": ""},
-    {"date": "2026-10-28", "name": "FOMC 금리 결정", "category": "미국", "note": "결과는 한국시간 29일 새벽"},
-    {"date": "2026-11-10", "name": "미국 CPI (10월분)", "category": "미국", "note": "한국시간 22:30 발표(겨울시간)"},
-    {"date": "2026-11-26", "name": "한은 금통위 기준금리 결정", "category": "한국", "note": ""},
-    {"date": "2026-12-09", "name": "FOMC 금리 결정", "category": "미국", "note": "SEP·점도표 발표 · 결과는 한국시간 10일 새벽"},
-    {"date": "2026-12-10", "name": "미국 CPI (11월분)", "category": "미국", "note": "한국시간 22:30 발표(겨울시간)"}
+    {"date": "2026-06-16", "name": "美 소매판매 (5월)", "category": "미국", "note": "Census 공식"},
+    {"date": "2026-06-17", "name": "FOMC 금리 결정", "category": "미국", "note": "성명 한국시간 18일 새벽 · 점도표 없음"},
+    {"date": "2026-06-25", "name": "美 GDP (1Q 확정)·PCE", "category": "미국", "note": "BEA 공식"},
+
+    {"date": "2026-07-02", "name": "美 고용보고서 (6월)", "category": "미국", "note": "BLS 공식 · 비농업·실업률"},
+    {"date": "2026-07-14", "name": "美 CPI (6월)", "category": "미국", "note": "BLS 공식"},
+    {"date": "2026-07-15", "name": "美 PPI (6월)", "category": "미국", "note": "BLS 공식"},
+    {"date": "2026-07-16", "name": "美 소매판매 (6월)", "category": "미국", "note": "Census 공식"},
+    {"date": "2026-07-16", "name": "한국 금통위 (통방)", "category": "한국", "note": "한은 7월 통방회의 · 날짜 잠정"},
+    {"date": "2026-07-29", "name": "FOMC 금리 결정", "category": "미국", "note": "성명 한국시간 30일 새벽 · 점도표 없음"},
+    {"date": "2026-07-30", "name": "美 GDP (2Q 속보)·PCE", "category": "미국", "note": "BEA 공식"},
+
+    {"date": "2026-08-07", "name": "美 고용보고서 (7월)", "category": "미국", "note": "BLS 공식"},
+    {"date": "2026-08-12", "name": "美 CPI (7월)", "category": "미국", "note": "BLS 공식"},
+    {"date": "2026-08-13", "name": "美 PPI (7월)", "category": "미국", "note": "BLS 공식"},
+    {"date": "2026-08-14", "name": "美 소매판매 (7월)", "category": "미국", "note": "Census 공식"},
+    {"date": "2026-08-27", "name": "한국 금통위 (통방)", "category": "한국", "note": "한은 8월 통방회의 · 날짜 잠정"},
+
+    {"date": "2026-09-04", "name": "美 고용보고서 (8월)", "category": "미국", "note": "BLS 공식"},
+    {"date": "2026-09-10", "name": "美 PPI (8월)", "category": "미국", "note": "BLS 공식"},
+    {"date": "2026-09-11", "name": "美 CPI (8월)", "category": "미국", "note": "BLS 공식"},
+    {"date": "2026-09-16", "name": "美 소매판매 (8월)", "category": "미국", "note": "Census 공식"},
+    {"date": "2026-09-16", "name": "FOMC 금리 결정", "category": "미국", "note": "성명 한국시간 17일 새벽 · 점도표(SEP) 발표"},
+    {"date": "2026-09-30", "name": "美 GDP (2Q 확정)·PCE", "category": "미국", "note": "BEA 공식"},
+
+    {"date": "2026-10-02", "name": "美 고용보고서 (9월)", "category": "미국", "note": "BLS 공식"},
+    {"date": "2026-10-14", "name": "美 CPI (9월)", "category": "미국", "note": "BLS 공식"},
+    {"date": "2026-10-15", "name": "美 PPI (9월)", "category": "미국", "note": "BLS 공식"},
+    {"date": "2026-10-15", "name": "美 소매판매 (9월)", "category": "미국", "note": "Census 공식"},
+    {"date": "2026-10-15", "name": "한국 금통위 (통방)", "category": "한국", "note": "한은 10월 통방회의 · 날짜 잠정"},
+    {"date": "2026-10-28", "name": "FOMC 금리 결정", "category": "미국", "note": "성명 한국시간 29일 새벽 · 점도표 없음"},
+    {"date": "2026-10-29", "name": "美 GDP (3Q 속보)·PCE", "category": "미국", "note": "BEA 공식"},
+
+    {"date": "2026-11-06", "name": "美 고용보고서 (10월)", "category": "미국", "note": "BLS 공식"},
+    {"date": "2026-11-10", "name": "美 CPI (10월)", "category": "미국", "note": "BLS 공식"},
+    {"date": "2026-11-13", "name": "美 PPI (10월)", "category": "미국", "note": "BLS 공식"},
+    {"date": "2026-11-17", "name": "美 소매판매 (10월)", "category": "미국", "note": "Census 공식"},
+    {"date": "2026-11-25", "name": "美 GDP (3Q 확정)·PCE", "category": "미국", "note": "BEA 공식"},
+    {"date": "2026-11-26", "name": "한국 금통위 (통방)", "category": "한국", "note": "한은 11월 통방회의 · 날짜 잠정"},
+
+    {"date": "2026-12-04", "name": "美 고용보고서 (11월)", "category": "미국", "note": "BLS 공식"},
+    {"date": "2026-12-09", "name": "FOMC 금리 결정", "category": "미국", "note": "성명 한국시간 10일 새벽 · 점도표(SEP) 발표"},
+    {"date": "2026-12-10", "name": "美 CPI (11월)", "category": "미국", "note": "BLS 공식"},
+    {"date": "2026-12-15", "name": "美 PPI (11월)", "category": "미국", "note": "BLS 공식"},
+    {"date": "2026-12-16", "name": "美 소매판매 (11월)", "category": "미국", "note": "Census 공식"}
   ],
   "earnings_tickers": {
-    "엔비디아": "NVDA",
-    "TSMC": "TSM",
-    "마이크론": "MU",
     "삼성전자": "005930.KS",
-    "SK하이닉스": "000660.KS"
+    "SK하이닉스": "000660.KS",
+    "엔비디아": "NVDA",
+    "애플": "AAPL",
+    "마이크로소프트": "MSFT",
+    "TSMC": "TSM"
   }
 }
