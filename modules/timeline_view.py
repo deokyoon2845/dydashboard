@@ -3,9 +3,11 @@
 - 데이터: reports/*.json (headline, sections[], mood, report_kind)
 - 같은 날 보고서가 여러 개면 ★장마감 후(post)를 우선★ 사용 (그날의 '답안지' 역할).
   post가 없으면 장전(pre) 등 최신 보고서로 폴백.
+- ★표시 범위: 항상 최근 5개 날짜(장후 우선). 5개 미만이면 있는 것만.
 - 코스피·코스닥 당일 종가 + 등락률 병기
 - 리포트 파일이 추가/삭제되면 캐시가 자동 무효화됨 (폴더 시그니처 기반)
 - 데스크톱: 가로 화살표 타임라인(지그재그 카드) / 모바일: 세로 타임라인
+- 제목은 전략·시황 탭과 동일한 큰 글자 볼드(.rpt2-title) + 표시 중 기준일자 병기.
 """
 
 import glob
@@ -19,6 +21,7 @@ import streamlit as st
 from modules.indices import fetch_history
 
 _REPORT_DIR = "reports"
+_TIMELINE_DAYS = 5          # ★항상 최근 5개 날짜 (장후 우선)
 _MOOD_MAP = {"positive": ("긍정", "pos", "#2E7D5B"),
              "neutral": ("중립", "neu", "#A7BBA9"),
              "cautious": ("주의", "cau", "#C2410C")}
@@ -28,6 +31,16 @@ _TRUNC = 60
 
 _TL_CSS = """
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Hanken+Grotesk:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap');
+/* 전략·시황 탭과 동일한 제목 스타일 */
+.tl-bar { height:3px; width:34px; background:var(--sage,#A7BBA9); border-radius:3px; margin:0 0 10px; }
+.tl-title { font-family:'Fraunces','Noto Sans KR',serif; font-size:30px; font-weight:600;
+  line-height:1.3; color:var(--ink,#34352f); margin:2px 0 4px; display:flex; align-items:baseline;
+  gap:12px; flex-wrap:wrap; }
+.tl-title .dates { font-family:'Hanken Grotesk','Noto Sans KR',sans-serif; font-size:13px;
+  font-weight:600; color:var(--muted,#9a9b92); letter-spacing:.01em; }
+.tl-sub { font-size:12px; color:var(--muted,#9a9b92); margin:0 0 16px; }
+
 .tl-row { display:grid; gap:8px; align-items:end; }
 .tl-row.tl-bottom { align-items:start; }
 .tl-card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:9px 10px;
@@ -54,6 +67,7 @@ _TL_CSS = """
 .tl-mobile { display:none; }
 @media (max-width:640px){
   .tl-row, .tl-svg { display:none; }
+  .tl-title { font-size:24px; }
   .tl-mobile { display:block; border-left:2px solid var(--line); padding-left:18px; }
   .tl-mobile .tl-card { position:relative; margin-bottom:12px; }
   .tl-mobile .tl-card::before { content:""; position:absolute; left:-25px; top:13px;
@@ -109,6 +123,7 @@ def _section_titles(report: dict) -> list:
 @st.cache_data(ttl=600)
 def load_timeline_entries(limit: int, sig: str) -> list:
     """reports/*.json에서 타임라인 항목 로드. 같은 날짜는 장마감 후(post) 우선, 날짜 오름차순.
+    최근 limit개 날짜만 반환(limit보다 적으면 있는 만큼).
     sig: _reports_signature() — 캐시 키 전용(함수 안에서는 사용 안 함)."""
     # 날짜 -> (priority, sort_key, rep, fname) : post 우선, 같으면 최신(HHMM) 우선
     by_date = {}
@@ -205,6 +220,16 @@ def _fmt_date(date: str) -> str:
         return date
 
 
+def _fmt_date_short(date: str) -> str:
+    """'2026-06-11' → '06.11' (제목 옆 기준일자 병기용)."""
+    try:
+        from datetime import datetime
+        d = datetime.strptime(date, "%Y-%m-%d")
+        return d.strftime("%m.%d")
+    except Exception:
+        return date
+
+
 def _idx_line_html(rec: dict) -> str:
     """카드 날짜 아래 '코스피 2,750.1 ▲+1.2% · 코스닥 870.5 ▼-0.3%' 한 줄."""
     if not rec:
@@ -259,13 +284,23 @@ def _svg_html(entries: list) -> str:
 
 def render_timeline():
     st.markdown(_TL_CSS, unsafe_allow_html=True)
-    st.markdown('<div class="mkt-group">시황 타임라인</div>', unsafe_allow_html=True)
 
-    n_opt = st.selectbox("표시할 보고서 수", ["최근 7개", "최근 14개", "최근 30개"],
-                         index=0, key="tl_n", label_visibility="collapsed")
-    limit = int(re.search(r"\d+", n_opt).group())
+    # 항상 최근 5개 날짜(장후 우선). 5개 미만이면 있는 것만.
+    entries = load_timeline_entries(_TIMELINE_DAYS, _reports_signature())
 
-    entries = load_timeline_entries(limit, _reports_signature())
+    # 제목: 전략·시황 탭과 동일한 큰 글자 볼드 + 표시 중 기준일자 병기
+    if entries:
+        # entries는 날짜 오름차순 → 제목 병기는 최신이 앞으로 오도록 역순 표기
+        dates_str = " · ".join(_fmt_date_short(e["date"]) for e in reversed(entries))
+        dates_html = f'<span class="dates">{dates_str}</span>'
+    else:
+        dates_html = ""
+    st.markdown('<div class="tl-bar"></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="tl-title">시황 타임라인 {dates_html}</div>',
+                unsafe_allow_html=True)
+    st.markdown('<div class="tl-sub">최근 5개 거래일의 보고서 흐름 (같은 날은 장마감 후 우선)</div>',
+                unsafe_allow_html=True)
+
     if not entries:
         st.markdown('<div class="empty"><div class="ico">🗓️</div>'
                     '<div class="msg">아직 표시할 보고서가 없어요</div>'
