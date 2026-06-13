@@ -292,13 +292,19 @@ def _big_index_chart(name: str, ticker: str, days: int):
         f'<span class="mkt-chg {chg_cls}">{arrow} {change:+,.2f} ({pct:+.2f}%)</span>'
         f'</div>', unsafe_allow_html=True)
 
+    # y축: 0부터가 아니라 표시 구간의 실제 최솟값~최댓값 (위아래 8% 여백)
+    # nice=True는 눈금을 둥근 값(0 포함)까지 늘려버리므로 domain을 명시하고 nice=False로 둔다.
+    lo_v, hi_v = float(seg["종가"].min()), float(seg["종가"].max())
+    pad_v = (hi_v - lo_v) * 0.08 or 1.0
+    y_dom = [lo_v - pad_v, hi_v + pad_v]
+
     chart = alt.Chart(seg).mark_area(
         color=line_c, opacity=0.13,
         line={"color": line_c, "strokeWidth": 2},
     ).encode(
         x=alt.X("날짜:T", axis=alt.Axis(title=None, format="%m/%d",
                                        labelColor=axis_c, grid=False)),
-        y=alt.Y("종가:Q", scale=alt.Scale(zero=False, nice=True),
+        y=alt.Y("종가:Q", scale=alt.Scale(domain=y_dom, nice=False, clamp=True),
                 axis=alt.Axis(title=None, labelColor=axis_c, gridColor=grid_c,
                               format=",.0f")),
         tooltip=[alt.Tooltip("날짜:T", format="%Y-%m-%d"),
