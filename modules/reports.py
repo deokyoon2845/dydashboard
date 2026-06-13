@@ -1,9 +1,17 @@
-"""전략·시황 보고서 뷰어 — 삭제·PDF 다운로드 지원, 미니멀 미스트 디자인.
+"""전략·시황 보고서 뷰어 — 하루 단위(장전·장마감 후) 레이아웃, 미니멀 미스트.
 
-레이아웃: render_reports() = 리포트 표시 (좌 2/3 본문 · 우 1/3 내 종목/주목 테마)
-        render_reports_manage() = 지난 리포트 보기 + 삭제 UI (하단 배치용)
+레이아웃 (render_reports):
+  최상단 기준일(YYYY.MM.DD(요일))
+  ① 오늘의 시장 동력 매트릭스 (단기/장기 × 상승/하락 · 최신 보고서 기준)
+  ② 좌 장전 / 우 장마감 후 (없으면 '생성 전' 자리지킴)
+  ③ 주목 테마 (전체 폭)
+render_reports_manage = 지난 보고서(날짜) 탐색 + 삭제 (하단 배치용)
+
+영구 저장: 각 보고서의 '💾 JSON 저장' 버튼으로 받은 파일을 깃허브 reports/ 에 올리면
+리부트에도 보존되고 추세 탭 타임라인에도 자동 반영됨.
 """
 
+import html
 import json
 import re
 from datetime import date
@@ -15,37 +23,83 @@ from modules.stocks import naver_stock_url
 from modules.mood import MOOD_KO, mood_css
 
 REPORTS_DIR = Path("reports")
-
 MOOD_CLS = {"positive": "mood-pos", "neutral": "mood-neu", "cautious": "mood-cau"}
+_WD = "월화수목금토일"
 
 _RPT_CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Hanken+Grotesk:wght@400;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Hanken+Grotesk:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap');
 .rpt-wrap{font-family:'Hanken Grotesk','Noto Sans KR',sans-serif;}
-.rpt-toprow{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:6px;}
-.mood-badge{font-size:10.5px;font-weight:700;letter-spacing:.07em;padding:4px 11px;border-radius:20px;display:inline-block;}
+.mood-badge{font-size:10.5px;font-weight:700;letter-spacing:.06em;padding:3px 11px;border-radius:20px;display:inline-block;}
 __MOOD_BADGE_CSS__
-.rpt-topmeta{font-size:11.5px;color:var(--muted,#9a9b92);}
-.rpt-accent{height:3px;width:32px;background:var(--sage,#A7BBA9);border-radius:3px;margin:0 0 12px;}
-.rpt-headline{font-family:'Fraunces','Noto Sans KR',Georgia,serif;font-size:21px;font-weight:600;letter-spacing:-.02em;color:var(--ink,#34352f);line-height:1.45;margin:6px 0 18px;}
-.rpt-kt-wrap{margin-bottom:26px;}
-.rpt-kt-label{font-size:10.5px;font-weight:700;letter-spacing:.07em;color:var(--sage-deep,#7E9A83);margin-bottom:6px;text-transform:uppercase;}
-.rpt-kt-box{font-size:14.5px;line-height:1.85;color:var(--ink,#34352f);background:var(--summary-bg,#F6F7F2);border-left:3px solid var(--sage,#A7BBA9);padding:14px 18px;border-radius:0 12px 12px 0;}
-.rpt-sec{margin:20px 0 0;}
-.rpt-sec-title{font-size:15.5px;font-weight:700;color:var(--ink,#34352f);border-bottom:2px solid var(--sage,#A7BBA9);padding-bottom:5px;margin-bottom:9px;}
-.rpt-sec-body{font-size:14px;line-height:1.9;color:var(--ink,#34352f);margin:0;}
-.rpt-group-label{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted,#9a9b92);margin:0 0 12px;padding-bottom:6px;border-bottom:1px solid var(--line,#ECEDE7);}
-.rpt-side .rpt-group-label{margin-top:4px;}
-.rpt-side .rpt-group-label + .theme-card{margin-top:0;}
-.theme-card{background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);border-left:3px solid var(--sage,#A7BBA9);border-radius:0 13px 13px 0;padding:13px 16px 11px;margin-bottom:10px;}
+.rpt2-bar{height:3px;width:34px;background:var(--sage,#A7BBA9);border-radius:3px;margin:0 0 10px;}
+.rpt2-date{font-family:'Fraunces','Noto Sans KR',serif;font-size:15px;font-weight:600;color:var(--sage-deep,#7E9A83);letter-spacing:.02em;}
+.rpt2-title{font-family:'Fraunces','Noto Sans KR',serif;font-size:24px;font-weight:600;color:var(--ink,#34352f);margin:2px 0 16px;}
+.rpt2-grp{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted,#9a9b92);margin:22px 0 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.rpt2-grp .sub{font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted,#9a9b92);font-size:11px;}
+.rpt2-grp .tag{font-size:10.5px;font-weight:700;letter-spacing:.02em;text-transform:none;padding:2px 9px;border-radius:20px;}
+.tag-pred{background:var(--tint-up,#FBF2F2);color:var(--up,#B65F5A);}
+.tag-upd{background:#e1f5ee;color:#0f6e56;}
+
+/* 시장 동력 매트릭스 */
+.dvm{display:grid;grid-template-columns:0.82fr 1.09fr 1.09fr;background:#fff;border:1px solid var(--line,#ECEDE7);border-radius:16px;overflow:hidden;}
+.dvm-h{font-size:12.5px;font-weight:700;padding:12px 15px;display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--line,#ECEDE7);}
+.dvm-h em{font-style:normal;font-size:10px;font-weight:600;color:var(--muted,#9a9b92);margin-left:2px;}
+.dvm-h0{background:var(--summary-bg,#F6F7F2);color:var(--ink,#34352f);}
+.dvm-hup{background:var(--tint-up,#FBF2F2);color:var(--up,#B65F5A);}
+.dvm-hdown{background:var(--tint-down,#F1F5F9);color:var(--down,#5A7CA0);}
+.dvm-tf{padding:15px;border-bottom:1px solid var(--line,#ECEDE7);background:var(--summary-bg,#F6F7F2);}
+.tf-name{font-size:14px;font-weight:700;color:var(--ink,#34352f);}
+.tf-name em{font-style:normal;font-size:10.5px;color:var(--muted,#9a9b92);font-weight:600;margin-left:4px;}
+.tf-sub{font-size:11px;color:var(--muted,#9a9b92);margin-top:5px;}
+.dvm-cell{padding:13px 15px;border-bottom:1px solid var(--line,#ECEDE7);border-left:1px solid var(--line,#ECEDE7);}
+.dvi{font-size:12.5px;line-height:1.62;color:var(--ink,#34352f);margin-bottom:11px;}
+.dvi:last-child{margin-bottom:0;}
+.dvi-lab{font-weight:700;}
+.dvi.up .dvi-lab{color:var(--up,#B65F5A);}
+.dvi.down .dvi-lab{color:var(--down,#5A7CA0);}
+.dvi-empty{font-size:12px;color:var(--muted,#9a9b92);}
+.dvm-celldir{display:none;}
+.dvm > *:nth-last-child(-n+3){border-bottom:none;}
+@media(max-width:640px){
+  .dvm{grid-template-columns:1fr;}
+  .dvm-h{display:none;}
+  .dvm-cell{border-left:none;}
+  .dvm > *:nth-last-child(-n+3){border-bottom:1px solid var(--line,#ECEDE7);}
+  .dvm > *:last-child{border-bottom:none;}
+  .dvm-celldir{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;margin-bottom:9px;}
+  .dvm-celldir.up{color:var(--up,#B65F5A);} .dvm-celldir.down{color:var(--down,#5A7CA0);}
+}
+
+/* 장전/장후 카드 */
+.rc{background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);border-radius:16px;padding:18px 18px 14px;}
+.rc-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;}
+.rc-kind{font-size:13.5px;font-weight:700;color:var(--ink,#34352f);}
+.rc-win{font-size:11px;color:var(--muted,#9a9b92);margin-bottom:12px;}
+.rc-win b{color:var(--sage-deep,#7E9A83);}
+.rc-headline{font-family:'Fraunces','Noto Sans KR',serif;font-size:18px;font-weight:600;line-height:1.45;letter-spacing:-.01em;color:var(--ink,#34352f);margin-bottom:12px;}
+.rc-ktlab{font-size:10.5px;font-weight:700;letter-spacing:.06em;color:var(--sage-deep,#7E9A83);margin-bottom:5px;text-transform:uppercase;}
+.rc-ktbox{font-size:13.5px;line-height:1.75;color:var(--ink,#34352f);background:var(--summary-bg,#F6F7F2);border-left:3px solid var(--sage,#A7BBA9);padding:12px 15px;border-radius:0 11px 11px 0;margin-bottom:16px;}
+.rc-sectitle{font-size:13.5px;font-weight:700;color:var(--ink,#34352f);border-bottom:1.5px solid var(--sage,#A7BBA9);padding-bottom:4px;margin:14px 0 6px;}
+.rc-secbody{font-size:13px;line-height:1.75;color:var(--ink,#34352f);margin-bottom:6px;}
+.rc-src{margin-top:14px;padding-top:10px;border-top:1px solid var(--line,#ECEDE7);display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+.src-pill{background:var(--pill-bg,#F1F2EC);color:var(--pill-ink,#5d6258);border:1px solid var(--line,#ECEDE7);font-size:11px;font-weight:600;padding:3px 9px;border-radius:7px;}
+.rc-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:280px;color:var(--muted,#9a9b92);border:1.5px dashed var(--line,#ECEDE7);border-radius:14px;background:#fdfdfb;}
+.rc-empty .ico{font-size:34px;opacity:.55;}
+.rc-empty .msg{font-size:14px;font-weight:700;color:var(--ink,#34352f);margin-top:12px;}
+.rc-empty .hint{font-size:12px;margin-top:6px;}
+.rc-empty .eta{font-size:11.5px;margin-top:10px;background:var(--pill-bg,#F1F2EC);color:var(--pill-ink,#5d6258);border:1px solid var(--line,#ECEDE7);padding:3px 11px;border-radius:20px;}
+
+/* 주목 테마 (하단 전체 폭) */
+.rpt-theme-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;}
+.theme-card{background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);border-left:3px solid var(--sage,#A7BBA9);border-radius:0 13px 13px 0;padding:13px 16px 11px;}
 .theme-name{font-size:14px;font-weight:700;color:var(--ink,#34352f);margin-bottom:5px;}
-.theme-detail{font-size:13px;line-height:1.75;color:var(--ink,#34352f);margin-bottom:8px;}
+.theme-detail{font-size:13px;line-height:1.7;color:var(--ink,#34352f);margin-bottom:8px;}
 .theme-tickers{font-size:11.5px;color:var(--muted,#9a9b92);}
 .theme-tickers a{color:var(--sage-deep,#7E9A83);font-weight:600;text-decoration:none;background:var(--pill-bg,#F1F2EC);padding:2px 8px;border-radius:6px;border:1px solid var(--line,#ECEDE7);margin-right:4px;}
-.rpt-side-gap{height:20px;}
+.rpt-side-empty{color:var(--muted,#9a9b92);font-size:13px;padding:8px 0;}
 </style>
 """
-
 _RPT_CSS = _RPT_CSS.replace("__MOOD_BADGE_CSS__", mood_css("mood"))
 
 
@@ -83,6 +137,19 @@ def _load(path: Path) -> dict:
     }
 
 
+def _infer_kind_from_name(path: Path) -> str:
+    """파일명 HHMM으로 장전/장후 추정 (구형 보고서 호환). 오전=장전, 오후=장후."""
+    m = re.search(r"_(\d{2})(\d{2})", path.stem)
+    if m:
+        return "pre" if int(m.group(1)) < 12 else "post"
+    return "post"
+
+
+def _kind_of(path: Path, data: dict) -> str:
+    k = (data or {}).get("report_kind")
+    return k if k in ("pre", "post") else _infer_kind_from_name(path)
+
+
 def _label(path: Path) -> str:
     name = path.stem
     try:
@@ -102,6 +169,42 @@ def _label_with_headline(path: Path) -> str:
     except Exception:
         pass
     return base
+
+
+def _fmt_date_ko(d: date) -> str:
+    return f"{d.strftime('%Y.%m.%d')}({_WD[d.weekday()]})"
+
+
+def _selected_date(files) -> date:
+    """표시할 날짜. ?rpt= 또는 날짜 선택으로 고정된 보고서가 있으면 그 날짜, 없으면 오늘.
+    오늘 보고서가 없으면 가장 최근 보고서 날짜로."""
+    pk = st.session_state.get("rpt_picked_path")
+    if pk and Path(pk).exists():
+        return _report_date(Path(pk))
+    today = date.today()
+    dates = {_report_date(f) for f in files}
+    if today in dates:
+        return today
+    return max(dates) if dates else today
+
+
+def _find_for_date(files, d: date):
+    """해당 날짜의 (장전, 장후) = ((path, data) 또는 (None, None))."""
+    pres, posts = [], []
+    for f in files:
+        if _report_date(f) != d:
+            continue
+        try:
+            data = _load(f)
+        except Exception:
+            continue
+        bucket = pres if _kind_of(f, data) == "pre" else posts
+        bucket.append((f, data))
+    pres.sort(key=lambda x: x[0].name, reverse=True)
+    posts.sort(key=lambda x: x[0].name, reverse=True)
+    pre = pres[0] if pres else (None, None)
+    post = posts[0] if posts else (None, None)
+    return pre, post
 
 
 def _extract_stocks(text: str) -> list:
@@ -129,105 +232,176 @@ def _extract_stocks(text: str) -> list:
             if p.strip() and len(p.strip()) <= 20 and not p.strip().startswith("#")]
 
 
-def _selected_report(files):
-    """현재 선택된 리포트 (기본 = 최신). render_reports / render_reports_manage 공용."""
-    selected = files[0]
-    picked_key = st.session_state.get("rpt_picked_path")
-    if picked_key and Path(picked_key).exists() and Path(picked_key) in files:
-        selected = Path(picked_key)
-    return selected
+# ── 렌더링: 시장 동력 매트릭스 ───────────────────────────────
+
+def _matrix_has_content(md: dict) -> bool:
+    if not md:
+        return False
+    for tf in ("short_term", "long_term"):
+        for dr in ("up", "down"):
+            if ((md.get(tf) or {}).get(dr)):
+                return True
+    return False
 
 
-# ── 렌더링: 본문 (좌측 2/3) ──────────────────────────────────
+def _cell_html(items, direction, dir_label):
+    head = f'<div class="dvm-celldir {direction}">{dir_label}</div>'
+    items = items or []
+    if not items:
+        return head + '<div class="dvi-empty">—</div>'
+    rows = ""
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        lab = html.escape(str(it.get("label", "")).strip())
+        desc = html.escape(str(it.get("desc", "")).strip())
+        if not lab and not desc:
+            continue
+        lab_html = f'<span class="dvi-lab">[{lab}]</span> ' if lab else ""
+        rows += f'<div class="dvi {direction}">{lab_html}{desc}</div>'
+    return head + (rows or '<div class="dvi-empty">—</div>')
 
-def _render_report_main(data: dict):
-    """헤드라인 · 오늘의 관전 · 본문 섹션."""
-    mood     = data.get("mood", "neutral")
-    mood_ko  = MOOD_KO.get(mood, mood)
-    mood_cls = MOOD_CLS.get(mood, "mood-neu")
-    gen_at   = data.get("generated_at", "")
-    n_msg    = data.get("messages_count", 0)
-    headline = data.get("headline", "전략·시황 보고서")
 
-    meta_right = gen_at + (f" · {n_msg}개 메시지" if n_msg else "")
+def _render_matrix(data: dict, kind: str):
+    md = data.get("market_drivers") or {}
+    if not _matrix_has_content(md):
+        return
+    st_ = md.get("short_term") or {}
+    lt = md.get("long_term") or {}
+
+    tag = ('<span class="tag tag-pred">장전 보고서 기준 · 개장 전 예측</span>' if kind == "pre"
+           else '<span class="tag tag-upd">장마감 후 보고서 기준 · 결과 반영</span>')
     st.markdown(
-        f'<div class="rpt-wrap">'
-        f'<div class="rpt-accent"></div>'
-        f'<div class="rpt-toprow">'
-        f'  <span class="mood-badge {mood_cls}">{mood_ko.upper()}</span>'
-        f'  <span class="rpt-topmeta">{meta_right}</span>'
-        f'</div>'
-        f'<div class="rpt-headline">{headline}</div>'
+        f'<div class="rpt2-grp">📊 오늘의 시장 동력 매트릭스 '
+        f'<span class="sub">Market Driver Matrix</span> {tag}</div>',
+        unsafe_allow_html=True)
+
+    grid = (
+        '<div class="dvm">'
+        '<div class="dvm-h dvm-h0">🕒 시계열 구분</div>'
+        '<div class="dvm-h dvm-hup">📈 상승 · 모멘텀 요인 <em>Upward</em></div>'
+        '<div class="dvm-h dvm-hdown">📉 하락 · 리스크 요인 <em>Downward</em></div>'
+        '<div class="dvm-tf"><div class="tf-name">단기 <em>Short-term</em></div>'
+        '<div class="tf-sub">수급 · 심리 · 노이즈</div></div>'
+        f'<div class="dvm-cell">{_cell_html(st_.get("up"), "up", "📈 상승 · 모멘텀")}</div>'
+        f'<div class="dvm-cell">{_cell_html(st_.get("down"), "down", "📉 하락 · 리스크")}</div>'
+        '<div class="dvm-tf"><div class="tf-name">장기 <em>Long-term</em></div>'
+        '<div class="tf-sub">거시 · 실적 · 정책</div></div>'
+        f'<div class="dvm-cell">{_cell_html(lt.get("up"), "up", "📈 상승 · 모멘텀")}</div>'
+        f'<div class="dvm-cell">{_cell_html(lt.get("down"), "down", "📉 하락 · 리스크")}</div>'
+        '</div>'
+    )
+    st.markdown(grid, unsafe_allow_html=True)
+
+
+# ── 렌더링: 장전/장후 카드 ───────────────────────────────────
+
+def _render_report_card(data: dict, kind: str, path: Path):
+    icon = "🌅" if kind == "pre" else "🌆"
+    kind_ko = "장전 보고서" if kind == "pre" else "장마감 후 보고서"
+    kt_lab = "오늘의 관전" if kind == "pre" else "오늘의 결산"
+
+    mood = data.get("mood", "neutral")
+    mood_ko = MOOD_KO.get(mood, mood)
+    mood_cls = MOOD_CLS.get(mood, "mood-neu")
+
+    since = data.get("analysis_since", "")
+    until = data.get("analysis_until", "")
+    gen = data.get("generated_at", "")
+    n = data.get("messages_count", 0)
+    headline = data.get("headline", "")
+    kt = data.get("key_takeaway", "")
+
+    if since and until:
+        win = f'분석 <b>{since} ~ {until}</b>' + (f' · 생성 {gen}' if gen else "")
+    else:
+        win = (f'생성 {gen}' if gen else "")
+
+    secs_html = ""
+    for sec in data.get("sections", []):
+        t = sec.get("title", "")
+        b = sec.get("body", "")
+        if not t and not b:
+            continue
+        secs_html += f'<div class="rc-sectitle">{t}</div><div class="rc-secbody">{b}</div>'
+
+    src_bits = []
+    if n:
+        src_bits.append(f"{n}개 메시지")
+    if data.get("data_enriched"):
+        src_bits.append("정량 스냅샷")
+    sc = data.get("source_channels") or []
+    if sc:
+        src_bits.append(f"채널 {len(sc)}곳")
+    src_html = "".join(f'<span class="src-pill">{html.escape(str(b))}</span>' for b in src_bits)
+
+    kt_html = (f'<div class="rc-ktlab">{kt_lab}</div><div class="rc-ktbox">{kt}</div>'
+               if kt else "")
+    st.markdown(
+        f'<div class="rc">'
+        f'<div class="rc-head"><span class="rc-kind">{icon} {kind_ko}</span>'
+        f'<span class="mood-badge {mood_cls}">{mood_ko.upper()}</span></div>'
+        f'<div class="rc-win">{win}</div>'
+        f'<div class="rc-headline">{headline}</div>'
+        f'{kt_html}{secs_html}'
+        f'<div class="rc-src">{src_html}</div>'
         f'</div>', unsafe_allow_html=True)
 
-    kt = data.get("key_takeaway", "")
-    if kt:
-        st.markdown(
-            f'<div class="rpt-kt-wrap">'
-            f'<div class="rpt-kt-label">오늘의 관전</div>'
-            f'<div class="rpt-kt-box">{kt}</div>'
-            f'</div>', unsafe_allow_html=True)
-
-    for sec in data.get("sections", []):
-        title = sec.get("title", "")
-        body  = sec.get("body", "")
-        if not title and not body:
-            continue
-        st.markdown(
-            f'<div class="rpt-sec">'
-            f'<div class="rpt-sec-title">{title}</div>'
-            f'<div class="rpt-sec-body">{body}</div>'
-            f'</div>', unsafe_allow_html=True)
+    # PDF · JSON 다운로드 (JSON = 깃허브 영구 저장용)
+    b1, b2 = st.columns(2)
+    with b1:
+        try:
+            from modules.report_pdf import build_pdf
+            st.download_button("📄 PDF", data=build_pdf(data),
+                               file_name=f"{path.stem}.pdf", mime="application/pdf",
+                               key=f"pdf_{kind}_{path.stem}", use_container_width=True)
+        except Exception:
+            st.caption("PDF 생성 불가")
+    with b2:
+        st.download_button(
+            "💾 JSON 저장", data=json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8"),
+            file_name=path.name, mime="application/json",
+            key=f"json_{kind}_{path.stem}", use_container_width=True)
+    st.caption("💾 받은 JSON을 깃허브 `reports/` 에 올리면 리부트에도 보존되고 타임라인에도 자동 반영돼요.")
 
 
-# ── 렌더링: 사이드 (우측 1/3) ────────────────────────────────
+def _render_placeholder(kind: str):
+    if kind == "pre":
+        icon, msg = "🌅", "장전 보고서 생성 전"
+        hint, eta = "장 시작 전 아침에 생성됩니다.", "오전 7:50 예정 · 전일 15:30 ~ 07:50"
+    else:
+        icon, msg = "🌆", "장마감 후 보고서 생성 전"
+        hint, eta = "장 마감 후 생성됩니다.", "오후 5:00 예정 · 07:50 ~ 17:00"
+    st.markdown(
+        f'<div class="rc-empty"><div class="ico">{icon}</div>'
+        f'<div class="msg">{msg}</div><div class="hint">{hint}</div>'
+        f'<div class="eta">{eta}</div></div>', unsafe_allow_html=True)
 
-def _render_report_side(data: dict):
-    """내 종목 · 주목 테마."""
-    rendered = False
 
-    wl = data.get("watchlist_mentions", [])
-    if wl:
-        st.markdown('<div class="rpt-side">'
-                    '<div class="rpt-group-label">⭐ 내 종목</div></div>',
+# ── 렌더링: 주목 테마 (하단 전체 폭) ─────────────────────────
+
+def _render_themes(data: dict):
+    themes = data.get("themes", []) if data else []
+    st.markdown('<div class="rpt2-grp">🎯 주목 테마</div>', unsafe_allow_html=True)
+    if not themes:
+        st.markdown('<div class="rpt-side-empty">이 보고서에는 테마 정보가 없어요.</div>',
                     unsafe_allow_html=True)
-        for w in wl:
-            stock = w.get("stock", "")
-            summary = w.get("summary", "")
-            if not stock:
-                continue
-            st.markdown(
-                f'<div class="theme-card">'
-                f'<div class="theme-name"><a href="{naver_stock_url(stock)}" target="_blank" '
-                f'style="color:inherit;text-decoration:none;">{stock}</a></div>'
-                f'<div class="theme-detail">{summary}</div>'
-                f'</div>', unsafe_allow_html=True)
-        rendered = True
-
-    themes = data.get("themes", [])
-    if themes:
-        if rendered:
-            st.markdown('<div class="rpt-side-gap"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="rpt-side">'
-                    '<div class="rpt-group-label">주목 테마</div></div>',
-                    unsafe_allow_html=True)
-        for th in themes:
-            name    = th.get("name", "")
-            detail  = th.get("detail", "")
-            tickers = [t.strip() for t in (th.get("tickers") or "").split(",") if t.strip()]
-            tickers_html = "".join(
-                f'<a href="{naver_stock_url(t)}" target="_blank">{t}</a>'
-                for t in tickers)
-            st.markdown(
-                f'<div class="theme-card">'
-                f'<div class="theme-name">{name}</div>'
-                f'<div class="theme-detail">{detail}</div>'
-                + (f'<div class="theme-tickers">관련: {tickers_html}</div>' if tickers_html else "")
-                + '</div>', unsafe_allow_html=True)
-        rendered = True
-
-    if not rendered:
-        st.caption("이 리포트에는 내 종목·테마 정보가 없어요.")
+        return
+    cards = ""
+    for th in themes:
+        name = th.get("name", "")
+        detail = th.get("detail", "")
+        tickers = [t.strip() for t in (th.get("tickers") or "").split(",") if t.strip()]
+        tk_html = "".join(
+            f'<a href="{naver_stock_url(t)}" target="_blank">{html.escape(t)}</a>'
+            for t in tickers)
+        cards += (
+            f'<div class="theme-card">'
+            f'<div class="theme-name">{name}</div>'
+            f'<div class="theme-detail">{detail}</div>'
+            + (f'<div class="theme-tickers">관련: {tk_html}</div>' if tk_html else "")
+            + '</div>')
+    st.markdown(f'<div class="rpt-theme-grid">{cards}</div>', unsafe_allow_html=True)
 
 
 # ── 삭제 UI ─────────────────────────────────────────────────
@@ -240,7 +414,6 @@ def _render_delete_ui(files):
             options=[str(f) for f in files],
             format_func=lambda s: labels[s],
             key="rpt_del_sel")
-
         if to_delete:
             st.warning(f"{len(to_delete)}개 리포트를 삭제합니다. 되돌릴 수 없어요.")
             confirm = st.checkbox("삭제를 확인합니다", key="rpt_del_confirm")
@@ -256,102 +429,81 @@ def _render_delete_ui(files):
                 st.rerun()
 
 
-# ── 메인: 리포트 표시 (탭 상단 배치용) ───────────────────────
+# ── 메인: 리포트 표시 (탭 상단) ──────────────────────────────
 
 def render_reports():
-    """최신(또는 선택된) 리포트를 좌 2/3 본문 · 우 1/3 사이드로 표시."""
+    """기준일(기본=오늘)의 장전·장후를 하루 단위로 표시."""
     st.markdown(_RPT_CSS, unsafe_allow_html=True)
-
     files = list_reports()
+
+    sel_date = _selected_date(files)
+    st.markdown('<div class="rpt2-bar"></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="rpt2-date">{_fmt_date_ko(sel_date)}</div>'
+                f'<div class="rpt2-title">전략·시황 보고서</div>', unsafe_allow_html=True)
+
     if not files:
         st.markdown(
-            '<div class="empty"><div class="ico">📰</div>'
+            '<div class="rc-empty"><div class="ico">📰</div>'
             '<div class="msg">아직 생성된 리포트가 없어요</div>'
-            '<div class="hint">📝 아래 리포트 생성 버튼으로 첫 리포트를 만들어보세요</div></div>',
+            '<div class="hint">아래 🌅 장전 / 🌆 장마감 후 버튼으로 첫 리포트를 만들어보세요</div></div>',
             unsafe_allow_html=True)
         return
 
-    selected = _selected_report(files)
-    is_latest = (selected == files[0])
+    (pre_path, pre_data), (post_path, post_data) = _find_for_date(files, sel_date)
+    latest = post_data or pre_data
+    latest_kind = "post" if post_data else "pre"
 
-    try:
-        data = _load(selected)
-    except Exception as e:
-        st.error(f"리포트를 불러오지 못했어요: {e}")
-        return
+    # ① 시장 동력 매트릭스 (최신 보고서 기준)
+    if latest:
+        _render_matrix(latest, latest_kind)
 
-    # 최신/과거 표시 배지 + PDF 다운로드 (한 줄 정렬)
-    badge = "최신" if is_latest else f"과거 · {_label(selected)}"
-    meta_col, pdf_col = st.columns([3, 1])
-    with meta_col:
-        st.caption(f"📄 {badge} 리포트")
-    with pdf_col:
-        try:
-            from modules.report_pdf import build_pdf
-            pdf_bytes = build_pdf(data)
-            st.download_button(
-                "📄 PDF",
-                data=pdf_bytes,
-                file_name=f"{selected.stem}.pdf",
-                mime="application/pdf",
-                key="rpt_pdf_dl",
-                use_container_width=True)
-        except Exception as e:
-            st.caption(f"PDF 불가: {e}")
-
-    # 좌 2/3 본문 · 우 1/3 내 종목/주목 테마 (모바일에선 자동 세로 스택)
-    left, right = st.columns([2, 1], gap="large")
+    # ② 좌 장전 / 우 장마감 후
+    st.markdown('<div class="rpt2-grp">📑 장전 · 장마감 후 보고서 '
+                '<span class="sub">데스크톱: 좌 장전 · 우 장후 / 모바일: 위아래</span></div>',
+                unsafe_allow_html=True)
+    left, right = st.columns(2, gap="large")
     with left:
-        _render_report_main(data)
+        if pre_data:
+            _render_report_card(pre_data, "pre", pre_path)
+        else:
+            _render_placeholder("pre")
     with right:
-        _render_report_side(data)
+        if post_data:
+            _render_report_card(post_data, "post", post_path)
+        else:
+            _render_placeholder("post")
+
+    # ③ 주목 테마 (전체 폭)
+    _render_themes(latest)
 
 
-# ── 메인: 리포트 관리 (탭 하단 배치용) ───────────────────────
+# ── 메인: 리포트 관리 (탭 하단) ──────────────────────────────
 
 def render_reports_manage():
-    """지난 리포트 보기 + 삭제 UI. render_reports() 아래쪽에 배치."""
+    """지난 보고서(날짜) 탐색 + 삭제. render_reports() 아래쪽에 배치."""
     files = list_reports()
     if not files:
         return
 
-    selected = _selected_report(files)
-    is_latest = (selected == files[0])
-    picked_key = st.session_state.get("rpt_picked_path")
+    dates = sorted({_report_date(f) for f in files}, reverse=True)
+    today = date.today()
+    sel = _selected_date(files)
 
-    # 과거 리포트 탐색 (접이식) — 1개여도 노출, 과거 보고서 보는 중이면 자동 펼침
-    if files:
-        with st.expander(f"🗂 지난 리포트 보기 ({len(files)}개)", expanded=not is_latest):
-            dates = [_report_date(f) for f in files]
-            lo, hi = min(dates), max(dates)
-            # 날짜가 2종 이상일 때만 기간 필터 노출 (1종이면 range 입력이 어색함)
-            if lo != hi:
-                date_range = st.date_input("기간", value=(lo, hi),
-                                           min_value=lo, max_value=hi, key="rpt_dates")
-                start = end = None
-                if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
-                    start, end = date_range
-                filtered = [f for f in files
-                            if (not start or _report_date(f) >= start)
-                            and (not end or _report_date(f) <= end)]
-            else:
-                filtered = list(files)
-            if filtered:
-                cur_idx = filtered.index(selected) if selected in filtered else 0
-                idx = st.selectbox(
-                    "리포트 선택", options=range(len(filtered)), index=cur_idx,
-                    format_func=lambda i: _label_with_headline(filtered[i]),
-                    key="rpt_pick")
-                chosen = filtered[idx]
-                if str(chosen) != picked_key:
-                    st.session_state["rpt_picked_path"] = str(chosen)
-                    if chosen != selected:
-                        st.rerun()
-                if not is_latest and st.button("↩ 최신 리포트로", key="rpt_to_latest"):
-                    st.session_state["rpt_picked_path"] = str(files[0])
-                    st.rerun()
-            else:
-                st.caption("해당 기간에 리포트가 없습니다.")
+    with st.expander(f"🗂 지난 보고서 보기 ({len(dates)}일치)", expanded=(sel != today)):
+        idx = dates.index(sel) if sel in dates else 0
+        chosen_i = st.selectbox(
+            "날짜 선택", options=range(len(dates)), index=idx,
+            format_func=lambda i: _fmt_date_ko(dates[i]),
+            key="rpt_date_pick")
+        chosen_date = dates[chosen_i]
+        if chosen_date != sel:
+            (pre_p, _), (post_p, _) = _find_for_date(files, chosen_date)
+            anchor = post_p or pre_p
+            if anchor is not None:
+                st.session_state["rpt_picked_path"] = str(anchor)
+                st.rerun()
+        if sel != today and st.button("↩ 오늘로", key="rpt_to_today"):
+            st.session_state["rpt_picked_path"] = None
+            st.rerun()
 
-    # 삭제 UI
     _render_delete_ui(files)
