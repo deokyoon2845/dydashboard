@@ -2,8 +2,10 @@
 
 레이아웃 (render_reports):
   최상단 기준일(YYYY.MM.DD(요일))
+  ⓪ 오늘의 한 줄 TL;DR (장전→장후 mood 흐름 + 최신 헤드라인)   ← 신규
   ① 오늘의 시장 동력 매트릭스 (단기/장기 × 상승/하락 · 최신 보고서 기준)
   ② 좌 장전 / 우 장마감 후 (없으면 '생성 전' 자리지킴)
+     └ 각 카드 안: 헤드라인 · 관전/결산 · 교차 검증(cross_check) · 본문 섹션   ← 교차검증 신규
   ③ 주목 테마 (전체 폭)
 render_reports_manage = 지난 보고서(날짜) 탐색 + 삭제 (하단 배치용)
 
@@ -40,6 +42,16 @@ __MOOD_BADGE_CSS__
 .rpt2-grp .tag{font-size:10.5px;font-weight:700;letter-spacing:.02em;text-transform:none;padding:2px 9px;border-radius:20px;}
 .tag-pred{background:var(--tint-up,#FBF2F2);color:var(--up,#B65F5A);}
 .tag-upd{background:#e1f5ee;color:#0f6e56;}
+
+/* ⓪ 오늘의 한 줄 TL;DR (상단) */
+.rpt-tldr{background:#fff;border:1px solid var(--line,#ECEDE7);border-left:4px solid var(--sage,#A7BBA9);border-radius:0 16px 16px 0;padding:15px 19px;margin:4px 0 6px;}
+.rpt-tldr .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;}
+.rpt-tldr .lab{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted,#9a9b92);}
+.tldr-step{display:inline-flex;align-items:center;gap:5px;}
+.tldr-steplab{font-size:11px;font-weight:700;color:var(--muted,#9a9b92);}
+.tldr-arrow{color:var(--muted,#9a9b92);font-size:11px;font-weight:700;}
+.rpt-tldr .hl{font-family:'Fraunces','Noto Sans KR',serif;font-size:19px;font-weight:600;line-height:1.42;color:var(--ink,#34352f);}
+.rpt-tldr .kt{font-size:12.5px;color:var(--muted,#9a9b92);line-height:1.62;margin-top:7px;}
 
 /* 시장 동력 매트릭스 */
 .dvm{display:grid;grid-template-columns:0.82fr 1.09fr 1.09fr;background:#fff;border:1px solid var(--line,#ECEDE7);border-radius:16px;overflow:hidden;}
@@ -89,6 +101,20 @@ __MOOD_BADGE_CSS__
 .rc-empty .msg{font-size:14px;font-weight:700;color:var(--ink,#34352f);margin-top:12px;}
 .rc-empty .hint{font-size:12px;margin-top:6px;}
 .rc-empty .eta{font-size:11.5px;margin-top:10px;background:var(--pill-bg,#F1F2EC);color:var(--pill-ink,#5d6258);border:1px solid var(--line,#ECEDE7);padding:3px 11px;border-radius:20px;}
+
+/* 교차 검증 (장전/장후 카드 내부) */
+.rcc{margin:2px 0 14px;}
+.rcc-lab{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--sage-deep,#7E9A83);margin-bottom:7px;}
+.rcc-grid{display:flex;gap:9px;flex-wrap:wrap;}
+.rcc-col{flex:1;min-width:185px;border:1px solid var(--line,#ECEDE7);border-radius:11px;padding:10px 13px;background:#fff;}
+.rcc-col.mv{border-top:3px solid var(--sage,#A7BBA9);}
+.rcc-col.df{border-top:3px solid var(--down,#5A7CA0);}
+.rcc-col .h{font-size:11px;font-weight:700;margin-bottom:4px;}
+.rcc-col.mv .h{color:var(--sage-deep,#7E9A83);}
+.rcc-col.df .h{color:var(--down,#5A7CA0);}
+.rcc-col .t{font-size:12.5px;line-height:1.62;color:var(--ink,#34352f);}
+.rcc-verdict{margin-top:9px;background:var(--summary-bg,#F6F7F2);border-radius:9px;padding:10px 13px;font-size:12.5px;line-height:1.62;color:var(--ink,#34352f);}
+.rcc-vbadge{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:20px;background:var(--pill-bg,#F1F2EC);color:var(--pill-ink,#5d6258);margin-right:7px;border:1px solid var(--line,#ECEDE7);}
 
 /* 주목 테마 (하단 전체 폭) */
 .rpt-theme-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;}
@@ -232,6 +258,43 @@ def _extract_stocks(text: str) -> list:
             if p.strip() and len(p.strip()) <= 20 and not p.strip().startswith("#")]
 
 
+# ── 렌더링: 오늘의 한 줄 TL;DR ───────────────────────────────
+
+def _render_tldr(pre_data, post_data, latest, latest_kind):
+    """장전→장후 mood 흐름 + 최신 헤드라인 한 줄. 날짜 제목 바로 아래에 표시."""
+    if not latest:
+        return
+    headline = html.escape(str(latest.get("headline", "")).strip())
+    if not headline:
+        return
+
+    kt = html.escape(str(latest.get("key_takeaway", "")).strip())
+    if len(kt) > 100:
+        kt = kt[:98].rstrip() + "…"
+
+    def _step(label, d):
+        m = d.get("mood", "neutral")
+        cls = MOOD_CLS.get(m, "mood-neu")
+        ko = MOOD_KO.get(m, m)
+        return (f'<span class="tldr-step"><span class="tldr-steplab">{label}</span>'
+                f'<span class="mood-badge {cls}">{ko.upper()}</span></span>')
+
+    steps = []
+    if pre_data:
+        steps.append(_step("장전", pre_data))
+    if post_data:
+        steps.append(_step("장후", post_data))
+    pills = '<span class="tldr-arrow">→</span>'.join(steps)
+
+    kt_html = f'<div class="kt">{kt}</div>' if kt else ""
+    st.markdown(
+        f'<div class="rpt-tldr">'
+        f'<div class="top"><span class="lab">오늘의 한 줄</span>{pills}</div>'
+        f'<div class="hl">{headline}</div>'
+        f'{kt_html}'
+        f'</div>', unsafe_allow_html=True)
+
+
 # ── 렌더링: 시장 동력 매트릭스 ───────────────────────────────
 
 def _matrix_has_content(md: dict) -> bool:
@@ -294,6 +357,38 @@ def _render_matrix(data: dict, kind: str):
     st.markdown(grid, unsafe_allow_html=True)
 
 
+# ── 렌더링: 교차 검증 (cross_check) ──────────────────────────
+
+def _cross_check_html(data: dict) -> str:
+    """시장 시각(텔레그램) vs 실제 데이터(정량) → 판정 + 통찰.
+    cross_check 필드가 없으면 빈 문자열 반환(표시 안 함)."""
+    cc = data.get("cross_check") or {}
+    mv = html.escape(str(cc.get("market_view", "")).strip())
+    df = html.escape(str(cc.get("data_fact", "")).strip())
+    vd = html.escape(str(cc.get("verdict", "")).strip())
+    ins = html.escape(str(cc.get("insight", "")).strip())
+    if not (mv or df):
+        return ""
+
+    verdict_html = ""
+    if vd or ins:
+        badge = f'<span class="rcc-vbadge">판정 · {vd}</span>' if vd else ""
+        verdict_html = f'<div class="rcc-verdict">{badge}{ins}</div>'
+
+    return (
+        '<div class="rcc">'
+        '<div class="rcc-lab">🔎 교차 검증 · 시각 vs 데이터</div>'
+        '<div class="rcc-grid">'
+        f'<div class="rcc-col mv"><div class="h">시장 시각 · 텔레그램</div>'
+        f'<div class="t">{mv or "—"}</div></div>'
+        f'<div class="rcc-col df"><div class="h">실제 데이터 · 정량</div>'
+        f'<div class="t">{df or "—"}</div></div>'
+        '</div>'
+        f'{verdict_html}'
+        '</div>'
+    )
+
+
 # ── 렌더링: 장전/장후 카드 ───────────────────────────────────
 
 def _render_report_card(data: dict, kind: str, path: Path):
@@ -337,13 +432,14 @@ def _render_report_card(data: dict, kind: str, path: Path):
 
     kt_html = (f'<div class="rc-ktlab">{kt_lab}</div><div class="rc-ktbox">{kt}</div>'
                if kt else "")
+    cc_html = _cross_check_html(data)   # 교차 검증 (관전 박스 다음, 본문 섹션 앞)
     st.markdown(
         f'<div class="rc">'
         f'<div class="rc-head"><span class="rc-kind">{icon} {kind_ko}</span>'
         f'<span class="mood-badge {mood_cls}">{mood_ko.upper()}</span></div>'
         f'<div class="rc-win">{win}</div>'
         f'<div class="rc-headline">{headline}</div>'
-        f'{kt_html}{secs_html}'
+        f'{kt_html}{cc_html}{secs_html}'
         f'<div class="rc-src">{src_html}</div>'
         f'</div>', unsafe_allow_html=True)
 
@@ -452,6 +548,9 @@ def render_reports():
     (pre_path, pre_data), (post_path, post_data) = _find_for_date(files, sel_date)
     latest = post_data or pre_data
     latest_kind = "post" if post_data else "pre"
+
+    # ⓪ 오늘의 한 줄 TL;DR (최신 보고서 기준)
+    _render_tldr(pre_data, post_data, latest, latest_kind)
 
     # ① 시장 동력 매트릭스 (최신 보고서 기준)
     if latest:
