@@ -108,6 +108,37 @@ _VIX_CSS = """
 .vix-chg{font-size:12.5px;font-weight:700;}
 .vix-chg.up{color:var(--up,#B65F5A);} .vix-chg.down{color:var(--down,#5A7CA0);}
 .vix-note{font-size:10.5px;color:var(--muted,#9a9b92);margin-top:6px;}
+
+/* ── 마이크로 인터랙션 (미니멀 미스트) ── */
+/* 지표 카드 등장 + 호버 */
+@keyframes ind-fade-up{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+.tmpr-card{animation:ind-fade-up .5s cubic-bezier(.22,.61,.36,1) both;
+  transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease;}
+.tmpr-card:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(52,53,47,.08);
+  border-color:var(--sage,#A7BBA9);}
+/* 공포·탐욕 게이지: 막대가 좌→우로 채워지고, 동그라미가 톡 등장 */
+@keyframes ind-bar-grow{from{transform:scaleX(0);}to{transform:scaleX(1);}}
+@keyframes ind-dot-pop{
+  0%{opacity:0;transform:translate(-50%,-50%) scale(.2);}
+  70%{opacity:1;transform:translate(-50%,-50%) scale(1.15);}
+  100%{opacity:1;transform:translate(-50%,-50%) scale(1);}}
+.gauge{transform-origin:left center;
+  animation:ind-bar-grow .7s cubic-bezier(.22,.61,.36,1) both;}
+.gauge .dot{animation:ind-dot-pop .5s cubic-bezier(.34,1.56,.64,1) .55s both;}
+@media(prefers-reduced-motion:reduce){
+  .tmpr-card,.gauge,.gauge .dot{animation:none !important;}
+  .tmpr-card{transition:none !important;}
+}
+</style>
+"""
+
+# RSI 게이지 마커 등장 애니메이션 (app.py의 .rsi-gauge i를 보완)
+_RSI_CSS = """
+<style>
+@keyframes rsi-marker-in{from{opacity:0;transform:translateX(-50%) scaleY(.3);}
+  to{opacity:1;transform:translateX(-50%) scaleY(1);}}
+.rsi-gauge i{animation:rsi-marker-in .5s ease .5s both;}
+@media(prefers-reduced-motion:reduce){.rsi-gauge i{animation:none !important;}}
 </style>
 """
 
@@ -192,6 +223,7 @@ def _fng_card(fng):
 
 def render_indicators():
     st.markdown(_VIX_CSS, unsafe_allow_html=True)
+    st.markdown(_RSI_CSS, unsafe_allow_html=True)
     st.markdown('<div class="mkt-group">시장 지표 (체온계)</div>', unsafe_allow_html=True)
 
     # 공포·탐욕(좌) + VIX 6개월 차트(우) — 2단
