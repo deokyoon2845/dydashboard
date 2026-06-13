@@ -248,13 +248,14 @@ def render_keywords():
     when = str(data.get("generated", ""))[:16].replace("T", " ")
     st.caption(f"기준: {when} · 네이버 뉴스 기반")
 
-    # 관계 그래프 (공통 종목·같은 카테고리로 키워드 연결) — 기본 접힘
-    with st.expander("🕸️ 키워드 관계 그래프 — 오늘 시장이 무엇을 중심으로 도는가", expanded=False):
-        try:
-            from modules.keyword_graph import render_keyword_graph
-            render_keyword_graph(data["items"])
-        except Exception as e:
-            st.caption(f"관계 그래프를 그릴 수 없어요 · {e}")
+    # 관계 그래프 (공통 종목·공통 키워드로 연결) — 항상 표시
+    st.markdown('<div class="mkt-group">🕸️ 키워드 관계 — 오늘 시장이 무엇을 중심으로 도는가</div>',
+                unsafe_allow_html=True)
+    try:
+        from modules.keyword_graph import render_keyword_graph
+        render_keyword_graph(data["items"])
+    except Exception as e:
+        st.caption(f"관계 그래프를 그릴 수 없어요 · {e}")
 
     watch_set = _watch_set()
     _render_items(data["items"], watch_set)
