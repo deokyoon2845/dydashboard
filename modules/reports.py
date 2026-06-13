@@ -1,17 +1,8 @@
 """전략·시황 보고서 뷰어 — 하루 단위(장전·장마감 후) 레이아웃, 미니멀 미스트.
 
-레이아웃 (render_reports):
-  최상단 기준일(YYYY.MM.DD(요일))
-  ⓪ 오늘의 한 줄 TL;DR (장전→장후 mood 흐름 + 최신 헤드라인)
-  ① 오늘의 시장 동력 매트릭스 (단기/장기 × 상승/하락 · 최신 보고서 기준)
-  ② 좌 장전 / 우 장마감 후 (없으면 '생성 전' 자리지킴)
-     └ 각 카드 안: 헤드라인 · 관전/결산 · 교차 검증(cross_check) · 본문 섹션
-       · 취합된 텔레그램 원문(source_messages) 조회   ← 신규
-  ③ 주목 테마 (전체 폭)
-render_reports_manage = 지난 보고서(날짜) 탐색 + 삭제 (하단 배치용)
-
-영구 저장: 각 보고서의 '💾 JSON 저장' 버튼으로 받은 파일을 깃허브 reports/ 에 올리면
-리부트에도 보존되고 추세 탭 타임라인에도 자동 반영됨.
+2026-06 재설계: 새 topics 스키마(주제 카드) 지원 + 과거 보고서 폴백.
+- 새 보고서(topics 있음): 주제 카드(사실/시장시각[합의·이견]/정량/시사점) + 목적별 꼬리 + 변화 추적
+- 과거 보고서(topics 없음): 기존 sections/market_drivers/cross_check 레이아웃 그대로
 """
 
 import html
@@ -53,11 +44,12 @@ __MOOD_BADGE_CSS__
 .tldr-arrow{color:var(--muted,#9a9b92);font-size:11px;font-weight:700;}
 .rpt-tldr .hl{font-family:'Fraunces','Noto Sans KR',serif;font-size:19px;font-weight:600;line-height:1.42;color:var(--ink,#34352f);}
 .rpt-tldr .kt{font-size:12.5px;color:var(--muted,#9a9b92);line-height:1.62;margin-top:7px;}
+/* 숫자 띠 (snapshot_line) */
+.rpt-snap{font-size:12px;font-weight:600;color:var(--sage-deep,#7E9A83);background:var(--summary-bg,#F6F7F2);border-radius:8px;padding:7px 13px;margin-top:9px;display:inline-block;}
 
-/* 시장 동력 매트릭스 (재디자인) — 시계열 열 좁게, 상승/하락 열 넓게 */
+/* 시장 동력 매트릭스 (구형 보고서용 — 유지) */
 .dvm{display:grid;grid-template-columns:0.58fr 1.21fr 1.21fr;background:#fff;
   border:1px solid var(--line,#ECEDE7);border-radius:16px;overflow:hidden;}
-/* 헤더 행 */
 .dvm-h{font-size:12.5px;font-weight:700;padding:11px 16px;display:flex;align-items:center;gap:6px;
   border-bottom:1px solid var(--line,#ECEDE7);}
 .dvm-h em{font-style:normal;font-size:10px;font-weight:600;color:var(--muted,#9a9b92);margin-left:2px;}
@@ -65,24 +57,20 @@ __MOOD_BADGE_CSS__
   letter-spacing:.04em;text-transform:uppercase;}
 .dvm-hup{background:var(--tint-up,#FBF2F2);color:var(--up,#B65F5A);}
 .dvm-hdown{background:var(--tint-down,#F1F5F9);color:var(--down,#5A7CA0);}
-/* 시계열 라벨 칸 (좁게) */
 .dvm-tf{padding:14px 16px;border-bottom:1px solid var(--line,#ECEDE7);background:var(--summary-bg,#F6F7F2);
   display:flex;flex-direction:column;justify-content:center;}
 .tf-name{font-size:15px;font-weight:700;color:var(--ink,#34352f);}
 .tf-name em{display:block;font-style:normal;font-size:10px;color:var(--muted,#9a9b92);
   font-weight:600;margin:2px 0 0;letter-spacing:.02em;}
 .tf-sub{font-size:10.5px;color:var(--muted,#9a9b92);margin-top:6px;line-height:1.4;}
-/* 내용 칸 — 항목들을 세로로 쌓되 넉넉한 폭 */
 .dvm-cell{padding:11px 14px;border-bottom:1px solid var(--line,#ECEDE7);
   border-left:1px solid var(--line,#ECEDE7);display:flex;flex-direction:column;gap:8px;}
-/* 개별 항목: 좌측 컬러바 + 라벨(칩) + 설명, 한 카드로 */
 .dvi{position:relative;padding:8px 11px 8px 13px;border-radius:9px;background:var(--summary-bg,#F6F7F2);
   border:1px solid var(--line,#ECEDE7);}
 .dvi::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:3px;}
 .dvi.up::before{background:var(--up,#B65F5A);}
 .dvi.down::before{background:var(--down,#5A7CA0);}
-.dvi-lab{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:6px;
-  margin-bottom:4px;}
+.dvi-lab{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:6px;margin-bottom:4px;}
 .dvi.up .dvi-lab{background:var(--tint-up,#FBF2F2);color:var(--up,#B65F5A);}
 .dvi.down .dvi-lab{background:var(--tint-down,#F1F5F9);color:var(--down,#5A7CA0);}
 .dvi-desc{font-size:12.5px;line-height:1.55;color:var(--ink,#34352f);}
@@ -120,7 +108,7 @@ __MOOD_BADGE_CSS__
 .rc-empty .hint{font-size:12px;margin-top:6px;}
 .rc-empty .eta{font-size:11.5px;margin-top:10px;background:var(--pill-bg,#F1F2EC);color:var(--pill-ink,#5d6258);border:1px solid var(--line,#ECEDE7);padding:3px 11px;border-radius:20px;}
 
-/* 교차 검증 (장전/장후 카드 내부) */
+/* 교차 검증 (구형 보고서용 — 유지) */
 .rcc{margin:14px 0 12px;padding-top:14px;border-top:1px solid var(--line,#ECEDE7);}
 .rcc-lab{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--sage-deep,#7E9A83);margin-bottom:7px;}
 .rcc-grid{display:flex;gap:9px;flex-wrap:wrap;}
@@ -134,7 +122,60 @@ __MOOD_BADGE_CSS__
 .rcc-verdict{margin-top:9px;background:var(--summary-bg,#F6F7F2);border-radius:9px;padding:10px 13px;font-size:12.5px;line-height:1.62;color:var(--ink,#34352f);}
 .rcc-vbadge{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:20px;background:var(--pill-bg,#F1F2EC);color:var(--pill-ink,#5d6258);margin-right:7px;border:1px solid var(--line,#ECEDE7);}
 
-/* 취합된 텔레그램 원문 (검증용) — PDF/JSON 버튼 위 expander */
+/* ── 새 주제 카드 (topics 스키마) ── */
+.tp-list{display:flex;flex-direction:column;gap:11px;margin-bottom:6px;}
+.tp{background:#fff;border:1px solid var(--line,#ECEDE7);border-radius:13px;padding:13px 15px;
+  transition:box-shadow .18s ease,border-color .18s ease;}
+.tp:hover{box-shadow:0 4px 14px rgba(52,53,47,.06);border-color:var(--sage,#A7BBA9);}
+.tp-head{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
+.tp-rank{font-family:'Fraunces','Noto Sans KR',serif;font-size:16px;font-weight:600;
+  color:var(--sage-deep,#7E9A83);min-width:18px;}
+.tp-title{font-size:15px;font-weight:700;color:var(--ink,#34352f);flex:1;word-break:keep-all;}
+.tp-imp{font-size:10px;font-weight:700;color:var(--muted,#9a9b92);background:var(--summary-bg,#F6F7F2);
+  padding:2px 7px;border-radius:6px;flex:none;}
+.tp-fact{font-size:13px;line-height:1.7;color:var(--ink,#34352f);margin-bottom:9px;}
+.tp-mv{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:9px;}
+.tp-mv-col{flex:1;min-width:170px;border-radius:9px;padding:8px 11px;font-size:12px;line-height:1.55;}
+.tp-mv-con{background:#eef4ef;border-left:3px solid var(--sage-deep,#7E9A83);}
+.tp-mv-dis{background:#FBF2F2;border-left:3px solid var(--up,#B65F5A);}
+.tp-mv-lab{font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  display:block;margin-bottom:3px;}
+.tp-mv-con .tp-mv-lab{color:var(--sage-deep,#7E9A83);}
+.tp-mv-dis .tp-mv-lab{color:var(--up,#B65F5A);}
+.tp-mv-tx{color:var(--ink,#34352f);}
+.tp-metrics{font-size:11.5px;color:var(--down,#5A7CA0);background:var(--tint-down,#F1F5F9);
+  border-radius:7px;padding:6px 10px;margin-bottom:8px;font-weight:600;}
+.tp-impl{font-size:12.5px;line-height:1.62;color:var(--ink,#34352f);
+  border-top:1px dashed var(--line,#ECEDE7);padding-top:8px;}
+.tp-impl b{color:var(--sage-deep,#7E9A83);font-weight:700;}
+.tp-stocks{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px;}
+.tp-stk{font-size:11px;font-weight:600;text-decoration:none;background:var(--pill-bg,#F1F2EC);
+  color:var(--pill-ink,#5d6258);border:1px solid var(--line,#ECEDE7);padding:2px 8px;border-radius:7px;}
+.tp-stk:hover{border-color:var(--sage,#A7BBA9);}
+
+/* 목적별 꼬리 (outlook) */
+.ol{background:var(--summary-bg,#F6F7F2);border:1px solid var(--line,#ECEDE7);border-radius:13px;
+  padding:13px 16px;margin-top:12px;}
+.ol-lab{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--sage-deep,#7E9A83);margin-bottom:8px;}
+.ol-list{margin:0;padding-left:18px;}
+.ol-list li{font-size:13px;line-height:1.7;color:var(--ink,#34352f);margin-bottom:4px;}
+.ol-list li::marker{color:var(--sage,#A7BBA9);}
+.ol-rev{font-size:13px;line-height:1.7;color:var(--ink,#34352f);margin-bottom:8px;}
+.ol-rev b,.ol-tom b{font-weight:700;color:var(--sage-deep,#7E9A83);}
+.ol-tom{font-size:13px;line-height:1.7;color:var(--ink,#34352f);}
+
+/* 변화 추적 (change_tracking) */
+.ch{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px;}
+.ch-col{flex:1;min-width:180px;border:1px solid var(--line,#ECEDE7);border-radius:11px;padding:10px 13px;background:#fff;}
+.ch-lab{font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-bottom:6px;}
+.ch-new .ch-lab{color:#0f6e56;}
+.ch-cont .ch-lab{color:var(--muted,#9a9b92);}
+.ch-item{font-size:12px;line-height:1.6;color:var(--ink,#34352f);padding:2px 0;}
+.ch-new .ch-item::before{content:"+ ";color:#0f6e56;font-weight:700;}
+.ch-cont .ch-item::before{content:"· ";color:var(--muted,#9a9b92);font-weight:700;}
+
+/* 취합된 텔레그램 원문 (검증용) */
 .srcmsg-cap{font-size:11.5px;color:var(--muted,#9a9b92);line-height:1.6;margin-bottom:10px;}
 .srcmsg-wrap{display:flex;flex-direction:column;gap:9px;max-height:460px;overflow-y:auto;padding-right:4px;}
 .srcmsg{border:1px solid var(--line,#ECEDE7);border-left:3px solid var(--sage,#A7BBA9);border-radius:0 10px 10px 0;padding:9px 13px;background:#fff;}
@@ -193,7 +234,6 @@ def _load(path: Path) -> dict:
 
 
 def _infer_kind_from_name(path: Path) -> str:
-    """파일명 HHMM으로 장전/장후 추정 (구형 보고서 호환). 오전=장전, 오후=장후."""
     m = re.search(r"_(\d{2})(\d{2})", path.stem)
     if m:
         return "pre" if int(m.group(1)) < 12 else "post"
@@ -231,8 +271,6 @@ def _fmt_date_ko(d: date) -> str:
 
 
 def _selected_date(files) -> date:
-    """표시할 날짜. ?rpt= 또는 날짜 선택으로 고정된 보고서가 있으면 그 날짜, 없으면 오늘.
-    오늘 보고서가 없으면 가장 최근 보고서 날짜로."""
     pk = st.session_state.get("rpt_picked_path")
     if pk and Path(pk).exists():
         return _report_date(Path(pk))
@@ -244,7 +282,6 @@ def _selected_date(files) -> date:
 
 
 def _find_for_date(files, d: date):
-    """해당 날짜의 (장전, 장후) = ((path, data) 또는 (None, None))."""
     pres, posts = [], []
     for f in files:
         if _report_date(f) != d:
@@ -267,6 +304,10 @@ def _extract_stocks(text: str) -> list:
     try:
         data = json.loads(text)
         stocks = set()
+        for tp in data.get("topics", []):
+            for s in (tp.get("stocks") or []):
+                if str(s).strip():
+                    stocks.add(str(s).strip())
         for th in data.get("themes", []):
             for t in (th.get("tickers") or "").split(","):
                 if t.strip():
@@ -289,15 +330,22 @@ def _extract_stocks(text: str) -> list:
 
 # ── 렌더링: 오늘의 한 줄 TL;DR ───────────────────────────────
 
+def _lead_text(data: dict) -> str:
+    """카드 요약 한 줄: 새 스키마는 첫 주제 fact, 구형은 key_takeaway."""
+    topics = data.get("topics") or []
+    if topics:
+        return str(topics[0].get("fact", "")).strip()
+    return str(data.get("key_takeaway", "")).strip()
+
+
 def _render_tldr(pre_data, post_data, latest, latest_kind):
-    """장전→장후 mood 흐름 + 최신 헤드라인 한 줄. 날짜 제목 바로 아래에 표시."""
     if not latest:
         return
     headline = html.escape(str(latest.get("headline", "")).strip())
     if not headline:
         return
-
-    kt = html.escape(str(latest.get("key_takeaway", "")).strip())
+    kt = html.escape(_lead_text(latest))
+    snap = html.escape(str(latest.get("snapshot_line", "")).strip())
 
     def _step(label, d):
         m = d.get("mood", "neutral")
@@ -314,15 +362,16 @@ def _render_tldr(pre_data, post_data, latest, latest_kind):
     pills = '<span class="tldr-arrow">→</span>'.join(steps)
 
     kt_html = f'<div class="kt">{kt}</div>' if kt else ""
+    snap_html = f'<div class="rpt-snap">{snap}</div>' if snap else ""
     st.markdown(
         f'<div class="rpt-tldr">'
         f'<div class="top"><span class="lab">오늘의 한 줄</span>{pills}</div>'
         f'<div class="hl">{headline}</div>'
-        f'{kt_html}'
+        f'{kt_html}{snap_html}'
         f'</div>', unsafe_allow_html=True)
 
 
-# ── 렌더링: 시장 동력 매트릭스 ───────────────────────────────
+# ── 렌더링: 시장 동력 매트릭스 (구형 보고서 전용) ────────────
 
 def _matrix_has_content(md: dict) -> bool:
     if not md:
@@ -359,14 +408,12 @@ def _render_matrix(data: dict, kind: str):
         return
     st_ = md.get("short_term") or {}
     lt = md.get("long_term") or {}
-
     tag = ('<span class="tag tag-pred">장전 보고서 기준 · 개장 전 예측</span>' if kind == "pre"
            else '<span class="tag tag-upd">장마감 후 보고서 기준 · 결과 반영</span>')
     st.markdown(
         f'<div class="rpt2-grp">📊 오늘의 시장 동력 매트릭스 '
         f'<span class="sub">Market Driver Matrix</span> {tag}</div>',
         unsafe_allow_html=True)
-
     grid = (
         '<div class="dvm">'
         '<div class="dvm-h dvm-h0">🕒 시계열</div>'
@@ -385,11 +432,9 @@ def _render_matrix(data: dict, kind: str):
     st.markdown(grid, unsafe_allow_html=True)
 
 
-# ── 렌더링: 교차 검증 (cross_check) ──────────────────────────
+# ── 렌더링: 교차 검증 (구형 보고서 전용) ─────────────────────
 
 def _cross_check_html(data: dict) -> str:
-    """시장 시각(텔레그램) vs 실제 데이터(정량) → 판정 + 통찰.
-    cross_check 필드가 없으면 빈 문자열 반환(표시 안 함)."""
     cc = data.get("cross_check") or {}
     mv = html.escape(str(cc.get("market_view", "")).strip())
     df = html.escape(str(cc.get("data_fact", "")).strip())
@@ -397,12 +442,10 @@ def _cross_check_html(data: dict) -> str:
     ins = html.escape(str(cc.get("insight", "")).strip())
     if not (mv or df):
         return ""
-
     verdict_html = ""
     if vd or ins:
         badge = f'<span class="rcc-vbadge">판정 · {vd}</span>' if vd else ""
         verdict_html = f'<div class="rcc-verdict">{badge}{ins}</div>'
-
     return (
         '<div class="rcc">'
         '<div class="rcc-lab">🔎 교차 검증 · 시각 vs 데이터</div>'
@@ -417,27 +460,114 @@ def _cross_check_html(data: dict) -> str:
     )
 
 
+# ── 렌더링: 새 주제 카드 (topics 스키마) ─────────────────────
+
+def _topics_html(topics: list) -> str:
+    cards = []
+    for i, tp in enumerate(topics, start=1):
+        if not isinstance(tp, dict):
+            continue
+        title = html.escape(str(tp.get("title", "")).strip())
+        if not title:
+            continue
+        imp = tp.get("importance", "")
+        fact = html.escape(str(tp.get("fact", "")).strip())
+        mv = tp.get("market_view") or {}
+        cons = html.escape(str(mv.get("consensus", "")).strip())
+        diss = html.escape(str(mv.get("dissent", "")).strip())
+        metrics = html.escape(str(tp.get("metrics", "")).strip())
+        impl = html.escape(str(tp.get("implication", "")).strip())
+        stocks = [str(s).strip() for s in (tp.get("stocks") or []) if str(s).strip()]
+
+        imp_html = f'<span class="tp-imp">중요도 {imp}</span>' if str(imp) else ""
+        fact_html = f'<div class="tp-fact">{fact}</div>' if fact else ""
+
+        mv_cols = ""
+        if cons:
+            mv_cols += (f'<div class="tp-mv-col tp-mv-con">'
+                        f'<span class="tp-mv-lab">합의</span>'
+                        f'<span class="tp-mv-tx">{cons}</span></div>')
+        if diss:
+            mv_cols += (f'<div class="tp-mv-col tp-mv-dis">'
+                        f'<span class="tp-mv-lab">이견</span>'
+                        f'<span class="tp-mv-tx">{diss}</span></div>')
+        mv_html = f'<div class="tp-mv">{mv_cols}</div>' if mv_cols else ""
+
+        metrics_html = f'<div class="tp-metrics">📊 {metrics}</div>' if metrics else ""
+        impl_html = f'<div class="tp-impl"><b>시사점</b> · {impl}</div>' if impl else ""
+
+        stocks_html = ""
+        if stocks:
+            chips = "".join(
+                f'<a class="tp-stk" href="{naver_stock_url(s)}" target="_blank" '
+                f'rel="noopener">{html.escape(s)}</a>' for s in stocks)
+            stocks_html = f'<div class="tp-stocks">{chips}</div>'
+
+        cards.append(
+            f'<div class="tp">'
+            f'<div class="tp-head"><span class="tp-rank">{i}</span>'
+            f'<span class="tp-title">{title}</span>{imp_html}</div>'
+            f'{fact_html}{mv_html}{metrics_html}{impl_html}{stocks_html}'
+            f'</div>'
+        )
+    if not cards:
+        return ""
+    return f'<div class="tp-list">{"".join(cards)}</div>'
+
+
+def _outlook_html(data: dict, kind: str) -> str:
+    ol = data.get("outlook") or {}
+    if kind == "pre":
+        items = ol.get("pre") or []
+        items = [html.escape(str(x).strip()) for x in items if str(x).strip()]
+        if not items:
+            return ""
+        lis = "".join(f'<li>{x}</li>' for x in items)
+        return (f'<div class="ol"><div class="ol-lab">🔭 오늘 볼 것</div>'
+                f'<ul class="ol-list">{lis}</ul></div>')
+    else:
+        post = ol.get("post") or {}
+        rev = html.escape(str(post.get("review", "")).strip())
+        tom = html.escape(str(post.get("tomorrow", "")).strip())
+        if not (rev or tom):
+            return ""
+        rev_html = f'<div class="ol-rev"><b>장전 점검</b> · {rev}</div>' if rev else ""
+        tom_html = f'<div class="ol-tom"><b>내일 가설</b> · {tom}</div>' if tom else ""
+        return (f'<div class="ol"><div class="ol-lab">🔭 결산 · 내일</div>'
+                f'{rev_html}{tom_html}</div>')
+
+
+def _change_html(data: dict) -> str:
+    ch = data.get("change_tracking") or {}
+    new = [html.escape(str(x).strip()) for x in (ch.get("new") or []) if str(x).strip()]
+    cont = [html.escape(str(x).strip()) for x in (ch.get("continuing") or []) if str(x).strip()]
+    if not (new or cont):
+        return ""
+    cols = ""
+    if new:
+        items = "".join(f'<div class="ch-item">{x}</div>' for x in new)
+        cols += (f'<div class="ch-col ch-new"><div class="ch-lab">오늘 새로 등장</div>'
+                 f'{items}</div>')
+    if cont:
+        items = "".join(f'<div class="ch-item">{x}</div>' for x in cont)
+        cols += (f'<div class="ch-col ch-cont"><div class="ch-lab">어제에 이어 지속</div>'
+                 f'{items}</div>')
+    return f'<div class="ch">{cols}</div>'
+
+
 # ── 렌더링: 취합된 텔레그램 원문 (검증용) ────────────────────
 
 def _render_source_messages(data: dict, kind: str, path: Path):
-    """이 보고서가 취합한 텔레그램 원문(채널명·작성시각·본문) — 검증용 조회.
-    source_messages 필드가 없으면(구형 보고서) 표시하지 않음.
-    PDF/JSON 다운로드 버튼 바로 위에 배치한다."""
     msgs = data.get("source_messages") or []
     if not msgs:
         return
-
-    # 채널별 건수 요약 (어느 채널에서 몇 건 들어왔는지 한눈에)
     from collections import Counter
     chan_counts = Counter(str(m.get("channel", "")).strip() or "(미상)" for m in msgs)
     n_chan = len(chan_counts)
-
     with st.expander(f"📨 취합된 텔레그램 원문 {len(msgs)}건 · 채널 {n_chan}곳 — 검증용"):
         st.markdown(
             '<div class="srcmsg-cap">이 보고서 생성에 실제로 들어간 메시지 전문입니다. '
-            '보고서 내용에 누락·왜곡·오류가 있는지 원문과 직접 대조해 검증하세요. '
-            '(작성시각 오름차순)</div>', unsafe_allow_html=True)
-
+            '원문과 직접 대조해 검증하세요. (작성시각 오름차순)</div>', unsafe_allow_html=True)
         rows = ""
         for m in msgs:
             ch = html.escape(str(m.get("channel", "")).strip() or "(미상)")
@@ -457,7 +587,6 @@ def _render_source_messages(data: dict, kind: str, path: Path):
 def _render_report_card(data: dict, kind: str, path: Path):
     icon = "🌅" if kind == "pre" else "🌆"
     kind_ko = "장전 보고서" if kind == "pre" else "장마감 후 보고서"
-    kt_lab = "오늘의 관전" if kind == "pre" else "오늘의 결산"
 
     mood = data.get("mood", "neutral")
     mood_ko = MOOD_KO.get(mood, mood)
@@ -468,21 +597,13 @@ def _render_report_card(data: dict, kind: str, path: Path):
     gen = data.get("generated_at", "")
     n = data.get("messages_count", 0)
     headline = data.get("headline", "")
-    kt = data.get("key_takeaway", "")
 
     if since and until:
         win = f'분석 <b>{since} ~ {until}</b>' + (f' · 생성 {gen}' if gen else "")
     else:
         win = (f'생성 {gen}' if gen else "")
 
-    secs_html = ""
-    for sec in data.get("sections", []):
-        t = sec.get("title", "")
-        b = sec.get("body", "")
-        if not t and not b:
-            continue
-        secs_html += f'<div class="rc-sectitle">{t}</div><div class="rc-secbody">{b}</div>'
-
+    # 출처 칩
     src_bits = []
     if n:
         src_bits.append(f"{n}개 메시지")
@@ -493,23 +614,50 @@ def _render_report_card(data: dict, kind: str, path: Path):
         src_bits.append(f"채널 {len(sc)}곳")
     src_html = "".join(f'<span class="src-pill">{html.escape(str(b))}</span>' for b in src_bits)
 
-    kt_html = (f'<div class="rc-ktlab">{kt_lab}</div><div class="rc-ktbox">{kt}</div>'
-               if kt else "")
-    cc_html = _cross_check_html(data)   # 교차 검증 (본문 섹션 다음, 출처 칩 바로 위)
-    st.markdown(
-        f'<div class="rc">'
-        f'<div class="rc-head"><span class="rc-kind">{icon} {kind_ko}</span>'
-        f'<span class="mood-badge {mood_cls}">{mood_ko.upper()}</span></div>'
-        f'<div class="rc-win">{win}</div>'
-        f'<div class="rc-headline">{headline}</div>'
-        f'{kt_html}{secs_html}{cc_html}'
-        f'<div class="rc-src">{src_html}</div>'
-        f'</div>', unsafe_allow_html=True)
+    # ── 새 스키마(topics) vs 구형 분기 ──
+    topics = data.get("topics") or []
+    if topics:
+        # 새 양식: 주제 카드 + 목적별 꼬리 + 변화 추적
+        body_html = _topics_html(topics)
+        outlook_html = _outlook_html(data, kind)
+        change_html = _change_html(data)
+        st.markdown(
+            f'<div class="rc">'
+            f'<div class="rc-head"><span class="rc-kind">{icon} {kind_ko}</span>'
+            f'<span class="mood-badge {mood_cls}">{mood_ko.upper()}</span></div>'
+            f'<div class="rc-win">{win}</div>'
+            f'<div class="rc-headline">{html.escape(headline)}</div>'
+            f'{body_html}{outlook_html}{change_html}'
+            f'<div class="rc-src">{src_html}</div>'
+            f'</div>', unsafe_allow_html=True)
+    else:
+        # 구형 양식: key_takeaway + sections + cross_check
+        kt_lab = "오늘의 관전" if kind == "pre" else "오늘의 결산"
+        kt = data.get("key_takeaway", "")
+        secs_html = ""
+        for sec in data.get("sections", []):
+            t = sec.get("title", "")
+            b = sec.get("body", "")
+            if not t and not b:
+                continue
+            secs_html += f'<div class="rc-sectitle">{t}</div><div class="rc-secbody">{b}</div>'
+        kt_html = (f'<div class="rc-ktlab">{kt_lab}</div><div class="rc-ktbox">{kt}</div>'
+                   if kt else "")
+        cc_html = _cross_check_html(data)
+        st.markdown(
+            f'<div class="rc">'
+            f'<div class="rc-head"><span class="rc-kind">{icon} {kind_ko}</span>'
+            f'<span class="mood-badge {mood_cls}">{mood_ko.upper()}</span></div>'
+            f'<div class="rc-win">{win}</div>'
+            f'<div class="rc-headline">{headline}</div>'
+            f'{kt_html}{secs_html}{cc_html}'
+            f'<div class="rc-src">{src_html}</div>'
+            f'</div>', unsafe_allow_html=True)
 
-    # 취합된 텔레그램 원문 조회 (검증용) — PDF/JSON 버튼 위
+    # 취합된 텔레그램 원문 (공통)
     _render_source_messages(data, kind, path)
 
-    # PDF · JSON 다운로드 (JSON = 깃허브 영구 저장용)
+    # PDF · JSON 다운로드
     b1, b2 = st.columns(2)
     with b1:
         try:
@@ -594,7 +742,6 @@ def _render_delete_ui(files):
 # ── 메인: 리포트 표시 (탭 상단) ──────────────────────────────
 
 def render_reports():
-    """기준일(기본=오늘)의 장전·장후를 하루 단위로 표시."""
     st.markdown(_RPT_CSS, unsafe_allow_html=True)
     files = list_reports()
 
@@ -615,11 +762,11 @@ def render_reports():
     latest = post_data or pre_data
     latest_kind = "post" if post_data else "pre"
 
-    # ⓪ 오늘의 한 줄 TL;DR (최신 보고서 기준)
+    # ⓪ 오늘의 한 줄 TL;DR
     _render_tldr(pre_data, post_data, latest, latest_kind)
 
-    # ① 시장 동력 매트릭스 (최신 보고서 기준)
-    if latest:
+    # ① 시장 동력 매트릭스 (구형 보고서에만 — 새 보고서는 topics가 대체)
+    if latest and not (latest.get("topics")):
         _render_matrix(latest, latest_kind)
 
     # ② 좌 장전 / 우 장마감 후
@@ -643,15 +790,12 @@ def render_reports():
 # ── 메인: 리포트 관리 (탭 하단) ──────────────────────────────
 
 def render_reports_manage():
-    """지난 보고서(날짜) 탐색 + 삭제. render_reports() 아래쪽에 배치."""
     files = list_reports()
     if not files:
         return
-
     dates = sorted({_report_date(f) for f in files}, reverse=True)
     today = date.today()
     sel = _selected_date(files)
-
     with st.expander(f"🗂 지난 보고서 보기 ({len(dates)}일치)", expanded=(sel != today)):
         idx = dates.index(sel) if sel in dates else 0
         chosen_i = st.selectbox(
@@ -668,5 +812,4 @@ def render_reports_manage():
         if sel != today and st.button("↩ 오늘로", key="rpt_to_today"):
             st.session_state["rpt_picked_path"] = None
             st.rerun()
-
     _render_delete_ui(files)
