@@ -1,8 +1,9 @@
 """[뷰어] 시황 타임라인 — 보고서 헤드라인·섹션 제목·mood를 시간 흐름으로 표시.
 
-- 데이터: reports/*.json (headline, sections[], mood)
-- 코스피·코스닥 당일 종가 + 등락률 병기 (mood의 '답안지' 역할)
-- 같은 날 보고서가 여러 개면 최신 것만 사용
+- 데이터: reports/*.json (headline, sections[], mood, report_kind)
+- 같은 날 보고서가 여러 개면 ★장마감 후(post)를 우선★ 사용 (그날의 '답안지' 역할).
+  post가 없으면 장전(pre) 등 최신 보고서로 폴백.
+- 코스피·코스닥 당일 종가 + 등락률 병기
 - 리포트 파일이 추가/삭제되면 캐시가 자동 무효화됨 (폴더 시그니처 기반)
 - 데스크톱: 가로 화살표 타임라인(지그재그 카드) / 모바일: 세로 타임라인
 """
@@ -46,8 +47,7 @@ _TL_CSS = """
 .tl-md.pos { background:#e1f5ee; color:#0f6e56; }
 .tl-md.neu { background:var(--pill-bg); color:var(--pill-ink); }
 .tl-md.cau { background:#FAEEDA; color:#854F0B; }
-.app.dark .tl-md.pos { background:#085041; color:#9fe1cb; }
-.app.dark .tl-md.cau { background:#633806; color:#FAC775; }
+.tl-kind { display:inline-block; font-size:9.5px; font-weight:700; padding:1px 6px; border-radius:6px; margin-top:7px; margin-left:5px; background:var(--pill-bg); color:var(--pill-ink); }
 .tl-svg { width:100%; display:block; margin:4px 0; }
 .tl-mobile { display:none; }
 @media (max-width:640px){
@@ -73,6 +73,17 @@ def _reports_signature() -> str:
     return "|".join(parts)
 
 
+def _infer_kind(fname: str, rep: dict) -> str:
+    """보고서 종류. report_kind 필드 우선, 없으면 파일명 HHMM으로 추정(오전=장전, 오후=장후)."""
+    k = (rep or {}).get("report_kind")
+    if k in ("pre", "post"):
+        return k
+    m = re.search(r"_(\d{2})(\d{2})", fname)
+    if m:
+        return "pre" if int(m.group(1)) < 12 else "post"
+    return "post"
+
+
 def _section_titles(report: dict) -> list:
     """sections[]에서 제목만 추출 (키 이름이 달라도 방어적으로)."""
     out = []
@@ -95,35 +106,38 @@ def _section_titles(report: dict) -> list:
 
 @st.cache_data(ttl=600)
 def load_timeline_entries(limit: int, sig: str) -> list:
-    """reports/*.json에서 타임라인 항목 로드. 같은 날짜는 최신만, 날짜 오름차순.
+    """reports/*.json에서 타임라인 항목 로드. 같은 날짜는 장마감 후(post) 우선, 날짜 오름차순.
     sig: _reports_signature() — 캐시 키 전용(함수 안에서는 사용 안 함)."""
+    # 날짜 -> (priority, sort_key, rep, fname) : post 우선, 같으면 최신(HHMM) 우선
     by_date = {}
     for path in glob.glob(os.path.join(_REPORT_DIR, "*.json")):
         fname = os.path.basename(path)
         m = re.search(r"(\d{4}-\d{2}-\d{2})", fname)
         if not m:
             continue
-        date = m.group(1)
-        # 파일명 숫자 전체를 정렬키로 → 같은 날짜 중 최신 선택
+        d = m.group(1)
         sort_key = re.sub(r"\D", "", fname)
-        if date in by_date and by_date[date][0] >= sort_key:
-            continue
         try:
             with open(path, encoding="utf-8") as f:
                 rep = json.load(f)
         except Exception:
             continue
-        by_date[date] = (sort_key, rep, os.path.basename(path))
+        priority = 1 if _infer_kind(fname, rep) == "post" else 0
+        cur = by_date.get(d)
+        if cur is None or (priority, sort_key) > (cur[0], cur[1]):
+            by_date[d] = (priority, sort_key, rep, fname)
 
     entries = []
-    for date in sorted(by_date.keys())[-limit:]:
-        rep = by_date[date][1]
-        fname = by_date[date][2]
+    for d in sorted(by_date.keys())[-limit:]:
+        _, _, rep, fname = by_date[d]
         mood_raw = str(rep.get("mood", "")).lower()
         label, cls, color = _MOOD_MAP.get(mood_raw, _MOOD_MAP["neutral"])
+        kind = _infer_kind(fname, rep)
         entries.append({
-            "date": date,
+            "date": d,
             "report": fname,
+            "kind": kind,
+            "kind_label": "장마감 후" if kind == "post" else "장전",
             "headline": str(rep.get("headline", "")).strip() or "(헤드라인 없음)",
             "sections": _section_titles(rep),
             "mood_label": label, "mood_cls": cls, "mood_color": color,
@@ -134,10 +148,8 @@ def load_timeline_entries(limit: int, sig: str) -> list:
 @st.cache_data(ttl=1800)
 def _index_daily_map() -> dict:
     """날짜(YYYY-MM-DD) → {'ks_close','ks_pct','kq_close','kq_pct'}.
-    코스피·코스닥 일별 종가와 등락률. 1차 yfinance, 빠진 날짜는 pykrx로 보충.
-    (당일은 장 마감 전이면 종가가 없어 표시되지 않음 — 정상)"""
+    코스피·코스닥 일별 종가와 등락률. 1차 yfinance, 빠진 날짜는 pykrx로 보충."""
     out = {}
-    # 1차: yfinance
     for prefix, ticker in (("ks", "^KS11"), ("kq", "^KQ11")):
         try:
             close = fetch_history(ticker, "3mo")
@@ -153,7 +165,6 @@ def _index_daily_map() -> dict:
                     rec[f"{prefix}_pct"] = float(p)
         except Exception:
             continue
-    # 2차: pykrx — yfinance가 빼먹은 최근 날짜 보충 (1001=코스피, 2001=코스닥)
     try:
         from datetime import date, timedelta
         from pykrx import stock as _krx
@@ -219,14 +230,14 @@ def _card_html(e: dict, idx_rec, latest: bool, mobile: bool = False) -> str:
     latest_cls = " tl-latest" if latest else ""
     latest_tag = " · 최신" if latest else ""
     dot = f' style="--dot:{e["mood_color"]}"' if mobile else ""
-    # 카드 클릭 → ?rpt=파일명 (app.py가 읽어 전략·시황 탭의 선택 보고서로 반영)
     rpt = html.escape(e.get("report", ""), quote=True)
     href = f'?rpt={rpt}' if rpt else '#'
+    kind_tag = f'<span class="tl-kind">{e.get("kind_label", "")}</span>' if e.get("kind_label") else ""
     inner = (f'<div class="tl-dt">{_fmt_date(e["date"])}{latest_tag}</div>'
              f'{_idx_line_html(idx_rec)}'
              f'<div class="tl-hl">{html.escape(e["headline"])}</div>'
              f'{secs_html}'
-             f'<span class="tl-md {e["mood_cls"]}">{e["mood_label"]}</span>')
+             f'<span class="tl-md {e["mood_cls"]}">{e["mood_label"]}</span>{kind_tag}')
     return (f'<a class="tl-card{latest_cls} tl-link"{dot} href="{href}" target="_self">'
             f'{inner}</a>')
 
@@ -269,7 +280,6 @@ def render_timeline():
     n = len(entries)
     last_i = n - 1
 
-    # 데스크톱: 지그재그 (짝수 인덱스=아래, 홀수 인덱스=위)
     top_cells, bottom_cells = [], []
     for i, e in enumerate(entries):
         card = _card_html(e, idx_map.get(e["date"]), i == last_i)
@@ -284,13 +294,12 @@ def render_timeline():
                f'{_svg_html(entries)}'
                f'<div class="tl-row tl-bottom" style="{grid}">{"".join(bottom_cells)}</div>')
 
-    # 모바일: 세로 타임라인
     mobile_cards = "".join(_card_html(e, idx_map.get(e["date"]), i == last_i, mobile=True)
                            for i, e in enumerate(entries))
     mobile = f'<div class="tl-mobile">{mobile_cards}</div>'
 
     st.markdown(desktop + mobile, unsafe_allow_html=True)
     st.markdown('<div class="data-asof">노드 색 = 보고서 mood (긍정·중립·주의) · '
-                '날짜 아래 = 코스피·코스닥 당일 마감 종가와 등락률 · 같은 날 보고서는 최신만 표시 · '
-                '💡 카드를 클릭하면 전략·시황 탭에서 해당 보고서를 볼 수 있어요</div>',
+                '날짜 아래 = 코스피·코스닥 당일 마감 종가와 등락률 · 같은 날은 장마감 후 보고서 우선 표시 · '
+                '💡 카드를 클릭하면 전략·시황 탭에서 해당 날짜 보고서를 볼 수 있어요</div>',
                 unsafe_allow_html=True)
