@@ -54,6 +54,46 @@ _KW_CSS = """
 .kw-news a:before{content:"›";position:absolute;left:0;color:var(--muted,#9a9b92);}
 .kw-news a:hover{text-decoration:underline;}
 .kw-weak{font-size:10.5px;color:var(--muted,#9a9b92);margin-top:6px;}
+
+/* ── 마이크로 인터랙션 (미니멀 미스트) ── */
+/* 카드 등장: 페이드+슬라이드업, 그리드 순서대로 시차 */
+@keyframes kw-fade-up{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+.kw-card{animation:kw-fade-up .5s cubic-bezier(.22,.61,.36,1) both;
+  transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease;}
+.kw-grid .kw-card:nth-child(1){animation-delay:.02s;}
+.kw-grid .kw-card:nth-child(2){animation-delay:.05s;}
+.kw-grid .kw-card:nth-child(3){animation-delay:.08s;}
+.kw-grid .kw-card:nth-child(4){animation-delay:.11s;}
+.kw-grid .kw-card:nth-child(5){animation-delay:.14s;}
+.kw-grid .kw-card:nth-child(6){animation-delay:.17s;}
+.kw-grid .kw-card:nth-child(7){animation-delay:.20s;}
+.kw-grid .kw-card:nth-child(8){animation-delay:.23s;}
+.kw-grid .kw-card:nth-child(9){animation-delay:.26s;}
+.kw-grid .kw-card:nth-child(10){animation-delay:.29s;}
+.kw-grid .kw-card:nth-child(11){animation-delay:.32s;}
+.kw-grid .kw-card:nth-child(12){animation-delay:.35s;}
+.kw-grid .kw-card:nth-child(13){animation-delay:.38s;}
+.kw-grid .kw-card:nth-child(14){animation-delay:.41s;}
+.kw-grid .kw-card:nth-child(15){animation-delay:.44s;}
+/* 호버: 살짝 떠오름 + sage 테두리 */
+.kw-card:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(52,53,47,.08);
+  border-color:var(--sage,#A7BBA9);}
+.kw-card.kw-watchcard:hover{border-color:#D9A93C;}
+/* 중요도 바: 0→목표폭 채우기 */
+@keyframes kw-bar-grow{from{transform:scaleX(0);}to{transform:scaleX(1);}}
+.kw-wbar>span{transform-origin:left center;
+  animation:kw-bar-grow .8s cubic-bezier(.22,.61,.36,1) .25s both;}
+/* 뉴스 링크 호버: 화살표 살짝 밀림 */
+.kw-news a{transition:color .15s ease,padding-left .15s ease;}
+.kw-news a:hover{padding-left:14px;}
+/* 종목 pill 호버 */
+.kw-stk{transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease;}
+.kw-stk:hover{transform:translateY(-1px);box-shadow:0 2px 6px rgba(52,53,47,.08);
+  border-color:var(--sage,#A7BBA9);}
+@media(prefers-reduced-motion:reduce){
+  .kw-card,.kw-wbar>span{animation:none !important;}
+  .kw-card,.kw-news a,.kw-stk{transition:none !important;}
+}
 </style>
 """
 
