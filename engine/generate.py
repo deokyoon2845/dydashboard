@@ -3,6 +3,8 @@
 - kind="pre"  (장전): 직전 거래일 마감(15:30) ~ 지금. 월요일이면 금요일 15:30까지 소급.
 - kind="post" (장후): 당일 07:50 ~ 지금.
 - kind 미지정 시 생성 시각으로 자동 판별(오전=장전, 오후=장후).
+
+2026-06 재설계: 직전 보고서를 읽어 analyze에 넘김(변화 추적). 새 topics 스키마 대응.
 """
 
 import json
@@ -34,19 +36,24 @@ def detect_kind(now=None) -> str:
 
 
 def collection_window(kind: str, now=None) -> datetime:
-    """분석 구간 시작 시각(KST).
-
-    - 장전(pre): 직전 거래일 마감 15:30. 월요일이면 금요일 15:30(3일 전)까지 소급.
-                 (공휴일은 자동 처리하지 않음 — 필요 시 별도 보완)
-    - 장후(post): 당일 07:50.
-    """
+    """분석 구간 시작 시각(KST)."""
     now = now or datetime.now(KST)
     if kind == "pre":
         days_back = 3 if now.weekday() == 0 else 1  # 0=월요일 → 금요일까지
         return (now - timedelta(days=days_back)).replace(
             hour=15, minute=30, second=0, microsecond=0)
-    # post
     return now.replace(hour=7, minute=50, second=0, microsecond=0)
+
+
+def _load_prev_report():
+    """직전(가장 최근) 보고서 JSON을 읽어 반환. 변화 추적용. 없으면 None."""
+    try:
+        files = sorted(REPORTS_DIR.glob("*.json"), reverse=True)
+        if not files:
+            return None
+        return json.loads(files[0].read_text(encoding="utf-8"))
+    except Exception:
+        return None
 
 
 def generate_report(kind: str = None, send_telegram: bool = False) -> dict:
@@ -81,10 +88,12 @@ def generate_report(kind: str = None, send_telegram: bool = False) -> dict:
         pass
 
     watchlist = load_watchlist()
+    prev_report = _load_prev_report()   # 변화 추적용 직전 보고서
 
     report_data, usage = analyze_messages(
         messages, kind=kind, channel_name=label,
-        snapshot_text=snapshot_text, news_titles=news_titles, watchlist=watchlist)
+        snapshot_text=snapshot_text, news_titles=news_titles, watchlist=watchlist,
+        prev_report=prev_report)
 
     cost_usd = sum(
         estimate_cost_usd(c["model"], c["input_tokens"], c["output_tokens"])
@@ -101,8 +110,6 @@ def generate_report(kind: str = None, send_telegram: bool = False) -> dict:
     report_data["data_enriched"] = bool(snapshot_text)
 
     # 검증용: 분석에 들어간 텔레그램 원문 전체를 보고서에 동봉.
-    # (채널명·작성시각·본문 — 뷰어 '취합된 텔레그램 원문' 탭에서 표시)
-    # 작성시각 오름차순 정렬 → 시간 흐름대로 검증 가능.
     def _msg_sort_key(m):
         return str(m.get("date", ""))
 
@@ -117,7 +124,6 @@ def generate_report(kind: str = None, send_telegram: bool = False) -> dict:
     ]
 
     REPORTS_DIR.mkdir(exist_ok=True)
-    # 파일명은 하루 여러 번 생성해도 보존되도록 HHMM 유지. 장전/장후 구분은 report_kind 필드.
     path = REPORTS_DIR / f"{now:%Y-%m-%d_%H%M}.json"
     path.write_text(json.dumps(report_data, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -149,10 +155,15 @@ def generate_report(kind: str = None, send_telegram: bool = False) -> dict:
             mood_ko = {"positive": "긍정", "neutral": "중립", "cautious": "주의"}.get(
                 report_data.get("mood", "neutral"), "중립")
             kind_ko = _KIND_KO.get(kind, "")
+            # 새 스키마: key_takeaway 대신 첫 주제 요약 사용 (없으면 headline)
+            topics = report_data.get("topics") or []
+            lead = ""
+            if topics:
+                lead = str(topics[0].get("fact", "")).strip()
             caption = (
                 f"📊 <b>전략/시황 보고서 · {kind_ko}</b> ({mood_ko})\n"
                 f"{report_data.get('headline', '')}\n\n"
-                f"{report_data.get('key_takeaway', '')[:500]}\n\n"
+                f"{lead[:500]}\n\n"
                 f"🕒 {now:%Y-%m-%d %H:%M} KST · {len(messages)}개 메시지 분석"
             )
             telegram_result = send_report(
