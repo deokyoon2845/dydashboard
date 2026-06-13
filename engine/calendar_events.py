@@ -1,8 +1,12 @@
 """[엔진] 주요 경제 일정 — 캘린더 데이터 로드 + 실적일 자동 수집 + 프롬프트 주입 텍스트.
 
-- 고정 일정(FOMC·금통위·CPI): data/calendar.json 수동 관리 (연 1회 갱신)
+- 고정 일정(FOMC·금통위·CPI·고용·PPI·PCE·GDP·소매판매): data/calendar.json 수동 관리 (연 1회 갱신)
 - 실적 발표일: yfinance로 자동 수집 (미국 종목은 비교적 정확, 한국 종목은 부정확할 수 있음)
 - 스트림릿 의존 없음 (GitHub Actions에서도 동작)
+
+표시 정책:
+- 달력 그리드에는 지난 일정도 함께 표시(지나도 사라지지 않게) → upcoming_events(past_days=...)
+- AI 프롬프트 주입(build_calendar_text)은 '다가오는' 일정만 (과거는 굳이 주입 안 함)
 """
 
 import json
@@ -27,20 +31,27 @@ def load_calendar() -> dict:
         return {"events": [], "earnings_tickers": {}}
 
 
-def upcoming_events(days: int = 30) -> list:
-    """오늘부터 N일 이내 일정을 D-day와 함께 날짜순 반환.
+def upcoming_events(days: int = 30, past_days: int = 0) -> list:
+    """일정을 D-day와 함께 날짜순 반환.
+
+    - days: 오늘부터 며칠 뒤까지 포함 (미래 범위)
+    - past_days: 오늘로부터 며칠 전까지 포함 (과거 범위, 0이면 과거 제외)
+      → 달력 그리드에서 지난 일정도 보이게 하려면 past_days를 넉넉히 준다.
 
     반환 항목: {date, name, category, note, dday}
+      dday는 음수면 지난 일정(D+N으로 표시), 0이면 오늘, 양수면 다가오는 일정.
     """
     today = _today_kst()
     out = []
     for ev in load_calendar().get("events", []):
+        if str(ev.get("date", "")).startswith("_"):
+            continue
         try:
             d = datetime.strptime(ev["date"], "%Y-%m-%d").date()
         except Exception:
             continue
         dday = (d - today).days
-        if 0 <= dday <= days:
+        if -past_days <= dday <= days:
             out.append({**ev, "dday": dday})
     out.sort(key=lambda e: e["dday"])
     return out
@@ -95,13 +106,13 @@ def fetch_next_earnings() -> list:
 
 
 def build_calendar_text(days: int = 14, include_earnings: bool = True) -> str:
-    """AI 보고서 프롬프트 주입용 일정 텍스트.
+    """AI 보고서 프롬프트 주입용 일정 텍스트. (다가오는 일정만 — 과거 제외)
 
     예) [다가오는 주요 일정 (2주 이내)]
         - D-6 (06-17, 수) FOMC 금리 결정 — SEP·점도표 발표
     빈 일정이면 빈 문자열 반환 → 주입 생략 가능.
     """
-    events = upcoming_events(days)
+    events = upcoming_events(days)  # past_days=0 → 과거 제외
     if include_earnings:
         try:
             events += [e for e in fetch_next_earnings() if e["dday"] <= days]
