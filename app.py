@@ -477,7 +477,7 @@ def render_report_tab():
 
 # ── 탭 ──
 tab_idx, tab_rep, tab_kw, tab_tr = st.tabs(
-    ["지수 현황", "전략·시황", "오늘의 키워드", "타임라인"]
+    ["지수 현황", "시황", "오늘의 키워드", "타임라인"]
 )
 with tab_idx:
     render_indices()
