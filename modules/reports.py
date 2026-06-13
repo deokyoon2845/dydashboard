@@ -2,10 +2,11 @@
 
 레이아웃 (render_reports):
   최상단 기준일(YYYY.MM.DD(요일))
-  ⓪ 오늘의 한 줄 TL;DR (장전→장후 mood 흐름 + 최신 헤드라인)   ← 신규
+  ⓪ 오늘의 한 줄 TL;DR (장전→장후 mood 흐름 + 최신 헤드라인)
   ① 오늘의 시장 동력 매트릭스 (단기/장기 × 상승/하락 · 최신 보고서 기준)
   ② 좌 장전 / 우 장마감 후 (없으면 '생성 전' 자리지킴)
-     └ 각 카드 안: 헤드라인 · 관전/결산 · 교차 검증(cross_check) · 본문 섹션   ← 교차검증 신규
+     └ 각 카드 안: 헤드라인 · 관전/결산 · 교차 검증(cross_check) · 본문 섹션
+       · 취합된 텔레그램 원문(source_messages) 조회   ← 신규
   ③ 주목 테마 (전체 폭)
 render_reports_manage = 지난 보고서(날짜) 탐색 + 삭제 (하단 배치용)
 
@@ -115,6 +116,15 @@ __MOOD_BADGE_CSS__
 .rcc-col .t{font-size:12.5px;line-height:1.62;color:var(--ink,#34352f);}
 .rcc-verdict{margin-top:9px;background:var(--summary-bg,#F6F7F2);border-radius:9px;padding:10px 13px;font-size:12.5px;line-height:1.62;color:var(--ink,#34352f);}
 .rcc-vbadge{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:20px;background:var(--pill-bg,#F1F2EC);color:var(--pill-ink,#5d6258);margin-right:7px;border:1px solid var(--line,#ECEDE7);}
+
+/* 취합된 텔레그램 원문 (검증용) — PDF/JSON 버튼 위 expander */
+.srcmsg-cap{font-size:11.5px;color:var(--muted,#9a9b92);line-height:1.6;margin-bottom:10px;}
+.srcmsg-wrap{display:flex;flex-direction:column;gap:9px;max-height:460px;overflow-y:auto;padding-right:4px;}
+.srcmsg{border:1px solid var(--line,#ECEDE7);border-left:3px solid var(--sage,#A7BBA9);border-radius:0 10px 10px 0;padding:9px 13px;background:#fff;}
+.srcmsg-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:5px;}
+.srcmsg-ch{font-size:11.5px;font-weight:700;color:var(--sage-deep,#7E9A83);word-break:break-all;}
+.srcmsg-dt{font-size:10.5px;color:var(--muted,#9a9b92);white-space:nowrap;flex:none;}
+.srcmsg-tx{font-size:12.5px;line-height:1.62;color:var(--ink,#34352f);white-space:pre-wrap;}
 
 /* 주목 테마 (하단 전체 폭) */
 .rpt-theme-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
@@ -389,6 +399,41 @@ def _cross_check_html(data: dict) -> str:
     )
 
 
+# ── 렌더링: 취합된 텔레그램 원문 (검증용) ────────────────────
+
+def _render_source_messages(data: dict, kind: str, path: Path):
+    """이 보고서가 취합한 텔레그램 원문(채널명·작성시각·본문) — 검증용 조회.
+    source_messages 필드가 없으면(구형 보고서) 표시하지 않음.
+    PDF/JSON 다운로드 버튼 바로 위에 배치한다."""
+    msgs = data.get("source_messages") or []
+    if not msgs:
+        return
+
+    # 채널별 건수 요약 (어느 채널에서 몇 건 들어왔는지 한눈에)
+    from collections import Counter
+    chan_counts = Counter(str(m.get("channel", "")).strip() or "(미상)" for m in msgs)
+    n_chan = len(chan_counts)
+
+    with st.expander(f"📨 취합된 텔레그램 원문 {len(msgs)}건 · 채널 {n_chan}곳 — 검증용"):
+        st.markdown(
+            '<div class="srcmsg-cap">이 보고서 생성에 실제로 들어간 메시지 전문입니다. '
+            '보고서 내용에 누락·왜곡·오류가 있는지 원문과 직접 대조해 검증하세요. '
+            '(작성시각 오름차순)</div>', unsafe_allow_html=True)
+
+        rows = ""
+        for m in msgs:
+            ch = html.escape(str(m.get("channel", "")).strip() or "(미상)")
+            dt = html.escape(str(m.get("date", "")).strip()[:16])
+            tx = html.escape(str(m.get("text", "")).strip())
+            rows += (
+                '<div class="srcmsg">'
+                f'<div class="srcmsg-head"><span class="srcmsg-ch">{ch}</span>'
+                f'<span class="srcmsg-dt">{dt}</span></div>'
+                f'<div class="srcmsg-tx">{tx}</div>'
+                '</div>')
+        st.markdown(f'<div class="srcmsg-wrap">{rows}</div>', unsafe_allow_html=True)
+
+
 # ── 렌더링: 장전/장후 카드 ───────────────────────────────────
 
 def _render_report_card(data: dict, kind: str, path: Path):
@@ -442,6 +487,9 @@ def _render_report_card(data: dict, kind: str, path: Path):
         f'{kt_html}{secs_html}{cc_html}'
         f'<div class="rc-src">{src_html}</div>'
         f'</div>', unsafe_allow_html=True)
+
+    # 취합된 텔레그램 원문 조회 (검증용) — PDF/JSON 버튼 위
+    _render_source_messages(data, kind, path)
 
     # PDF · JSON 다운로드 (JSON = 깃허브 영구 저장용)
     b1, b2 = st.columns(2)
