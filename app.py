@@ -57,10 +57,13 @@ CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Hanken+Grotesk:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;700&display=swap');
 __VARS__
 html, body, [data-testid="stAppViewContainer"] { font-family: 'Hanken Grotesk','Noto Sans KR',sans-serif; }
-.block-container { max-width: 1280px; padding-top: 3.5rem; }
+.block-container { max-width: 1400px; padding-top: 3.5rem; }
 [data-testid="stMainBlockContainer"] { padding-top: 3.5rem !important; }
 .stMainBlockContainer { padding-top: 3.5rem !important; }
 h1,h2,h3 { font-family: 'Fraunces','Noto Sans KR',serif !important; letter-spacing:-.01em; color:var(--ink); }
+
+/* 페이지 제목 통일 표준 (st.title → h1). 전략·시황 .rpt2-title 과 동일 크기 */
+h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 !important; margin:0 0 .4rem !important; }
 
 /* 탭: 글자 잘림 방지 (줄바꿈 금지 + 넉넉한 패딩) */
 .stTabs [data-baseweb="tab-list"] { gap:4px; flex-wrap:wrap; }
@@ -80,6 +83,8 @@ h1,h2,h3 { font-family: 'Fraunces','Noto Sans KR',serif !important; letter-spaci
 .accent-bar { height:3px; width:30px; background:var(--sage); border-radius:3px; margin:0 0 12px; }
 .mkt-group { font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:16px 0 10px; }
 .grp-asof { font-weight:600; font-size:10.5px; letter-spacing:0; text-transform:none; color:var(--muted); opacity:.8; margin-left:8px; }
+/* 지수 그룹 사이 얇은 구분선 */
+.grp-divider { border:none; border-top:1px solid var(--line); margin:22px 0 0; }
 .mkt-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
 @media (max-width:980px){ .mkt-grid{ grid-template-columns:repeat(3,1fr);} }
 @media (max-width:640px){ .mkt-grid{ grid-template-columns:repeat(2,1fr);} }
@@ -341,7 +346,11 @@ def render_indices():
             f'<div class="data-asof">데이터 기준 {next(iter(distinct))} · '
             f'해외 지수·환율은 직전 거래일 종가</div>', unsafe_allow_html=True)
 
-    for group_name, datas in group_data.items():
+    for gi, (group_name, datas) in enumerate(group_data.items()):
+        # 그룹 사이 얇은 구분선 (첫 그룹=국내 제외)
+        if gi > 0:
+            st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
+
         head = f'<div class="mkt-group">{group_name}'
         if not unified and group_asof[group_name]:
             head += f'<span class="grp-asof">기준 {group_asof[group_name]}</span>'
@@ -358,6 +367,7 @@ def render_indices():
 
     supply = fetch_supply_demand_summary()
     if supply:
+        st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
         st.markdown('<div class="mkt-group">💰 수급 상위 종목</div>', unsafe_allow_html=True)
         st.markdown(_supply_html(supply), unsafe_allow_html=True)
 
