@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 import altair as alt
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 from dotenv import load_dotenv
 
 from modules.indices import (
@@ -314,7 +315,8 @@ def _card_html(name, data):
                  f'<polygon points="{pts} 100,28 0,28" style="fill:var({v});opacity:.10"/>'
                  f'<polyline points="{pts}" style="fill:none;stroke:var({v});stroke-width:1.6"/></svg>')
     return (f'<div class="mkt-card {tint}"><div class="mkt-name">{name}</div>'
-            f'<div class="mkt-val">{data["current"]:,.2f}</div>'
+            f'<div class="mkt-val mm-count" data-target="{data["current"]:.4f}">'
+            f'{data["current"]:,.2f}</div>'
             f'<div class="mkt-chg {cls}">{arrow} {data["change"]:+,.2f} ({data["pct"]:+.2f}%)</div>'
             f'{spark}</div>')
 
@@ -584,7 +586,63 @@ def render_report_tab():
     render_usage_section()
 
 
+# ── 지수 카드 숫자 카운트업 (전역 스크립트 1회 주입) ──
+def _inject_countup():
+    """보이지 않는 컴포넌트로 부모 문서에 카운트업 스크립트를 심는다.
+
+    .mkt-val.mm-count[data-target] 요소를 찾아 표시값을 0.7초간 목표값까지
+    올린다. 스크립트가 실행되지 않아도 HTML에는 최종 숫자가 그대로 찍혀 있어
+    값이 사라지지 않는다(안전장치). prefers-reduced-motion이면 즉시 최종값.
+    """
+    components.html(
+        """
+        <script>
+        (function(){
+          const doc = window.parent && window.parent.document
+                      ? window.parent.document : document;
+          const reduce = window.matchMedia &&
+              window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+          function fmt(n){
+            return n.toLocaleString('en-US',
+              {minimumFractionDigits:2, maximumFractionDigits:2});
+          }
+          function animate(el){
+            if (el.dataset.mmDone === '1') return;       // 이미 처리됨
+            const target = parseFloat(el.dataset.target);
+            if (isNaN(target)) return;
+            el.dataset.mmDone = '1';
+            if (reduce){ el.textContent = fmt(target); return; }
+            const dur = 700, t0 = performance.now();
+            // 시작값: 목표의 약 92%에서 살짝 차오르게 (0부터면 과해서 절제)
+            const start = target * 0.92;
+            function step(now){
+              const p = Math.min((now - t0) / dur, 1);
+              const e = 1 - Math.pow(1 - p, 3);          // easeOutCubic
+              el.textContent = fmt(start + (target - start) * e);
+              if (p < 1) requestAnimationFrame(step);
+              else el.textContent = fmt(target);
+            }
+            requestAnimationFrame(step);
+          }
+          function scan(){
+            doc.querySelectorAll('.mkt-val.mm-count[data-target]')
+               .forEach(animate);
+          }
+          scan();
+          // 탭 전환·rerun으로 카드가 새로 그려질 때를 대비해 잠깐 관찰
+          const mo = new MutationObserver(scan);
+          mo.observe(doc.body, {childList:true, subtree:true});
+          setTimeout(function(){ mo.disconnect(); }, 4000);
+        })();
+        </script>
+        """,
+        height=0,
+    )
+
+
 # ── 탭 ──
+_inject_countup()
 tab_idx, tab_rep, tab_kw, tab_tr = st.tabs(
     ["지수 현황", "시황", "오늘의 키워드", "타임라인"]
 )
