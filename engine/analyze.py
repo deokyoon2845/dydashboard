@@ -114,6 +114,49 @@ def _strip_fence(raw):
     return raw
 
 
+_MAX_SECTIONS = 6  # 장전·장후 본문 문단 최대 개수 (초과분은 '기타'로 병합)
+
+
+def _cap_sections(sections, max_n=_MAX_SECTIONS):
+    """본문 섹션을 최대 max_n개로 제한. 초과분은 '기타' 한 문단으로 병합.
+
+    - 유효 섹션(제목·본문 중 하나라도 있는)만 추린다.
+    - max_n개 이하면 그대로.
+    - 초과하면 앞 (max_n-1)개는 유지하고, 나머지를 '기타' 문단 하나로 합친다.
+      이미 마지막에 '기타'류 섹션이 있으면 거기에 이어 붙인다.
+    """
+    if not isinstance(sections, list):
+        return sections
+
+    clean = []
+    for s in sections:
+        if not isinstance(s, dict):
+            continue
+        t = str(s.get("title", "")).strip()
+        b = str(s.get("body", "")).strip()
+        if t or b:
+            clean.append({"title": t, "body": b})
+
+    if len(clean) <= max_n:
+        return clean
+
+    head = clean[:max_n - 1]
+    tail = clean[max_n - 1:]
+
+    # 병합되는 문단들: "【소제목】 본문" 형태로 한 문단에 이어 붙인다.
+    merged_parts = []
+    for s in tail:
+        t, b = s["title"], s["body"]
+        if t and b:
+            merged_parts.append(f"【{t}】 {b}")
+        else:
+            merged_parts.append(b or t)
+    merged_body = " ".join(p for p in merged_parts if p)
+
+    head.append({"title": "기타", "body": merged_body})
+    return head
+
+
 # ── Opus 호출 + 잘림 이어받기 ──────────────────────────────────
 
 def _create_with_continuation(client, model, prompt, max_tokens):
@@ -324,7 +367,8 @@ def analyze_messages(messages, kind: str = "pre", channel_name: str = "",
         '"verdict":"align 또는 diverge 또는 mixed",'
         '"insight":"둘을 대조한 결론·시사점 1~2문장"},'
         '"sections":['
-        '{"title":"섹션 제목(오늘 내용에 맞게 직접 작명)",'
+        '{"title":"섹션 제목(오늘 내용에 맞게 직접 작명). 단독 문단으로 묶기엔 작은 '
+        '주제들은 마지막에 \'기타\' 한 문단으로 합칠 것",'
         '"body":"본문 4~7문장. 주요 변동은 원인→결과→시사점의 인과 사슬로 서술"}'
         '],'
         '"themes":[{"name":"테마명",'
@@ -341,7 +385,10 @@ def analyze_messages(messages, kind: str = "pre", channel_name: str = "",
         '"down":[{"label":"요인 핵심어","desc":"근거 한 줄"}]}}'
         f'{watch_schema},'
         '"mood":"positive 또는 neutral 또는 cautious"}\n\n'
-        "sections는 내용에 맞게 충분히(보통 4~8개), keywords 정확히 10개(자주·중요 순), "
+        "sections는 ★최대 6개★ (이보다 많아지면 안 됨). 단독 문단을 구성하기엔 "
+        "지엽적·편협한 주제들은 따로 떼지 말고 마지막 '기타' 문단 하나로 모아서 쓰세요. "
+        "즉 핵심 주제 5개 + 기타 1개 식으로, 합쳐서 6개를 넘기지 마세요. "
+        "keywords 정확히 10개(자주·중요 순), "
         "themes 3~6개. cross_check 와 market_drivers 는 반드시 채우세요"
         + (" (정량 데이터·뉴스가 제공되었습니다)." if (snapshot_text or news_titles)
            else ". 단, 정량 데이터가 없으면 market_view 위주로 쓰고 data_fact 는 뉴스 기반으로 채우세요.")
@@ -378,6 +425,9 @@ def analyze_messages(messages, kind: str = "pre", channel_name: str = "",
     result.setdefault("keywords", [])
     result.setdefault("mood", "neutral")
     result.setdefault("report_kind", kind)
+
+    # 본문 문단 최대 6개 강제 — 초과분은 '기타' 한 문단으로 병합
+    result["sections"] = _cap_sections(result.get("sections"))
 
     usage = {
         "model": MODEL + (" + haiku 정제" if len(calls) > len(opus_calls) else "")
