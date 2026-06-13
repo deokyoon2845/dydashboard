@@ -100,6 +100,22 @@ def generate_report(kind: str = None, send_telegram: bool = False) -> dict:
         {m.get("channel", label) for m in messages if m.get("channel")})
     report_data["data_enriched"] = bool(snapshot_text)
 
+    # 검증용: 분석에 들어간 텔레그램 원문 전체를 보고서에 동봉.
+    # (채널명·작성시각·본문 — 뷰어 '취합된 텔레그램 원문' 탭에서 표시)
+    # 작성시각 오름차순 정렬 → 시간 흐름대로 검증 가능.
+    def _msg_sort_key(m):
+        return str(m.get("date", ""))
+
+    report_data["source_messages"] = [
+        {
+            "channel": m.get("channel", label),
+            "date": str(m.get("date", "")),
+            "text": (m.get("text") or "").strip(),
+        }
+        for m in sorted(messages, key=_msg_sort_key)
+        if (m.get("text") or "").strip()
+    ]
+
     REPORTS_DIR.mkdir(exist_ok=True)
     # 파일명은 하루 여러 번 생성해도 보존되도록 HHMM 유지. 장전/장후 구분은 report_kind 필드.
     path = REPORTS_DIR / f"{now:%Y-%m-%d_%H%M}.json"
