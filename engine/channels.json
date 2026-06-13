@@ -46,6 +46,11 @@
       "active": true
     },
     {
+      "id": "@miraebond",
+      "name": "[미래에셋증권 채권] 민지희, 이정원",
+      "active": true
+    },
+    {
       "id": "@yuantais",
       "name": "《유안타 투자전략》",
       "active": true
@@ -113,6 +118,31 @@
     {
       "id": "@aetherjapanresearch",
       "name": "에테르의 일본&미국 리서치",
+      "active": true
+    },
+    {
+      "id": "@defence_24",
+      "name": "우주방산AI로봇 아카이브",
+      "active": true
+    },
+    {
+      "id": "@ai_masters_community",
+      "name": "AI MASTERS",
+      "active": true
+    },
+    {
+      "id": "@hanaglobalbottomup",
+      "name": "[하나증권 해외주식분석]",
+      "active": true
+    },
+    {
+      "id": "@enc210406",
+      "name": "건설/조선/리츠 | 강경태 | 한국투자증권",
+      "active": true
+    },
+    {
+      "id": "@HI_GS",
+      "name": "DAOL 조선/기계/방산 | 최광식",
       "active": true
     },
     {
