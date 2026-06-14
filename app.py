@@ -481,8 +481,8 @@ def render_indices():
         st.markdown('<div class="mkt-group">💰 수급 상위 종목</div>', unsafe_allow_html=True)
         st.markdown(_supply_html(supply), unsafe_allow_html=True)
         st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
-        from modules.rates import render_rates
-        render_rates()        
+        from modules.rate_gap import render_rate_gap
+        render_rate_gap()  
 
 
 # ── 사용량 · 비용 ──
