@@ -7,6 +7,10 @@ finance.naver.com/sise/investorDealTrendDay.naver 한 페이지에 최근 ~20거
 그 경우 빈 상태(안내 문구)로 안전하게 떨어지고 앱은 멈추지 않는다.
 
 ※ read_html 사용을 위해 requirements.txt에 lxml 이 필요하다.
+
+2026-06 레이아웃: 좌 코스피 / 우 코스닥 2단 구성 (st.columns).
+  데이터 수집(_fetch_investor)은 sosok 파라미터로 이미 두 시장 모두 지원하므로,
+  렌더링만 _render_market_block 헬퍼로 묶어 양쪽에서 재사용한다.
 """
 
 import re
@@ -85,11 +89,19 @@ def _card(label, val_eok, dstr):
             f'<div class="mkt-chg {cls}">{state}</div></div>')
 
 
-def render_supply_trend():
-    st.markdown('<div class="mkt-group">💰 외국인·기관 수급 추세 (코스피)</div>',
-                unsafe_allow_html=True)
+def _market_label(name: str) -> str:
+    """각 열(코스피/코스닥) 상단 소제목."""
+    return (f'<div style="font-size:13.5px;font-weight:700;color:var(--ink,#34352f);'
+            f'letter-spacing:.01em;margin:2px 0 9px;padding-bottom:5px;'
+            f'border-bottom:1.5px solid var(--sage,#A7BBA9);display:inline-block;">'
+            f'{name}</div>')
 
-    df = _fetch_investor("01")  # 코스피
+
+def _render_market_block(label: str, sosok: str):
+    """한 시장(코스피 또는 코스닥)의 소제목 + 카드 + 누적 추세 차트를 렌더."""
+    st.markdown(_market_label(label), unsafe_allow_html=True)
+
+    df = _fetch_investor(sosok)
     if df is None or df.empty:
         st.caption("네이버 금융에서 수급 데이터를 불러오지 못했어요. "
                    "(페이지 구조 변경 또는 일시 오류 — 잠시 후 새로고침)")
@@ -127,5 +139,19 @@ def render_supply_trend():
     chart = (zero + line).properties(height=240, background="transparent") \
                          .configure_view(strokeWidth=0)
     st.altair_chart(chart, use_container_width=True)
+
+
+def render_supply_trend():
+    st.markdown('<div class="mkt-group">💰 외국인·기관 수급 추세</div>',
+                unsafe_allow_html=True)
+
+    # 좌 코스피 / 우 코스닥 — 모바일에서는 Streamlit이 자동으로 세로 적층.
+    left, right = st.columns(2, gap="large")
+    with left:
+        _render_market_block("코스피", "01")
+    with right:
+        _render_market_block("코스닥", "02")
+
+    # 양쪽 공통 캡션 (한 번만)
     st.caption("최근 15거래일 외국인·기관 누적 순매수(억원, 우상향=순매수 지속) · "
                "데이터: 네이버 금융 · 단위는 추정치")
