@@ -1,8 +1,8 @@
 {
-  "generated": "2026-06-14T22:34:30.720665+09:00",
+  "generated": "2026-06-14T22:40:46.258759+09:00",
   "items": [
     {
-      "keyword": "중동 종전 기대감에 외국인 복귀, 코스피 8000선 회복",
+      "keyword": "중동 지정학 리스크 완화에 외국인 복귀로 코스피 8천선 회복",
       "category": "거시",
       "weight": 10,
       "stocks": [],
@@ -24,7 +24,29 @@
       "is_new": true
     },
     {
-      "keyword": "반도체 수급 개선 및 AI 인프라 투자 사이클",
+      "keyword": "FOMC 금리 결정 및 케빈 워시 연준의장 데뷔",
+      "category": "거시",
+      "weight": 9,
+      "stocks": [],
+      "news": [
+        {
+          "title": "변동성 커진 증시…케빈 워시의 첫 FOMC '주목'",
+          "url": "https://www.mt.co.kr/stock/2026/06/14/2026061417481649783"
+        },
+        {
+          "title": "[이번주 증시] 美·이란 종전 기대에 위험선호 회복…'워시의 입' 주목",
+          "url": "http://www.newsian.co.kr/news/articleView.html?idxno=90896"
+        },
+        {
+          "title": "[채권-주간] 커지는 종전 기대감…케빈 워시 '데뷔' 주목",
+          "url": "https://news.einfomax.co.kr/news/articleView.html?idxno=4419861"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "반도체 AI 사이클 호황과 메모리 실적 기대",
       "category": "섹터",
       "weight": 9,
       "stocks": [
@@ -37,24 +59,67 @@
           "url": "https://www.sedaily.com/article/20055570?ref=naver"
         },
         {
-          "title": "“AI 인프라 투자 사이클 최소 3년…지금 조정은 기회”",
-          "url": "https://www.sedaily.com/article/20055538?ref=naver"
-        },
-        {
           "title": "AI 사이클 올라탄 반도체부품-전력기기…2분기 실적 줄상향",
           "url": "https://www.donga.com/news/Economy/article/all/20260614/134108041/1"
+        },
+        {
+          "title": "AI 반도체에 자금 집중… 수익률 톱10 중 9개 싹쓸이 [ETF 스퀘어]",
+          "url": "http://www.fnnews.com/news/202606141827508743"
         }
       ],
       "streak": 1,
       "is_new": true
     },
     {
-      "keyword": "삼성전자·SK하이닉스 외국인 대규모 매수",
+      "keyword": "원화 약세 지속(1500원대)과 한미 외환당국 협의",
+      "category": "거시",
+      "weight": 8,
+      "stocks": [],
+      "news": [
+        {
+          "title": "환율 1500원대, 美와 공조",
+          "url": "http://www.hansbiz.co.kr/news/articleView.html?idxno=844197"
+        },
+        {
+          "title": "한미 외환당국, 美서 고위급 협의…원화 약세에 시장 소통 지속",
+          "url": "https://www.news1.kr/economy/trend/6196873"
+        },
+        {
+          "title": "1500원대 환율 지속···당국, ‘환전 요청’에도 기업 달러예금 3년5개...",
+          "url": "https://www.khan.co.kr/article/202606141435001"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "스페이스X 상장 가시화와 글로벌 자금 이동",
+      "category": "거시",
+      "weight": 8,
+      "stocks": [],
+      "news": [
+        {
+          "title": "[코인 시황] 비트코인 반등에 기관은 7만5000달러 베팅…스페이스X IPO·...",
+          "url": "https://www.newspim.com/news/view/20260612001162"
+        },
+        {
+          "title": "‘수급 블랙홀’ 스페이스X 상장…삼전·SK하닉의 시간은 계속된다",
+          "url": "https://www.dt.co.kr/article/12067454?ref=naver"
+        },
+        {
+          "title": "스페이스X IPO 마무리…코스피 짓눌렀던 '자금 블랙홀' 해소되나",
+          "url": "https://www.news2day.co.kr/article/20260614500017"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "삼성전자 강경주 공격적 가이던스와 외국인 매수 전환",
       "category": "종목",
-      "weight": 9,
+      "weight": 8,
       "stocks": [
-        "삼성전자",
-        "SK하이닉스"
+        "삼성전자"
       ],
       "news": [
         {
@@ -66,59 +131,15 @@
           "url": "https://www.hankyung.com/article/2026061235086"
         },
         {
-          "title": "“개미들만 몰랐네”…삼전닉스 20조 던진 외국인, 뒤에선 ‘이것’ 단...",
-          "url": "https://www.dt.co.kr/article/12067448?ref=naver"
+          "title": "[이슈]삼전닉스 주가, 내일 대폭등? 3가지 이유",
+          "url": "https://www.munhwa.com/article/11595413?ref=naver"
         }
       ],
       "streak": 1,
       "is_new": true
     },
     {
-      "keyword": "스페이스X IPO 상장으로 글로벌 자금 유입",
-      "category": "거시",
-      "weight": 8,
-      "stocks": [],
-      "news": [
-        {
-          "title": "[퇴근길머니] 돌아온 외국인에 다시 '8천피'…불금에 뜨는 스페이스X",
-          "url": "http://www.yonhapnewstv.co.kr/news/MYH20260612173539NDm"
-        },
-        {
-          "title": "스페이스X IPO 마무리…코스피 짓눌렀던 '자금 블랙홀' 해소되나",
-          "url": "https://www.news2day.co.kr/article/20260614500017"
-        },
-        {
-          "title": "‘수급 블랙홀’ 스페이스X 상장…삼전·SK하닉의 시간은 계속된다",
-          "url": "https://www.dt.co.kr/article/12067454?ref=naver"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "원화 약세 심화(1500원대), 한미 당국 협력 강화",
-      "category": "거시",
-      "weight": 8,
-      "stocks": [],
-      "news": [
-        {
-          "title": "[속보] 굳어지는 ‘환율 1500원대’에…한미 당국자, 미국서 ‘긴밀 소...",
-          "url": "https://www.dt.co.kr/article/12067489?ref=naver"
-        },
-        {
-          "title": "원화 약세 지속, 한미 외환 당국 긴밀 협력으로 대처",
-          "url": "https://www.tokenpost.kr/news/economy/369175"
-        },
-        {
-          "title": "한미 당국자, 미국서 회동…'원화 약세 대응 공조' 방침 확인",
-          "url": "https://www.yna.co.kr/view/AKR20260614043200002?input=1195m"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "반도체 소부장 및 파운드리 생태계 강화",
+      "keyword": "반도체 부품·소재주 실적 개선 및 하반기 호재",
       "category": "섹터",
       "weight": 8,
       "stocks": [
@@ -131,86 +152,34 @@
           "url": "https://www.asiatoday.co.kr/kn/view.php?key=20260615010004709"
         },
         {
-          "title": "\"반도체 소부장이 대세\"… 코스닥 액티브 ETF '분주'",
-          "url": "https://www.mk.co.kr/article/12073792"
-        },
-        {
-          "title": "눌렸던 소부장株 기지개…외인 매수에 주가도 '꿈틀'",
-          "url": "https://www.edaily.co.kr/news/newspath.asp?newsid=01702326645481720"
+          "title": "﻿[EBN 오늘(14일) 이슈 종합]삼성전기·LG이노텍 실적 기대감, 현대차그...",
+          "url": "https://www.ebn.co.kr/news/articleView.html?idxno=1712410"
         }
       ],
       "streak": 1,
       "is_new": true
     },
     {
-      "keyword": "증시 고변동성 심화, 개인투자자 손실 및 빚투 리스크",
-      "category": "거시",
-      "weight": 8,
-      "stocks": [],
-      "news": [
-        {
-          "title": "'롤러코스피'가 무섭다…소나기 피하는 투자자들",
-          "url": "http://www.fnnews.com/news/202606141817154412"
-        },
-        {
-          "title": "\"슬슬 주식하기 어렵네\"…높아진 변동성에 증시 자금 일제히 '감소'",
-          "url": "http://www.fnnews.com/news/202606141304188217"
-        },
-        {
-          "title": "롤러코스피에 올라탄 빚투… '대출 조이기' 통할까 [주말 Q&A]",
-          "url": "https://www.thescoop.co.kr/news/articleView.html?idxno=310532"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "연준 FOMC 회의 및 케빈 워시 위원장 정책 기조",
+      "keyword": "코스닥 1000선 회복과 기술주 반등",
       "category": "거시",
       "weight": 7,
       "stocks": [],
       "news": [
         {
-          "title": "변동성 커진 증시…케빈 워시의 첫 FOMC '주목'",
-          "url": "https://www.mt.co.kr/stock/2026/06/14/2026061417481649783"
+          "title": "[마감시황] 코스닥, 3.22% 올라 1029.05 마감…개인·외국인 매도에도 기...",
+          "url": "https://www.seoul.co.kr/news/economy/securities/2026/06/12/20260612500226?wlog_tag3=naver"
         },
         {
-          "title": "[채권-주간] 커지는 종전 기대감…케빈 워시 '데뷔' 주목",
-          "url": "https://news.einfomax.co.kr/news/articleView.html?idxno=4419861"
-        },
-        {
-          "title": "[이번주 증시] 美·이란 종전 기대에 위험선호 회복…'워시의 입' 주목",
-          "url": "http://www.newsian.co.kr/news/articleView.html?idxno=90896"
+          "title": "'천스닥' 회복했지만…진짜 과제는 시장 신뢰",
+          "url": "https://www.namdonews.com/news/articleView.html?idxno=913485"
         }
       ],
       "streak": 1,
       "is_new": true
     },
     {
-      "keyword": "국민참여성장펀드 대규모 인기, 소액 국민 투자 수요",
+      "keyword": "초과 세수 발생(반도체·증시 호황)과 추경 논의",
       "category": "정책",
-      "weight": 7,
-      "stocks": [],
-      "news": [
-        {
-          "title": "2차 국민성장펀드 3분기 6000억 규모로",
-          "url": "https://www.khan.co.kr/article/202606142029035"
-        },
-        {
-          "title": "닷새만에 동난 ‘국민참여성장펀드’ 2차분 풀린다…“국민수요 부응”",
-          "url": "https://www.inthenews.co.kr/news/article.html?no=88011"
-        },
-        {
-          "title": "‘5일 만에 완판’ 국민성장펀드, 3분기 6000억 규모 2차 출시",
-          "url": "https://www.donga.com/news/Economy/article/all/20260614/134107987/1"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "반도체 초호황에 따른 초과 세수 및 경제 성장",
-      "category": "거시",
       "weight": 7,
       "stocks": [],
       "news": [
@@ -223,15 +192,59 @@
           "url": "http://www.fnnews.com/news/202606141901000447"
         },
         {
-          "title": "반도체·방산·조선 '3각 편대' 질주...1분기 3.6% 깜짝 성장",
-          "url": "http://www.newsbrite.net/news/articleView.html?idxno=198617"
+          "title": "[아침을 열며]반도체 초호황, 거품 아닌 토대가 될 때",
+          "url": "https://www.khan.co.kr/article/202606141956005"
         }
       ],
       "streak": 1,
       "is_new": true
     },
     {
-      "keyword": "AI 팩토리·AI 디지털 전환으로 제조업 혁신",
+      "keyword": "레버리지·인버스 ETF 변동성 확대 및 위험자산 수급 변화",
+      "category": "섹터",
+      "weight": 7,
+      "stocks": [],
+      "news": [
+        {
+          "title": "[ETF 시황] 삼성전자 레버리지 ETF 줄줄이 두 자릿수 상승",
+          "url": "https://www.newspim.com/news/view/20260612001014"
+        },
+        {
+          "title": "외국인, ‘삼전닉스’ 20조 매도…레버리지는 ‘사고팔고’",
+          "url": "https://news.kbs.co.kr/news/pc/view/view.do?ncd=8585754&ref=A"
+        },
+        {
+          "title": "\"슬슬 주식하기 어렵네\"…높아진 변동성에 증시 자금 일제히 '감소'",
+          "url": "http://www.fnnews.com/news/202606141304188217"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "국민참여성장펀드 2차 출시(3분기 6000억원)",
+      "category": "정책",
+      "weight": 7,
+      "stocks": [],
+      "news": [
+        {
+          "title": "닷새만에 동난 ‘국민참여성장펀드’ 2차분 풀린다…“국민수요 부응”",
+          "url": "https://www.inthenews.co.kr/news/article.html?no=88011"
+        },
+        {
+          "title": "국민참여성장펀드 2차 출시 추진…3분기 중 6000억원 규모 조성",
+          "url": "https://www.delighti.co.kr/news/articleView.html?idxno=117679"
+        },
+        {
+          "title": "‘5일 만에 완판’ 국민성장펀드, 3분기 6000억 규모 2차 출시",
+          "url": "https://www.donga.com/news/Economy/article/all/20260614/134107987/1"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "제조업 AI 팩토리 전환 및 중국 경쟁력 대응",
       "category": "섹터",
       "weight": 7,
       "stocks": [],
@@ -253,47 +266,7 @@
       "is_new": true
     },
     {
-      "keyword": "코스닥 반도체 및 배터리 관련 ETF 펀드 집중 투자",
-      "category": "섹터",
-      "weight": 7,
-      "stocks": [],
-      "news": [
-        {
-          "title": "AI 반도체에 자금 집중… 수익률 톱10 중 9개 싹쓸이 [ETF 스퀘어]",
-          "url": "http://www.fnnews.com/news/202606141827508743"
-        },
-        {
-          "title": "하반기 호재 줄줄이 대기… 코스닥 ETF 향하는 뭉칫돈",
-          "url": "http://www.fnnews.com/news/202606141817176766"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "TK지역(대구·경북) 반도체·전력기업 유치 경쟁",
-      "category": "정책",
-      "weight": 6,
-      "stocks": [],
-      "news": [
-        {
-          "title": "민영주택도 '신생아 특공' 신설… TK 기업 유치 '주거 인센티브' 날개 단...",
-          "url": "https://www.idaegu.com/news/articleView.html?idxno=663600"
-        },
-        {
-          "title": "공공기관 2차 이전 시동…대구·경북 \"알짜 기관 유치전\" 본격화",
-          "url": "https://www.kyongbuk.co.kr/news/articleView.html?idxno=4075414"
-        },
-        {
-          "title": "[TK 반도체 승부수] 대구경북, 전력·용수 인프라·전문인력 양성 '강점...",
-          "url": "https://www.imaeil.com/page/view/2026061323472028551"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "주식 수익금 급증에 따른 강남 부동산 대이동",
+      "keyword": "주식 수익금 부동산 흡수와 자산 양극화",
       "category": "거시",
       "weight": 6,
       "stocks": [],
@@ -307,20 +280,36 @@
           "url": "https://www.segye.com/newsView/20260614508023?OutUrl=naver"
         },
         {
-          "title": "[자막뉴스] 코스피 8,000의 역설? 증시 호황이 불지른 대한민국 자산 계...",
-          "url": "https://www.ytn.co.kr/_ln/0134_202606141921439212"
+          "title": "증시 역대급 불장에 양극화·변동성 심화",
+          "url": "https://www.idaegu.co.kr/news/articleView.html?idxno=550941"
         }
       ],
       "streak": 1,
       "is_new": true
     },
     {
-      "keyword": "배터리·2차전지 설비 투자 확대 및 베트남 진출",
+      "keyword": "변동성 확대(롤러코스터 장세)와 개미투자자 이탈",
+      "category": "거시",
+      "weight": 6,
+      "stocks": [],
+      "news": [
+        {
+          "title": "'롤러코스피'가 무섭다…소나기 피하는 투자자들",
+          "url": "http://www.fnnews.com/news/202606141817154412"
+        },
+        {
+          "title": "롤러코스피에 올라탄 빚투… '대출 조이기' 통할까 [주말 Q&A]",
+          "url": "https://www.thescoop.co.kr/news/articleView.html?idxno=310532"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "2차전지·배터리 수산화리튬 생산 확대",
       "category": "섹터",
       "weight": 6,
-      "stocks": [
-        "포스코홀딩스"
-      ],
+      "stocks": [],
       "news": [
         {
           "title": "배터리 캐즘에도…“無水수산화리튬 생산량 3배 늘릴 것”",
@@ -329,10 +318,6 @@
         {
           "title": "베트남은 원전, 인니는 2차전지…미래 함께 설계할 파트너십 필요[코어...",
           "url": "https://www.sedaily.com/article/20055534?ref=naver"
-        },
-        {
-          "title": "글로벌에스엠, 호실적 등에 업고 베트남 법인 생산설비 증설 추진",
-          "url": "https://www.bloter.net/news/articleView.html?idxno=665306"
         }
       ],
       "streak": 1,
