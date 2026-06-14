@@ -37,15 +37,23 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          REPORT_MODEL: ${{ secrets.REPORT_MODEL }}
+          # ★ 빈 문자열이면 400 에러("model: String should have at least 1 character")
+          #    → 시크릿이 비어 있거나 없어도 기본값으로 폴백.
+          REPORT_MODEL: ${{ secrets.REPORT_MODEL || 'claude-opus-4-8' }}
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          # ★★ 보고서는 이제 Supabase DB에 저장됨. 이 둘이 없으면 생성돼도 DB에 안 들어가
+          #     뷰어에 아무것도 안 뜸. (가장 유력한 원인)
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          # 한·미 금리차 등 ECOS 데이터가 필요하면 같이 전달 (없으면 해당 부분만 빈 값 처리)
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
         run: python -m engine.run_all
 
-      - name: 결과 커밋 & 푸시
+      - name: 결과 커밋 & 푸시 (키워드·data 백업용 — 보고서는 DB에 저장됨)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add reports/ data/
+          git add reports/ data/ || true
           git diff --staged --quiet || git commit -m "자동 생성: $(date -u +%Y-%m-%d) ($(date -u +%H:%MUTC))"
           git push
