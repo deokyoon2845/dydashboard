@@ -12,3 +12,4 @@ anthropic
 reportlab
 requests
 supabase
+lxml
