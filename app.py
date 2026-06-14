@@ -475,14 +475,20 @@ def render_indices():
         cards = "".join(_card_html(name, d) for name, d in items)
         st.markdown(f'<div class="mkt-grid">{cards}</div>', unsafe_allow_html=True)
 
+    # ── 수급 상위 종목 (KRX 데이터가 있을 때만) ──
     supply = fetch_supply_demand_summary()
     if supply:
         st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
         st.markdown('<div class="mkt-group">💰 수급 상위 종목</div>', unsafe_allow_html=True)
         st.markdown(_supply_html(supply), unsafe_allow_html=True)
-        st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
-        from modules.rate_gap import render_rate_gap
-        render_rate_gap()  
+
+    # ── 금리 (수급 데이터 유무와 무관하게 항상 표시) ──
+    st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
+    from modules.rates import render_rates
+    render_rates()
+    st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
+    from modules.rate_gap import render_rate_gap
+    render_rate_gap()
 
 
 # ── 사용량 · 비용 ──
