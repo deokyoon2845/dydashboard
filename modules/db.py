@@ -28,7 +28,9 @@ def _cfg(key: str) -> str:
 def _client() -> Client:
     global _CLIENT
     if _CLIENT is None:
-        _CLIENT = create_client(_cfg("SUPABASE_URL"), _cfg("SUPABASE_KEY"))
+        url = _cfg("SUPABASE_URL").strip().rstrip("/")
+        key = _cfg("SUPABASE_KEY").strip()
+        _CLIENT = create_client(url, key)
     return _CLIENT
 
 
