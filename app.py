@@ -439,6 +439,10 @@ def render_indices():
     if st.button("🔄 새로고침"):
         st.cache_data.clear()
         st.rerun()
+# ── 외국인·기관 수급 추세 (네이버 금융) ──
+    st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
+    from modules.supply_trend import render_supply_trend
+    render_supply_trend()
     render_indicators()
     render_calendar()
 
