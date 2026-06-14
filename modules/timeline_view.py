@@ -46,6 +46,9 @@ _TL_CSS = """
 .tl-card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:9px 10px;
   color:inherit; transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease; }
 .tl-card.tl-latest { border-color:#C2410C; border-width:1.5px; }
+/* ★ 데스크톱 지그재그 카드만 폭 20% 확대 — 양옆 빈 셀로 확장, 노드 중앙 정렬은 유지.
+   (모바일 .tl-mobile 카드는 .tl-row 밖이라 영향 없음) */
+.tl-row .tl-card { box-sizing:border-box; width:120%; justify-self:center; }
 /* 마우스 올리면 살짝 떠오르는 입체 효과 (클릭 동작 없음) */
 .tl-card:hover { transform:translateY(-3px); box-shadow:0 6px 18px rgba(0,0,0,.10); border-color:var(--sage-deep,#7E9A83); }
 .tl-card, .tl-card * { text-decoration:none; }
