@@ -3,6 +3,10 @@
 2026-06 재설계: 새 topics 스키마(주제 카드) 지원 + 과거 보고서 폴백.
 - 새 보고서(topics 있음): 주제 카드(사실/시장시각[합의·이견]/정량/시사점) + 목적별 꼬리 + 변화 추적
 - 과거 보고서(topics 없음): 기존 sections/market_drivers/cross_check 레이아웃 그대로
+
+2026-06 저장소 이전: 보고서를 reports/ 폴더 대신 Supabase DB에서 읽고/쓴다.
+  list_reports()는 DB의 보고서를 '가상 경로(Path)'로 반환해, 기존 path 기반 로직을
+  그대로 재사용한다. (slug = 파일명 stem = "2026-06-14_0430")
 """
 
 import html
@@ -15,8 +19,9 @@ import streamlit as st
 
 from modules.stocks import naver_stock_url
 from modules.mood import MOOD_KO, mood_css
+from modules import db
 
-REPORTS_DIR = Path("reports")
+REPORTS_DIR = Path("reports")  # (보존용 — 이제 목록/로드는 DB가 담당)
 MOOD_CLS = {"positive": "mood-pos", "neutral": "mood-neu", "cautious": "mood-cau"}
 _WD = "월화수목금토일"
 
@@ -202,12 +207,9 @@ _RPT_CSS = _RPT_CSS.replace("__MOOD_BADGE_CSS__", mood_css("mood"))
 # ── 파일 목록 / 유틸 ──────────────────────────────────────────
 
 def list_reports():
-    if not REPORTS_DIR.exists():
-        return []
-    files = sorted(REPORTS_DIR.glob("*.json"), reverse=True)
-    if not files:
-        files = sorted(REPORTS_DIR.glob("*.md"), reverse=True)
-    return files
+    # DB의 보고서를 '가상 경로(Path)'로 반환 — 기존 path 기반 로직을 그대로 재사용.
+    # slug = 파일명 stem (예: "2026-06-14_0430"), 디스크에 실제 파일은 없음.
+    return [Path(f"{slug}.json") for slug in db.list_slugs()]
 
 
 def _report_date(path: Path) -> date:
@@ -219,17 +221,15 @@ def _report_date(path: Path) -> date:
 
 
 def _load(path: Path) -> dict:
-    if path.suffix == ".json":
-        return json.loads(path.read_text(encoding="utf-8"))
-    text = path.read_text(encoding="utf-8")
-    m = re.search(r"##\s*한 줄 요약\n+(.+?)(?=\n##|\Z)", text, re.S)
+    # slug(=stem)로 DB에서 보고서 조회. 없으면 안전한 빈 dict 반환.
+    data = db.load_by_slug(path.stem)
+    if data:
+        return data
     return {
-        "headline": m.group(1).strip() if m else path.stem,
-        "key_takeaway": "",
-        "sections": [{"title": "보고서 본문", "body": text}],
-        "themes": [], "keywords": [],
-        "mood": "neutral", "generated_at": "",
-        "messages_count": 0,
+        "headline": path.stem, "key_takeaway": "",
+        "sections": [], "themes": [], "keywords": [],
+        "mood": "neutral", "report_kind": _infer_kind_from_name(path),
+        "generated_at": "", "messages_count": 0,
     }
 
 
@@ -272,7 +272,8 @@ def _fmt_date_ko(d: date) -> str:
 
 def _selected_date(files) -> date:
     pk = st.session_state.get("rpt_picked_path")
-    if pk and Path(pk).exists():
+    # 가상 경로는 디스크에 없으므로 .exists() 대신 '목록에 있는지'로 확인.
+    if pk and Path(pk).stem in {f.stem for f in files}:
         return _report_date(Path(pk))
     today = date.today()
     dates = {_report_date(f) for f in files}
@@ -672,7 +673,7 @@ def _render_report_card(data: dict, kind: str, path: Path):
             "💾 JSON 저장", data=json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8"),
             file_name=path.name, mime="application/json",
             key=f"json_{kind}_{path.stem}", use_container_width=True)
-    st.caption("💾 받은 JSON을 깃허브 `reports/` 에 올리면 리부트에도 보존되고 타임라인에도 자동 반영돼요.")
+    st.caption("💾 이 보고서는 생성과 동시에 DB에 저장돼요. 재시작에도 보존되며, JSON은 백업·공유용입니다.")
 
 
 def _render_placeholder(kind: str):
@@ -731,7 +732,7 @@ def _render_delete_ui(files):
                 removed = 0
                 for s in to_delete:
                     try:
-                        Path(s).unlink()
+                        db.delete_by_slug(Path(s).stem)  # 파일 삭제 → DB 삭제
                         removed += 1
                     except Exception as e:
                         st.error(f"삭제 실패: {Path(s).name} ({e})")
