@@ -46,12 +46,11 @@ def collection_window(kind: str, now=None) -> datetime:
 
 
 def _load_prev_report():
-    """직전(가장 최근) 보고서 JSON을 읽어 반환. 변화 추적용. 없으면 None."""
+    """직전(가장 최근) 보고서를 DB에서 읽어 반환. 변화 추적용. 없으면 None."""
     try:
-        files = sorted(REPORTS_DIR.glob("*.json"), reverse=True)
-        if not files:
-            return None
-        return json.loads(files[0].read_text(encoding="utf-8"))
+        from modules import db
+        slugs = db.list_slugs()
+        return db.load_by_slug(slugs[0]) if slugs else None
     except Exception:
         return None
 
@@ -126,6 +125,12 @@ def generate_report(kind: str = None, send_telegram: bool = False) -> dict:
     REPORTS_DIR.mkdir(exist_ok=True)
     path = REPORTS_DIR / f"{now:%Y-%m-%d_%H%M}.json"
     path.write_text(json.dumps(report_data, ensure_ascii=False, indent=2), encoding="utf-8")
+    # ★ DB에도 저장 — 재시작에도 사라지지 않는 핵심 한 줄
+    try:
+        from modules import db
+        db.save_report(report_data)
+    except Exception as e:
+        print(f"⚠️ DB 저장 실패(무시): {e}")
 
     append_usage({
         "time": now.isoformat(),
