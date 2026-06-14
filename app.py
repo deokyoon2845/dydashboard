@@ -33,11 +33,10 @@ try:
 except Exception:
     _rpt_param = None
 if _rpt_param:
-    from pathlib import Path as _Path
-    _cand = _Path("reports") / _rpt_param
-    if _cand.exists():
-        st.session_state["rpt_picked_path"] = str(_cand)
-        st.session_state["rpt_jump_notice"] = _rpt_param
+    # 파일명/슬러그 어느 형태로 와도 stem만 추출 (예: "2026-06-14_0430")
+    _slug = _rpt_param.rsplit("/", 1)[-1].replace(".json", "").replace(".md", "")
+    st.session_state["rpt_picked_path"] = f"{_slug}.json"
+    st.session_state["rpt_jump_notice"] = _rpt_param
     try:
         del st.query_params["rpt"]
     except Exception:
