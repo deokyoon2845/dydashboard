@@ -1,4 +1,9 @@
-"""추세 탭: 감성 추세(테마 색 차트) + 주간 다이제스트."""
+"""추세 탭: 감성 추세(테마 색 차트) + 주간 다이제스트.
+
+2026-06 저장소 이전: 보고서를 reports/ 폴더 파일이 아니라 DB에서 읽는다.
+  list_reports()는 가상 경로를 주므로, 파일을 직접 read_text 하지 않고
+  reports._load(path)로 DB에서 보고서 dict를 가져온다.
+"""
 
 import re
 from pathlib import Path
@@ -7,7 +12,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from modules.reports import list_reports, _report_date
+from modules.reports import list_reports, _report_date, _load
 
 DIGEST_DIR = Path("digests")
 
@@ -37,31 +42,21 @@ def _empty(ico, msg, hint=""):
 _MOOD_SCORE = {"positive": 1.0, "neutral": 0.0, "cautious": -1.0}
 
 
-def _sentiment_score(text: str):
-    # 신형 JSON 리포트: mood 필드
-    try:
-        import json as _json
-        data = _json.loads(text)
-        if isinstance(data, dict) and "mood" in data:
-            return _MOOD_SCORE.get(data.get("mood"), 0.0)
-    except Exception:
-        pass
-    # 구형 MD 리포트: '시장 분위기' 섹션 단어 기반
-    m = re.search(r"##\s*시장\s*분위기[^\n]*\n+(.+?)(?=\n##|\Z)", text, re.S)
-    seg = m.group(1) if m else text
-    pos, neg, neu = ("긍정" in seg), ("부정" in seg), ("중립" in seg)
-    if not (pos or neg or neu):
-        return None
-    score = (1 if pos else 0) - (1 if neg else 0)
-    if neu and score != 0:
-        score *= 0.5
-    return float(score)
+def _sentiment_score(data: dict):
+    """보고서 dict의 mood → 점수. 인식할 수 없으면 None."""
+    if isinstance(data, dict) and data.get("mood") in _MOOD_SCORE:
+        return _MOOD_SCORE[data["mood"]]
+    return None
 
 
 def _sentiment_series():
     rows = []
     for f in list_reports():
-        s = _sentiment_score(f.read_text(encoding="utf-8"))
+        try:
+            data = _load(f)            # 파일이 아니라 DB에서 보고서 dict 로드
+        except Exception:
+            continue
+        s = _sentiment_score(data)
         if s is not None:
             rows.append((_report_date(f), s))
     rows.sort()
