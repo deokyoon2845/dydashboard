@@ -12,7 +12,8 @@ from dotenv import load_dotenv
 
 from modules.indices import (
     INDEX_GROUPS, fetch_index, sparkline_points,
-    fetch_supply_demand_summary, fetch_history,
+    fetch_supply_demand_summary, fetch_history, fetch_intraday,
+    is_kr_market_open,
 )
 from modules.calendar_view import render_calendar
 from modules.timeline_view import render_timeline
@@ -161,6 +162,40 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 .rpt-sources { margin-top:22px; padding-top:12px; border-top:1px solid var(--line); font-size:12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
 .src-pill { background:var(--pill-bg); color:var(--pill-ink); border:1px solid var(--line); font-size:11.5px; font-weight:600; padding:3px 9px; border-radius:7px; }
 [data-testid="stMarkdownContainer"] ul li::marker { color:var(--sage); }
+
+/* 업종 등락률 바 (신규) */
+.sect-wrap { display:flex; flex-direction:column; gap:6px; }
+.sect-row { display:grid; grid-template-columns:120px 1fr 64px; align-items:center; gap:10px; }
+.sect-name { font-size:12.5px; font-weight:600; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sect-track { position:relative; height:18px; background:var(--summary-bg); border-radius:5px; overflow:hidden; }
+.sect-fill { position:absolute; top:0; bottom:0; border-radius:5px; }
+.sect-fill.up { right:50%; background:var(--up); }
+.sect-fill.down { left:50%; background:var(--down); }
+.sect-mid { position:absolute; left:50%; top:0; bottom:0; width:1px; background:var(--line); }
+.sect-pct { font-size:12px; font-weight:700; text-align:right; }
+.sect-pct.up { color:var(--up); } .sect-pct.down { color:var(--down); }
+
+/* 시장 폭 (등락 종목 수 / 거래대금) */
+.breadth-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:12px; }
+@media (max-width:640px){ .breadth-grid{ grid-template-columns:1fr; } }
+.breadth-card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; }
+.breadth-mkt { font-size:12px; font-weight:700; letter-spacing:.04em; color:var(--muted); margin-bottom:9px; }
+.breadth-bar { display:flex; height:22px; border-radius:6px; overflow:hidden; font-size:11px; font-weight:700; color:#fff; }
+.breadth-seg-up { background:var(--up); display:flex; align-items:center; justify-content:center; }
+.breadth-seg-flat { background:var(--muted); display:flex; align-items:center; justify-content:center; }
+.breadth-seg-down { background:var(--down); display:flex; align-items:center; justify-content:center; }
+.breadth-legend { font-size:11px; color:var(--muted); margin-top:7px; display:flex; gap:12px; flex-wrap:wrap; }
+.breadth-legend b.up { color:var(--up); } .breadth-legend b.down { color:var(--down); }
+.breadth-val { font-size:19px; font-weight:700; color:var(--ink); letter-spacing:-.02em; }
+.breadth-sub { font-size:11.5px; color:var(--muted); margin-top:2px; }
+
+/* 밸류에이션·신용 미니 카드 */
+.valu-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+@media (max-width:760px){ .valu-grid{ grid-template-columns:repeat(2,1fr);} }
+.valu-card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:13px 15px; }
+.valu-lab { font-size:11.5px; font-weight:600; color:var(--muted); }
+.valu-val { font-size:20px; font-weight:700; color:var(--ink); margin-top:3px; letter-spacing:-.02em; }
+.valu-sub { font-size:11px; color:var(--muted); margin-top:2px; }
 
 /* pill */
 .pill { display:inline-block; font-size:11.5px; font-weight:600; background:var(--pill-bg); color:var(--pill-ink); border:1px solid var(--line); padding:3px 9px; border-radius:7px; margin:0 5px 5px 0; }
@@ -400,7 +435,78 @@ def _supply_html(supply_data: dict) -> str:
 
 
 # ── 국내 지수 대형 차트 (코스피·코스닥, 기간 선택) ──
-_KRX_PERIODS = {"1개월": 31, "3개월": 92, "6개월": 183, "1년": 366}
+# "1일"은 분봉(intraday), 나머지는 일봉. 값은 일봉 조회 시 cutoff에 쓸 일수.
+_KRX_PERIODS = {"1일": 1, "1개월": 31, "3개월": 92, "6개월": 183, "1년": 366}
+
+
+def _big_index_chart_intraday(name: str, ticker: str):
+    """1일(당일·휴장 시 직전 거래일) 분봉 차트 + 시가 대비 헤더."""
+    d = fetch_intraday(ticker, "5m")
+    if not d or d.get("series") is None or len(d["series"]) < 2:
+        st.caption(f"{name} 분봉 데이터를 불러오지 못했어요. "
+                   f"(한국 지수 분봉은 지연·누락될 수 있어요. 다른 기간을 선택해 보세요.)")
+        return
+
+    s = d["series"]
+    df = pd.DataFrame({"시각": pd.to_datetime(s.index),
+                       "종가": pd.to_numeric(s.values, errors="coerce")}).dropna()
+    if len(df) < 2:
+        st.caption(f"{name} 분봉 데이터가 부족해요.")
+        return
+
+    cur = d["current"]
+    change = d["change"]
+    pct = d["pct"]
+    day_up = change >= 0
+
+    up_c, down_c = "#B65F5A", "#5A7CA0"
+    line_c = up_c if day_up else down_c
+    axis_c, grid_c = "#9a9b92", "#ECEDE7"
+
+    arrow = "▲" if change > 0 else ("▼" if change < 0 else "▬")
+    chg_cls = "up" if day_up else "down"
+    st.markdown(
+        f'<div style="margin-bottom:2px;">'
+        f'<span class="mkt-name">{name} · {d.get("asof","")} (시가 대비)</span><br>'
+        f'<span class="mkt-val" style="font-size:24px;">{cur:,.2f}</span> '
+        f'<span class="mkt-chg {chg_cls}">{arrow} {change:+,.2f} ({pct:+.2f}%)</span>'
+        f'</div>', unsafe_allow_html=True)
+
+    lo_v, hi_v = float(df["종가"].min()), float(df["종가"].max())
+    pad_v = (hi_v - lo_v) * 0.08 or 1.0
+    y_dom = [lo_v - pad_v, hi_v + pad_v]
+
+    x_enc = alt.X("시각:T", axis=alt.Axis(title=None, format="%H:%M",
+                                          labelColor=axis_c, grid=False))
+    y_enc = alt.Y("종가:Q", scale=alt.Scale(domain=y_dom, nice=False, clamp=True),
+                  axis=alt.Axis(title=None, labelColor=axis_c, gridColor=grid_c,
+                                format=",.0f"))
+    tip = [alt.Tooltip("시각:T", format="%H:%M"),
+           alt.Tooltip("종가:Q", format=",.2f")]
+
+    area = alt.Chart(df).mark_area(
+        color=line_c, opacity=0.13,
+        line={"color": line_c, "strokeWidth": 2},
+    ).encode(x=x_enc, y=y_enc, tooltip=tip)
+
+    try:
+        hover = alt.selection_point(fields=["시각"], nearest=True,
+                                    on="mouseover", empty=False)
+        selectors = alt.Chart(df).mark_point().encode(
+            x=x_enc, opacity=alt.value(0)).add_params(hover)
+        rule = alt.Chart(df).mark_rule(color=axis_c, strokeDash=[3, 3]).encode(
+            x=x_enc).transform_filter(hover)
+        hpoints = alt.Chart(df).mark_point(size=60, color=line_c, filled=True).encode(
+            x=x_enc, y=y_enc,
+            opacity=alt.condition(hover, alt.value(1), alt.value(0)))
+        chart = (alt.layer(area, selectors, rule, hpoints)
+                 .properties(height=260, background="transparent")
+                 .configure_view(strokeWidth=0))
+    except Exception:
+        chart = (area.properties(height=260, background="transparent")
+                 .configure_view(strokeWidth=0))
+
+    st.altair_chart(chart, use_container_width=True)
 
 
 def _big_index_chart(name: str, ticker: str, days: int):
@@ -497,26 +603,30 @@ def _big_index_chart(name: str, ticker: str, days: int):
 def _render_domestic_charts():
     """코스피·코스닥 대형 차트 (좌우 반반, 전체 폭). 기간 선택 공유."""
     period_label = st.radio(
-        "조회 기간", list(_KRX_PERIODS.keys()), index=2, horizontal=True,
+        "조회 기간", list(_KRX_PERIODS.keys()), index=3, horizontal=True,
         key="krx_chart_period", label_visibility="collapsed")
+
+    is_intraday = (period_label == "1일")
     days = _KRX_PERIODS[period_label]
 
     c1, c2 = st.columns(2, gap="medium")
     with c1:
-        _big_index_chart("코스피", "^KS11", days)
+        if is_intraday:
+            _big_index_chart_intraday("코스피", "^KS11")
+        else:
+            _big_index_chart("코스피", "^KS11", days)
     with c2:
-        _big_index_chart("코스닥", "^KQ11", days)
-    st.caption("차트 위에서 마우스를 올리면 해당일 값이 표시되고, "
-               "가로 스크롤·드래그로 기간을 확대할 수 있어요.")
+        if is_intraday:
+            _big_index_chart_intraday("코스닥", "^KQ11")
+        else:
+            _big_index_chart("코스닥", "^KQ11", days)
 
-
-def _kr_market_open():
-    """한국 증시 장중(평일 09:00~15:40 KST) 여부. 자동 새로고침 게이트용."""
-    n = datetime.now(ZoneInfo("Asia/Seoul"))
-    if n.weekday() >= 5:        # 토(5)·일(6)
-        return False
-    t = n.hour * 60 + n.minute
-    return 9 * 60 <= t <= 15 * 60 + 40
+    if is_intraday:
+        st.caption("당일(휴장 시 직전 거래일) 5분봉 · 시가 대비 등락 · "
+                   "yfinance 기준 약 15분 지연이며 한국 지수 분봉은 일부 누락될 수 있어요.")
+    else:
+        st.caption("차트 위에서 마우스를 올리면 해당일 값이 표시되고, "
+                   "가로 스크롤·드래그로 기간을 확대할 수 있어요.")
 
 
 # ── 지수 현황 본문 (자동 새로고침 fragment가 이 함수를 주기 실행) ──
@@ -589,33 +699,23 @@ def render_indices():
     st.title("주요 지수 현황")
     st.caption("데이터: Yahoo Finance · 일별 종가 기준 · 약 15분 지연")
 
-    has_frag = hasattr(st, "fragment")   # 구버전 Streamlit이면 자동 새로고침 미노출
-    auto = False
-    if has_frag:
-        ctrl1, ctrl2 = st.columns([1, 1.8])
-        with ctrl1:
-            if st.button("🔄 새로고침"):
-                st.cache_data.clear()
-                st.rerun()
-        with ctrl2:
-            auto = st.toggle(
-                "⏱ 장중 자동 새로고침", value=False, key="idx_auto",
-                help="장중(평일 09:00~15:40)에 약 10분마다 지수·수급을 자동 갱신해요. "
-                     "데이터는 yfinance 기준 약 15분 지연입니다.")
+    # 수동 새로고침 버튼만 노출 (자동 새로고침은 장중 기본 동작)
+    if st.button("🔄 새로고침"):
+        st.cache_data.clear()
+        st.rerun()
+
+    # 장중(평일 09:00~15:30 KST)에는 자동 새로고침을 기본으로 켠다.
+    # 토글 없이 장중이면 항상 작동, 장외에는 정적.
+    has_frag = hasattr(st, "fragment")
+    market_open = is_kr_market_open()
+    every = 600 if (has_frag and market_open) else None  # fetch_index 캐시(10분)에 맞춤
+
+    if market_open:
+        st.caption("🟢 장중 자동 새로고침 켜짐 · 약 10분 주기 (데이터는 약 15분 지연)")
     else:
-        if st.button("🔄 새로고침"):
-            st.cache_data.clear()
-            st.rerun()
+        st.caption("⏸ 장외 시간 · 다음 개장(평일 09:00 KST)부터 자동 새로고침이 작동해요.")
 
-    market_open = _kr_market_open()
-    every = 600 if (auto and market_open) else None   # fetch_index 캐시(10분)에 맞춤
-    if auto and not market_open:
-        st.caption("⏸ 지금은 장 시간이 아니라 자동 새로고침은 다음 개장(평일 09:00) 때부터 작동해요.")
-    elif every:
-        st.caption("🟢 자동 새로고침 켜짐 · 약 10분 주기 (데이터는 약 15분 지연)")
-
-    # 자동 새로고침 ON + 장중일 때만 fragment로 감싸 주기 실행.
-    # OFF(기본)면 직접 호출 → 기존 동작과 100% 동일.
+    # 장중 + fragment 지원 시에만 주기 실행, 그 외에는 1회 정적 렌더.
     if every:
         st.fragment(_render_indices_body, run_every=every)()
     else:
