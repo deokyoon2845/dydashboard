@@ -1,4 +1,9 @@
-"""시장 지표(체온계): 공포·탐욕 지수 + VIX 차트 · RSI."""
+"""시장 지표(체온계): 공포·탐욕 지수 + VIX 차트 · RSI.
+
+2026-06 추가:
+- 지표 설명 팝오버(st.popover): 공포·탐욕 / VIX / RSI 해석 가이드. 구버전이면 캡션 폴백.
+- VIX 차트 인터랙티브: hover 크로스헤어 + 가로 스크롤·드래그 x줌 (실패 시 정적 폴백).
+"""
 
 import altair as alt
 import pandas as pd
@@ -88,6 +93,26 @@ def _rsi_asof():
     return max(dates) if dates else "—"
 
 
+def _metric_help():
+    """체온계 지표 해석 팝오버. st.popover 미지원(구버전)이면 조용히 생략."""
+    if not hasattr(st, "popover"):
+        return
+    with st.popover("ⓘ 지표 보는 법"):
+        st.markdown(
+            "**공포·탐욕 지수 (CNN · 0~100)**  \n"
+            "낮을수록 공포(투자자 위축), 높을수록 탐욕(과열). "
+            "0~24 극단적 공포 · 25~44 공포 · 45~55 중립 · 56~75 탐욕 · 76~100 극단적 탐욕. "
+            "지나친 공포는 저점, 지나친 탐욕은 고점 신호로 보는 역발상 지표로도 쓰여요.\n\n"
+            "**VIX · 변동성 지수**  \n"
+            "S&P500 옵션이 가리키는 향후 30일 기대 변동성. "
+            "대략 20 이하면 안정, 30 이상이면 불안 구간. VIX↑=공포 확대 / VIX↓=시장 안정.\n\n"
+            "**RSI(14)**  \n"
+            "최근 14일 상승·하락 강도로 만든 0~100 모멘텀 지표. "
+            "70 이상 과매수(단기 과열), 30 이하 과매도(단기 침체). "
+            "강한 추세장에선 한쪽에 오래 머물 수 있어 단독보다 보조지표로 보세요."
+        )
+
+
 # ── VIX 6개월 차트 (우측) ────────────────────────────────────
 
 _VIX_CSS = """
@@ -143,6 +168,38 @@ _RSI_CSS = """
 """
 
 
+def _vix_chart(df, line_c, y_dom):
+    """VIX 라인(영역) 차트. 인터랙티브(hover 크로스헤어·x줌), 실패 시 정적 폴백."""
+    x_enc = alt.X("날짜:T", axis=alt.Axis(title=None, format="%m/%d",
+                                          labelColor="#9a9b92", grid=False))
+    y_enc = alt.Y("VIX:Q", scale=alt.Scale(domain=y_dom, nice=False, clamp=True),
+                  axis=alt.Axis(title=None, labelColor="#9a9b92", gridColor="#ECEDE7",
+                                format=",.0f"))
+    tip = [alt.Tooltip("날짜:T", format="%Y-%m-%d"), alt.Tooltip("VIX:Q", format=",.2f")]
+    area = alt.Chart(df).mark_area(
+        color=line_c, opacity=0.13,
+        line={"color": line_c, "strokeWidth": 2},
+    ).encode(x=x_enc, y=y_enc, tooltip=tip)
+    try:
+        hover = alt.selection_point(fields=["날짜"], nearest=True,
+                                    on="mouseover", empty=False)
+        zoom = alt.selection_interval(bind="scales", encodings=["x"])
+        selectors = alt.Chart(df).mark_point().encode(
+            x=x_enc, opacity=alt.value(0)).add_params(hover)
+        rule = alt.Chart(df).mark_rule(color="#9a9b92", strokeDash=[3, 3]).encode(
+            x=x_enc).transform_filter(hover)
+        hpoints = alt.Chart(df).mark_point(size=55, color=line_c, filled=True).encode(
+            x=x_enc, y=y_enc,
+            opacity=alt.condition(hover, alt.value(1), alt.value(0)))
+        return (alt.layer(area, selectors, rule, hpoints)
+                .add_params(zoom)
+                .properties(height=150, background="transparent")
+                .configure_view(strokeWidth=0))
+    except Exception:
+        return (area.properties(height=150, background="transparent")
+                .configure_view(strokeWidth=0))
+
+
 def _vix_chart_card():
     """우측: VIX 6개월 라인 차트 (코스피 대형 차트와 동일한 룩, y축 min~max)."""
     close = fetch_history("^VIX", "6mo")
@@ -181,21 +238,10 @@ def _vix_chart_card():
         f'<span class="vix-chg {chg_cls}">{arrow} {change:+,.2f} ({pct:+.2f}%)</span></div>',
         unsafe_allow_html=True)
 
-    chart = alt.Chart(df).mark_area(
-        color=line_c, opacity=0.13,
-        line={"color": line_c, "strokeWidth": 2},
-    ).encode(
-        x=alt.X("날짜:T", axis=alt.Axis(title=None, format="%m/%d",
-                                       labelColor="#9a9b92", grid=False)),
-        y=alt.Y("VIX:Q", scale=alt.Scale(domain=y_dom, nice=False, clamp=True),
-                axis=alt.Axis(title=None, labelColor="#9a9b92", gridColor="#ECEDE7",
-                              format=",.0f")),
-        tooltip=[alt.Tooltip("날짜:T", format="%Y-%m-%d"),
-                 alt.Tooltip("VIX:Q", format=",.2f")],
-    ).properties(height=150, background="transparent").configure_view(strokeWidth=0)
-    st.altair_chart(chart, use_container_width=True)
+    st.altair_chart(_vix_chart(df, line_c, y_dom), use_container_width=True)
     st.markdown('<div class="vix-note">VIX↑ = 변동성·공포 확대 · VIX↓ = 시장 안정 · '
-                'y축은 표시 구간 최소~최대</div></div>', unsafe_allow_html=True)
+                'y축은 표시 구간 최소~최대 · 차트 위 hover/스크롤로 값·확대</div></div>',
+                unsafe_allow_html=True)
 
 
 def _fng_card(fng):
@@ -224,7 +270,13 @@ def _fng_card(fng):
 def render_indicators():
     st.markdown(_VIX_CSS, unsafe_allow_html=True)
     st.markdown(_RSI_CSS, unsafe_allow_html=True)
-    st.markdown('<div class="mkt-group">시장 지표 (체온계)</div>', unsafe_allow_html=True)
+
+    # 헤더 + 지표 설명 팝오버 (오른쪽 작은 버튼)
+    hc1, hc2 = st.columns([4, 1])
+    with hc1:
+        st.markdown('<div class="mkt-group">시장 지표 (체온계)</div>', unsafe_allow_html=True)
+    with hc2:
+        _metric_help()
 
     # 공포·탐욕(좌) + VIX 6개월 차트(우) — 2단
     fng = fetch_cnn_fng()
