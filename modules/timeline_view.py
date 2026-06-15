@@ -8,6 +8,10 @@
 - 리포트 파일이 추가/삭제되면 캐시가 자동 무효화됨 (폴더 시그니처 기반)
 - 데스크톱: 가로 화살표 타임라인(지그재그 카드) / 모바일: 세로 타임라인
 - 제목은 전략·시황 탭과 동일한 큰 글자 볼드(.rpt2-title) + 표시 중 기준일자 병기.
+
+2026-06 보강: 카드 지수 줄(코스피·코스닥)이 외부 데이터(yfinance/pykrx) 공백으로
+  비는 문제를 막기 위해, 그날 보고서가 들고 있는 종가(snapshot_line)를 폴백으로 쓴다.
+  → _index_daily_map()에 그 날짜가 없으면 보고서 숫자(idx_self)로 채운다.
 """
 
 import glob
@@ -177,6 +181,32 @@ def _section_titles(report: dict) -> list:
     return out
 
 
+# ── 보고서 자체에서 코스피·코스닥 종가 추출 (외부 데이터 공백 폴백) ──
+# 보고서의 snapshot_line 예: "코스피 8,545.98(+5.20%) · 코스닥 1,034.03(+0.48%) · ..."
+# yfinance/pykrx가 그 날짜를 못 줄 때, 그날 보고서가 들고 있는 숫자를 카드에 쓴다.
+_IDX_RE = {
+    "ks": re.compile(r"코스피\s*([\d,]+\.?\d*)\s*\(\s*([+-]?\d+\.?\d*)\s*%\)"),
+    "kq": re.compile(r"코스닥\s*([\d,]+\.?\d*)\s*\(\s*([+-]?\d+\.?\d*)\s*%\)"),
+}
+
+
+def _index_from_report(rep: dict) -> dict:
+    """보고서 snapshot_line에서 코스피·코스닥 종가·등락률을 추출.
+    반환: {'ks_close','ks_pct','kq_close','kq_pct'} 중 찾은 것만 · 없으면 {}."""
+    text = str(rep.get("snapshot_line", "") or "")
+    rec = {}
+    for prefix, pat in _IDX_RE.items():
+        m = pat.search(text)
+        if not m:
+            continue
+        try:
+            rec[f"{prefix}_close"] = float(m.group(1).replace(",", ""))
+            rec[f"{prefix}_pct"] = float(m.group(2))
+        except (ValueError, TypeError):
+            continue
+    return rec
+
+
 @st.cache_data(ttl=600)
 def load_timeline_entries(limit: int, sig: str) -> list:
     """reports/*.json에서 타임라인 항목 로드. 같은 날짜는 장마감 후(post) 우선, 날짜 오름차순.
@@ -215,6 +245,8 @@ def load_timeline_entries(limit: int, sig: str) -> list:
             "headline": str(rep.get("headline", "")).strip() or "(헤드라인 없음)",
             "sections": _section_titles(rep),
             "mood_label": label, "mood_cls": cls, "mood_color": color,
+            # 외부 데이터가 그 날짜를 못 줄 때 쓸 폴백(보고서 자체 종가)
+            "idx_self": _index_from_report(rep),
         })
     return entries
 
@@ -222,7 +254,8 @@ def load_timeline_entries(limit: int, sig: str) -> list:
 @st.cache_data(ttl=1800)
 def _index_daily_map() -> dict:
     """날짜(YYYY-MM-DD) → {'ks_close','ks_pct','kq_close','kq_pct'}.
-    코스피·코스닥 일별 종가와 등락률. 1차 yfinance, 빠진 날짜는 pykrx로 보충."""
+    코스피·코스닥 일별 종가와 등락률. 1차 yfinance, 빠진 날짜는 pykrx로 보충.
+    (indices.fetch_history가 한국 지수는 네이버로 최근일을 보강하므로 여기서도 최신이 들어옴)"""
     out = {}
     for prefix, ticker in (("ks", "^KS11"), ("kq", "^KQ11")):
         try:
@@ -380,7 +413,9 @@ def render_timeline():
 
     top_cells, bottom_cells = [], []
     for i, e in enumerate(entries):
-        card = _card_html(e, idx_map.get(e["date"]), i == last_i, order=i)
+        # 외부 지수 데이터(map)가 그 날짜를 못 주면 보고서 자체 종가(idx_self)로 폴백
+        idx_rec = idx_map.get(e["date"]) or e.get("idx_self")
+        card = _card_html(e, idx_rec, i == last_i, order=i)
         if i % 2 == 1:
             top_cells.append(card)
             bottom_cells.append("<div></div>")
@@ -392,8 +427,9 @@ def render_timeline():
                f'{_svg_html(entries)}'
                f'<div class="tl-row tl-bottom" style="{grid}">{"".join(bottom_cells)}</div>')
 
-    mobile_cards = "".join(_card_html(e, idx_map.get(e["date"]), i == last_i, mobile=True, order=i)
-                           for i, e in enumerate(entries))
+    mobile_cards = "".join(
+        _card_html(e, idx_map.get(e["date"]) or e.get("idx_self"), i == last_i, mobile=True, order=i)
+        for i, e in enumerate(entries))
     mobile = f'<div class="tl-mobile">{mobile_cards}</div>'
 
     st.markdown(desktop + mobile, unsafe_allow_html=True)
