@@ -7,6 +7,10 @@
 2026-06 저장소 이전: 보고서를 reports/ 폴더 대신 Supabase DB에서 읽고/쓴다.
   list_reports()는 DB의 보고서를 '가상 경로(Path)'로 반환해, 기존 path 기반 로직을
   그대로 재사용한다. (slug = 파일명 stem = "2026-06-14_0430")
+
+2026-06 레이아웃 개선(⑥⑧): 생성 로직 무변경, 뷰어 순서/위치만 조정.
+  - ⑧ 주목 테마를 장전·장후 카드 '위'로 이동 (TL;DR → 테마 → 좌우 카드).
+  - ⑥ 취합된 텔레그램 원문을 카드 밖 '맨 아래'로 강등(검증용 메타).
 """
 
 import html
@@ -199,7 +203,7 @@ __MOOD_BADGE_CSS__
 .srcmsg-dt{font-size:10.5px;color:var(--muted,#9a9b92);white-space:nowrap;flex:none;}
 .srcmsg-tx{font-size:12.5px;line-height:1.62;color:var(--ink,#34352f);white-space:pre-wrap;}
 
-/* 주목 테마 (하단 전체 폭) */
+/* 주목 테마 (전체 폭) */
 .rpt-theme-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
 @media(max-width:900px){.rpt-theme-grid{grid-template-columns:repeat(2,1fr);}}
 @media(max-width:560px){.rpt-theme-grid{grid-template-columns:1fr;}}
@@ -339,11 +343,11 @@ def _extract_stocks(text: str) -> list:
             if p.strip() and len(p.strip()) <= 20 and not p.strip().startswith("#")]
 
 
-# ── ★추가: 보고서 보는 법 팝오버 ─────────────────────────────
+# ── ★수정: 보고서 보는 법 팝오버 (⑥⑧ 새 순서 반영) ─────────
 
 def _render_report_help_popover():
     """제목 옆 ⓘ 보고서 보는 법 팝오버 — 체온계·금리차 팝오버와 동일한 방식.
-    내용: (1) 생성 시점, (2) 독자 활용법."""
+    내용: (1) 생성 시점, (2) 독자 활용법 — 화면 순서(테마 위, 원문 맨 아래)에 맞춤."""
     with st.popover("ⓘ 보고서 보는 법", use_container_width=True):
         st.markdown(
             '<div class="rpt-help-h">🕒 생성 시점</div>'
@@ -353,13 +357,17 @@ def _render_report_help_popover():
             '당일 실제 흐름을 반영해 장전 시나리오가 맞았는지 점검하고 다음날 관전 포인트를 정리합니다.</div>'
             '<div class="rpt-help-li">카드의 <b>분석</b> 시각은 데이터를 취합한 구간, '
             '<b>생성</b> 시각은 보고서가 실제로 만들어진 시점이에요.</div>'
-            '<div class="rpt-help-h second">📖 독자 활용법</div>'
-            '<div class="rpt-help-li"><b>헤드라인 → 한 줄 요약 → 주제 카드</b> 순으로 읽으면 '
-            '큰 그림부터 디테일까지 자연스럽게 좁혀집니다.</div>'
-            '<div class="rpt-help-li">각 주제의 <b>합의 / 이견</b> 박스는 시장의 컨센서스와 '
-            '반대 시각을 함께 보여줘요. 한쪽만 믿지 말고 양쪽을 견주는 용도로 보세요.</div>'
-            '<div class="rpt-help-li"><b>중요도</b> 숫자가 높은 주제부터 보면 시간이 부족할 때 효율적이에요.</div>'
-            '<div class="rpt-help-li">하단 <b>주목 테마</b>로 그날 자금이 쏠린 섹터를 한눈에 확인할 수 있어요.</div>'
+            '<div class="rpt-help-h second">📖 읽는 순서</div>'
+            '<div class="rpt-help-li">맨 위 <b>오늘의 한 줄</b>로 그날 시장을 한 문장으로 파악하세요. '
+            '장전·장후 분위기 뱃지와 핵심 수치가 함께 붙어 있어요.</div>'
+            '<div class="rpt-help-li">바로 아래 <b>주목 테마</b>에서 그날 자금이 쏠린 섹터를 먼저 훑으면 '
+            '큰 그림이 잡혀요. 세부 근거는 그 아래 카드에서 확인합니다.</div>'
+            '<div class="rpt-help-li"><b>장전 / 장마감 후 카드</b>는 주제별로 나뉘어요. '
+            '각 주제의 <b>합의 / 이견</b> 박스는 시장 컨센서스와 반대 시각을 함께 보여주니 '
+            '한쪽만 믿지 말고 양쪽을 견주는 용도로 보세요. <b>중요도</b>가 높은 주제부터 보면 '
+            '시간이 부족할 때 효율적이에요.</div>'
+            '<div class="rpt-help-li">맨 아래 <b>취합된 텔레그램 원문</b>은 보고서 생성에 실제로 '
+            '쓰인 메시지 전문이에요. 분석 내용을 원문과 직접 대조해 검증하고 싶을 때 펼쳐 보세요.</div>'
             '<div class="rpt-help-note">⚠️ 본 보고서는 AI가 생성한 분석이며 투자 권유가 아닙니다. '
             '최종 판단과 책임은 투자자 본인에게 있어요.</div>',
             unsafe_allow_html=True)
@@ -593,6 +601,8 @@ def _change_html(data: dict) -> str:
 
 
 # ── 렌더링: 취합된 텔레그램 원문 (검증용) ────────────────────
+# ⑥ 변경: _render_report_card 안에서 호출하지 않고, render_reports 맨 아래에서
+#         pre/post를 한데 모아 호출한다. (검증용 메타로 강등)
 
 def _render_source_messages(data: dict, kind: str, path: Path):
     msgs = data.get("source_messages") or []
@@ -601,7 +611,8 @@ def _render_source_messages(data: dict, kind: str, path: Path):
     from collections import Counter
     chan_counts = Counter(str(m.get("channel", "")).strip() or "(미상)" for m in msgs)
     n_chan = len(chan_counts)
-    with st.expander(f"📨 취합된 텔레그램 원문 {len(msgs)}건 · 채널 {n_chan}곳 — 검증용"):
+    kind_ko = "장전" if kind == "pre" else "장마감 후"
+    with st.expander(f"📨 [{kind_ko}] 취합된 텔레그램 원문 {len(msgs)}건 · 채널 {n_chan}곳 — 검증용"):
         st.markdown(
             '<div class="srcmsg-cap">이 보고서 생성에 실제로 들어간 메시지 전문입니다. '
             '원문과 직접 대조해 검증하세요. (작성시각 오름차순)</div>', unsafe_allow_html=True)
@@ -619,7 +630,25 @@ def _render_source_messages(data: dict, kind: str, path: Path):
         st.markdown(f'<div class="srcmsg-wrap">{rows}</div>', unsafe_allow_html=True)
 
 
+def _render_source_section(pre, post):
+    """⑥ 하단 검증용 원문 섹션 — pre/post 둘 다 있으면 각각 expander로."""
+    (pre_path, pre_data) = pre
+    (post_path, post_data) = post
+    has_pre = bool(pre_data and (pre_data.get("source_messages")))
+    has_post = bool(post_data and (post_data.get("source_messages")))
+    if not (has_pre or has_post):
+        return
+    st.markdown('<div class="rpt2-grp">🔎 검증용 원문</div>', unsafe_allow_html=True)
+    # 최신(장후)을 먼저, 장전을 뒤에.
+    if has_post:
+        _render_source_messages(post_data, "post", post_path)
+    if has_pre:
+        _render_source_messages(pre_data, "pre", pre_path)
+
+
 # ── 렌더링: 장전/장후 카드 ───────────────────────────────────
+# ⑥ 변경: 이 함수 안에서 _render_source_messages 호출을 제거.
+#         원문은 render_reports 맨 아래 _render_source_section이 담당.
 
 def _render_report_card(data: dict, kind: str, path: Path):
     icon = "🌅" if kind == "pre" else "🌆"
@@ -691,8 +720,8 @@ def _render_report_card(data: dict, kind: str, path: Path):
             f'<div class="rc-src">{src_html}</div>'
             f'</div>', unsafe_allow_html=True)
 
-    # 취합된 텔레그램 원문 (공통)
-    _render_source_messages(data, kind, path)
+    # ⑥ 제거됨: 취합된 텔레그램 원문은 더 이상 카드 안에서 렌더하지 않는다.
+    #           (render_reports 맨 아래 _render_source_section이 담당)
 
     # PDF · JSON 다운로드
     b1, b2 = st.columns(2)
@@ -725,7 +754,7 @@ def _render_placeholder(kind: str):
         f'<div class="eta">{eta}</div></div>', unsafe_allow_html=True)
 
 
-# ── 렌더링: 주목 테마 (하단 전체 폭) ─────────────────────────
+# ── 렌더링: 주목 테마 (전체 폭) ──────────────────────────────
 
 def _render_themes(data: dict):
     themes = data.get("themes", []) if data else []
@@ -813,6 +842,9 @@ def render_reports():
     if latest and not (latest.get("topics")):
         _render_matrix(latest, latest_kind)
 
+    # ⑧ 주목 테마 (전체 폭) — 좌우 카드 '위'로 이동
+    _render_themes(latest)
+
     # ② 좌 장전 / 우 장마감 후
     st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
     left, right = st.columns(2, gap="large")
@@ -827,8 +859,8 @@ def render_reports():
         else:
             _render_placeholder("post")
 
-    # ③ 주목 테마 (전체 폭)
-    _render_themes(latest)
+    # ⑥ 취합된 텔레그램 원문 — 맨 아래 검증용 메타로 강등
+    _render_source_section((pre_path, pre_data), (post_path, post_data))
 
 
 # ── 메인: 리포트 관리 (탭 하단) ──────────────────────────────
