@@ -9,9 +9,9 @@ finance.naver.com/sise/investorDealTrendDay.naver 한 페이지에 최근 ~20거
 ※ read_html 사용을 위해 requirements.txt에 lxml 이 필요하다.
 
 2026-06 레이아웃: 좌 코스피 / 우 코스닥 2단 구성 (st.columns).
-2026-06 인터랙티브: 범례 클릭으로 외국인/기관 선 토글, 마우스 hover 크로스헤어,
-  가로 스크롤·드래그로 x축 확대(줌). Altair 셀렉션은 브라우저에서 처리돼 리런이
-  발생하지 않는다. 셀렉션 구성 중 오류가 나면 기존 정적 차트로 안전하게 폴백한다.
+2026-06 인터랙티브: 마우스 hover 크로스헤어, 가로 스크롤·드래그로 x축 확대(줌).
+2026-06 범례: Altair 내장 범례 대신 '차트 위 가운데 정렬' 커스텀 HTML 범례로 교체
+  (카드와 약간의 여백). 커스텀 범례라 클릭 토글 기능은 제외됨.
 """
 
 import re
@@ -26,6 +26,9 @@ import streamlit as st
 
 _DATE_RE = re.compile(r"^\d{2}\.\d{2}\.\d{2}$")
 _HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+
+_C_FRG = "#B65F5A"   # 외국인 = up red
+_C_INS = "#5A7CA0"   # 기관 = down blue
 
 
 def _to_num(x):
@@ -98,30 +101,38 @@ def _market_label(name: str) -> str:
             f'{name}</div>')
 
 
+def _legend_html() -> str:
+    """차트 위 '가운데 정렬' 커스텀 범례. 위(카드)와 여백을 둔다(margin-top)."""
+    def chip(color, text):
+        return (f'<span style="display:inline-flex;align-items:center;gap:6px;'
+                f'font-size:12px;font-weight:600;color:var(--pill-ink,#5d6258);">'
+                f'<span style="width:9px;height:9px;border-radius:50%;'
+                f'background:{color};display:inline-block;"></span>{text}</span>')
+    return (f'<div style="display:flex;justify-content:center;gap:20px;'
+            f'flex-wrap:wrap;margin:16px 0 8px;">'
+            f'{chip(_C_FRG, "외국인 누적")}{chip(_C_INS, "기관 누적")}</div>')
+
+
 def _supply_chart(long: pd.DataFrame):
-    """누적 순매수 라인 차트. 인터랙티브(범례 토글·hover 크로스헤어·x줌),
-    셀렉션 구성 실패 시 정적 차트로 폴백."""
+    """누적 순매수 라인 차트. 내장 범례 없음(커스텀 HTML 범례 사용).
+    인터랙티브(hover 크로스헤어·x줌), 셀렉션 구성 실패 시 정적 차트로 폴백."""
     x_enc = alt.X("날짜:T", axis=alt.Axis(title=None, format="%m/%d", labelColor="#9a9b92"))
     y_enc = alt.Y("누적:Q", axis=alt.Axis(title=None, labelColor="#9a9b92", gridColor="#ECEDE7"))
     color_enc = alt.Color("구분:N",
                           scale=alt.Scale(domain=["외국인 누적", "기관 누적"],
-                                          range=["#B65F5A", "#5A7CA0"]),
-                          legend=alt.Legend(title=None, orient="top"))
+                                          range=[_C_FRG, _C_INS]),
+                          legend=None)   # 내장 범례 끔 → 커스텀 HTML 범례로 대체
     tip = [alt.Tooltip("날짜:T", format="%Y-%m-%d"),
            "구분:N", alt.Tooltip("누적:Q", format=",.0f")]
     zero = alt.Chart(pd.DataFrame({"y": [0]})).mark_rule(
         color="#9a9b92", strokeDash=[3, 3]).encode(y="y:Q")
 
     try:
-        legend_sel = alt.selection_point(fields=["구분"], bind="legend")
         hover = alt.selection_point(fields=["날짜"], nearest=True,
                                     on="mouseover", empty=False)
         zoom = alt.selection_interval(bind="scales", encodings=["x"])
         line = alt.Chart(long).mark_line(strokeWidth=2, point=True).encode(
-            x=x_enc, y=y_enc, color=color_enc,
-            opacity=alt.condition(legend_sel, alt.value(1), alt.value(0.12)),
-            tooltip=tip,
-        ).add_params(legend_sel)
+            x=x_enc, y=y_enc, color=color_enc, tooltip=tip)
         selectors = alt.Chart(long).mark_point().encode(
             x=x_enc, opacity=alt.value(0)).add_params(hover)
         rule = alt.Chart(long).mark_rule(color="#9a9b92").encode(
@@ -139,7 +150,7 @@ def _supply_chart(long: pd.DataFrame):
 
 
 def _render_market_block(label: str, sosok: str):
-    """한 시장(코스피 또는 코스닥)의 소제목 + 카드 + 누적 추세 차트를 렌더."""
+    """한 시장(코스피 또는 코스닥)의 소제목 + 카드 + (가운데 범례) + 추세 차트."""
     st.markdown(_market_label(label), unsafe_allow_html=True)
 
     df = _fetch_investor(sosok)
@@ -165,6 +176,8 @@ def _render_market_block(label: str, sosok: str):
     long = df.melt(id_vars="날짜", value_vars=["외국인 누적", "기관 누적"],
                    var_name="구분", value_name="누적")
 
+    # 카드 ↔ 차트 사이: 가운데 정렬 범례 (위 여백 포함)
+    st.markdown(_legend_html(), unsafe_allow_html=True)
     st.altair_chart(_supply_chart(long), use_container_width=True)
 
 
@@ -182,4 +195,4 @@ def render_supply_trend():
     # 양쪽 공통 캡션 (한 번만)
     st.caption("최근 15거래일 외국인·기관 누적 순매수(억원, 우상향=순매수 지속) · "
                "데이터: 네이버 금융 · 단위는 추정치 · "
-               "범례 클릭=선 토글 / 차트 위 스크롤·드래그=가로 확대")
+               "차트 위 마우스 hover=값 표시 / 스크롤·드래그=가로 확대")
