@@ -475,12 +475,22 @@ def _big_index_chart_intraday(name: str, ticker: str):
         f'<span class="mkt-chg {chg_cls}">{arrow} {change:+,.2f} ({pct:+.2f}%)</span>'
         f'</div>', unsafe_allow_html=True)
 
-    # y축 범위: 분봉 최소~최대에 전일 종가까지 포함시켜야 기준선이 잘림 없이 보임
+    # y축 범위: 분봉의 실제 최소~최대를 기준으로 잡아 변동성이 보이게 한다.
+    # (전일 종가는 분봉 범위에서 너무 멀면 y축에 억지로 포함하지 않는다 — 급등락일에
+    #  0 근처까지 축이 늘어나 차트가 평평해지는 문제를 막기 위함.)
     lo_v, hi_v = float(df["종가"].min()), float(df["종가"].max())
-    if base_is_prev and prev_close is not None:
-        lo_v = min(lo_v, prev_close)
-        hi_v = max(hi_v, prev_close)
-    pad_v = (hi_v - lo_v) * 0.08 or 1.0
+    span = (hi_v - lo_v) or (hi_v * 0.01) or 1.0
+
+    show_baseline = False
+    if base_is_prev and prev_close is not None and prev_close > 0:
+        # 전일 종가가 분봉 범위에서 1.5*span 이내로 가까우면 축에 포함 + 점선 표시
+        if (lo_v - 1.5 * span) <= prev_close <= (hi_v + 1.5 * span):
+            lo_v = min(lo_v, prev_close)
+            hi_v = max(hi_v, prev_close)
+            show_baseline = True
+        # 멀면(급등락일) 점선은 생략하고 축은 분봉 범위만 사용
+
+    pad_v = (hi_v - lo_v) * 0.10 or (hi_v * 0.01) or 1.0
     y_dom = [lo_v - pad_v, hi_v + pad_v]
 
     x_enc = alt.X("시각:T", axis=alt.Axis(title=None, format="%H:%M",
@@ -491,14 +501,24 @@ def _big_index_chart_intraday(name: str, ticker: str):
     tip = [alt.Tooltip("시각:T", format="%H:%M"),
            alt.Tooltip("종가:Q", format=",.2f")]
 
+    # 변동성이 작은 분봉은 area 채우기가 평평해 보이므로, 라인 위주로 그리고
+    # 옅은 영역은 보조로만 둔다. (y축이 좁아 채우기 바닥이 도메인 하단이 됨)
     area = alt.Chart(df).mark_area(
-        color=line_c, opacity=0.13,
+        color=line_c, opacity=0.10,
         line={"color": line_c, "strokeWidth": 2},
-    ).encode(x=x_enc, y=y_enc, tooltip=tip)
+    ).encode(x=x_enc,
+             y=alt.Y("종가:Q", scale=alt.Scale(domain=y_dom, nice=False, clamp=True),
+                     axis=alt.Axis(title=None, labelColor=axis_c, gridColor=grid_c,
+                                   format=",.0f")),
+             tooltip=tip)
 
     layers = [area]
-    # 전일 종가 기준선 (회색 점선) — 등락 기준을 한눈에 보여줌
-    if base_is_prev and prev_close is not None:
+    # 변동을 또렷하게: 라인을 별도 레이어로 한 번 더 그린다 (area 위에 강조)
+    line_layer = alt.Chart(df).mark_line(color=line_c, strokeWidth=2).encode(
+        x=x_enc, y=y_enc, tooltip=tip)
+    layers.append(line_layer)
+    # 전일 종가 기준선 (회색 점선) — 범위 안에 들 때만 표시
+    if show_baseline:
         baseline = alt.Chart(pd.DataFrame({"y": [prev_close]})).mark_rule(
             color=axis_c, strokeDash=[4, 4], opacity=0.7).encode(y="y:Q")
         layers.insert(0, baseline)
