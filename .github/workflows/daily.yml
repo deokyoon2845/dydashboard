@@ -2,9 +2,9 @@ name: 전략시황 보고서 자동 생성
 
 on:
   schedule:
-    # UTC 22:50 = KST 익일 07:50 / 일~목(UTC) = 월~금(KST) 아침
-    - cron: "50 22 * * 0-4"
-  workflow_dispatch:        # GitHub에서 수동 실행 버튼도 제공
+    - cron: "50 22 * * 0-4"   # KST 평일 07:50 (장전)
+    - cron: "0 8 * * 1-5"     # KST 평일 17:00 (장마감 후)
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -14,10 +14,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 저장소 체크아웃
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+
+      # 비면 '여기서' 빨간 X로 멈춤 → 조용한 실패 방지
+      - name: 필수 시크릿 점검
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_SESSION: ${{ secrets.TELEGRAM_SESSION }}
+        shell: bash
+        run: |
+          missing=""
+          for v in ANTHROPIC_API_KEY SUPABASE_URL SUPABASE_KEY \
+                   TELEGRAM_API_ID TELEGRAM_API_HASH TELEGRAM_SESSION; do
+            if [ -z "${!v}" ]; then missing="$missing $v"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::필수 시크릿이 비어 있습니다 →$missing"
+            echo "Settings → Secrets and variables → Actions 에서 추가하세요."
+            exit 1
+          fi
+          echo "✅ 필수 시크릿 모두 존재"
 
       - name: 파이썬 설정
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -33,15 +56,18 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          REPORT_MODEL: ${{ secrets.REPORT_MODEL }}
+          REPORT_MODEL: ${{ secrets.REPORT_MODEL || 'claude-opus-4-8' }}
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
         run: python -m engine.run_all
 
-      - name: 결과 커밋 & 푸시
+      - name: 결과 커밋 & 푸시 (백업용 — 보고서는 DB에 저장됨)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add reports/ data/
-          git diff --staged --quiet || git commit -m "자동 생성: $(date -u +%Y-%m-%d)"
+          git add reports/ data/ || true
+          git diff --staged --quiet || git commit -m "자동 생성: $(date -u +%Y-%m-%d) ($(date -u +%H:%MUTC))"
           git push
