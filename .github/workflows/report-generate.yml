@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 저장소 체크아웃
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # ── 필수 시크릿 점검: 비어 있으면 '여기서' 빨간 X로 멈춤 ──
       #    (예전엔 시크릿이 없어도 그냥 돌다가 'DB에 안 들어감 → 뷰어 빈 화면'으로
@@ -46,7 +46,7 @@ jobs:
           echo "✅ 필수 시크릿 모두 존재 — 생성 단계로 진행합니다."
 
       - name: 파이썬 설정
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
