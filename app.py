@@ -673,6 +673,11 @@ def _render_indices_body():
     from modules.supply_trend import render_supply_trend
     render_supply_trend()
 
+    # ── ②-b 거래대금 · 등락 종목 수 (네이버 금융) ──
+    st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
+    from modules.market_breadth import render_market_breadth
+    render_market_breadth()
+
     # ── ③ 시장 지표(체온계) · 다가오는 일정 ──
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     render_indicators()
