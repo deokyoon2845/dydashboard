@@ -2,7 +2,13 @@
 
 import yfinance as yf
 import streamlit as st
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dtime
+
+try:
+    from zoneinfo import ZoneInfo
+    _KST = ZoneInfo("Asia/Seoul")
+except Exception:  # 파이썬<3.9 등 폴백
+    _KST = None
 
 # 카테고리별 지수 정의: 표시이름 -> 야후 티커
 # 항목을 추가/수정하려면 여기만 고치면 됩니다.
@@ -45,6 +51,18 @@ _INVERT_COLOR = {"^VIX"}
 
 # 조회 기간 (기본 1개월, 국내 지수는 6개월 추세를 카드에 표시)
 _PERIOD = {"^KS11": "6mo", "^KQ11": "6mo"}
+
+
+# ── 장 운영시간 헬퍼 (자동 새로고침 기본값 판단용) ──────────────
+
+def is_kr_market_open() -> bool:
+    """한국 정규장(평일 09:00~15:30 KST) 여부.
+    토·일은 휴장으로 처리. (공휴일은 별도 거르지 않음 — 필요 시 pykrx 영업일로 확장)
+    """
+    now = datetime.now(_KST) if _KST else datetime.now()
+    if now.weekday() >= 5:  # 5=토, 6=일
+        return False
+    return dtime(9, 0) <= now.time() <= dtime(15, 30)
 
 
 @st.cache_data(ttl=600)  # 10분 동안 결과 재사용 -> 야후 과다 호출 방지
@@ -169,5 +187,70 @@ def fetch_history(ticker: str, period: str = "3mo"):
             idx = idx.tz_localize(None)
         close.index = idx.normalize()
         return close
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=120)  # 장중 갱신을 위해 2분 캐시 (일봉보다 짧게)
+def fetch_intraday(ticker: str, interval: str = "5m"):
+    """당일(휴장 시 직전 거래일) 분봉 종가 Series.
+
+    1일 차트용. yfinance 분봉을 받아 '가장 최근 거래일 하루치'만 잘라 반환한다.
+    - 당일 데이터가 비어 있으면(개장 전·휴장) 최근 5일에서 마지막 거래일을 사용.
+    - 인덱스는 KST(tz-naive)로 변환해 시:분이 그대로 보이게 한다.
+
+    반환: {"series": pd.Series(시각→종가), "asof": "YYYY-MM-DD",
+           "current": float, "change": float, "pct": float}  실패 시 None.
+    """
+    try:
+        # 최근 5거래일 범위를 받아 안전하게 마지막 거래일만 슬라이스
+        df = yf.Ticker(ticker).history(period="5d", interval=interval)
+        if df.empty:
+            # 분봉이 막힌 티커 폴백: 1분봉 1일 재시도
+            df = yf.Ticker(ticker).history(period="1d", interval="1m")
+        if df.empty:
+            return None
+
+        close = df["Close"].dropna()
+        if close.empty:
+            return None
+
+        # 인덱스를 KST로 변환 (분봉은 보통 tz-aware로 옴)
+        idx = close.index
+        try:
+            if getattr(idx, "tz", None) is not None and _KST is not None:
+                idx = idx.tz_convert(_KST).tz_localize(None)
+            elif getattr(idx, "tz", None) is not None:
+                idx = idx.tz_localize(None)
+        except Exception:
+            pass
+        close.index = idx
+
+        # 표시 배율 적용 (예: 원/100엔)
+        scale = _SCALE.get(ticker, 1.0)
+        if scale != 1.0:
+            close = close * scale
+
+        # 가장 최근 거래일 하루치만 추출
+        last_day = close.index[-1].date()
+        day_series = close[[d.date() == last_day for d in close.index]]
+        if len(day_series) < 2:
+            # 하루치가 너무 적으면 전체 분봉이라도 반환
+            day_series = close
+
+        current = float(day_series.iloc[-1])
+        # 1일 등락 기준 = 당일 시가(첫 분봉) 대비
+        base = float(day_series.iloc[0])
+        change = current - base
+        pct = (change / base) * 100 if base else 0.0
+
+        return {
+            "series": day_series,
+            "asof": last_day.strftime("%Y-%m-%d"),
+            "current": current,
+            "change": change,
+            "pct": pct,
+            "invert_color": ticker in _INVERT_COLOR,
+        }
     except Exception:
         return None
