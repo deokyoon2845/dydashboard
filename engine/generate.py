@@ -5,6 +5,8 @@
 - kind 미지정 시 생성 시각으로 자동 판별(오전=장전, 오후=장후).
 
 2026-06 재설계: 직전 보고서를 읽어 analyze에 넘김(변화 추적). 새 topics 스키마 대응.
+2026-06 안정화: DB 저장이 'SUPABASE 설정돼 있는데도' 실패하면 예외를 터뜨린다
+  → 자동화(Actions)에서 '초록 성공인데 뷰어 빈 화면'(조용한 실패)을 빨간 X로 노출.
 """
 
 import json
@@ -130,7 +132,16 @@ def generate_report(kind: str = None, send_telegram: bool = False) -> dict:
         from modules import db
         db.save_report(report_data)
     except Exception as e:
-        print(f"⚠️ DB 저장 실패(무시): {e}")
+        # SUPABASE가 설정돼 있는데 저장 실패 = '조용한 실패'(초록 성공인데 뷰어 빈 화면)의 주범.
+        # 자동화에서는 일부러 예외를 터뜨려 Actions가 '빨간 X'로 알려주게 한다.
+        if os.environ.get("SUPABASE_URL"):
+            raise RuntimeError(
+                "DB 저장 실패 — 보고서는 생성됐지만 Supabase에 안 들어갔습니다. "
+                "SUPABASE_URL/SUPABASE_KEY 값과 키 권한(service_role)을 확인하세요. "
+                f"(원인: {e})"
+            )
+        # 로컬 등 SUPABASE 미설정 환경에서는 기존처럼 무시(경고만).
+        print(f"⚠️ DB 저장 건너뜀(SUPABASE 미설정): {e}")
 
     append_usage({
         "time": now.isoformat(),
