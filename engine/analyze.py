@@ -15,6 +15,9 @@
 
 과거 호환: 뷰어는 topics가 있으면 새 카드, 없으면 기존 sections로 폴백.
 잘림 방지: Opus 출력이 max_tokens로 끊기면 이어받아(continuation) 완성.
+잘림 안전장치(2026-06): 이어받기 후에도 잘려서 themes(또는 keywords)가 비면, 불완전
+  보고서를 조용히 저장하지 않고 크게 실패시킨다. (themes·keywords는 JSON 끝쪽이라
+  출력이 잘리면 가장 먼저 비는 필드 → '주목 테마 없음'의 근본 원인)
 """
 
 import json
@@ -451,6 +454,21 @@ def analyze_messages(messages, kind: str = "pre", channel_name: str = "",
     result.setdefault("keywords", [])
     result.setdefault("report_kind", kind)
     result["topics"] = _cap_topics(result.get("topics"))
+
+    # ★잘림 안전장치: themes·keywords는 JSON 끝쪽이라 출력이 잘리면 가장 먼저 빈다.
+    #   topics만 통과시키면 '주목 테마 없음' 불완전 보고서가 조용히 DB에 저장된다.
+    #   잘렸는데(이어받기 후에도) themes 또는 keywords가 비면 → 저장하지 말고 크게 실패.
+    #   (정상 종료인데 themes가 빈 경우는 모델이 실제로 안 채운 드문 케이스라 통과시킴)
+    if truncated and (not result.get("themes") or not result.get("keywords")):
+        missing = []
+        if not result.get("themes"):
+            missing.append("주목 테마(themes)")
+        if not result.get("keywords"):
+            missing.append("키워드(keywords)")
+        raise ValueError(
+            "보고서가 출력 한도에서 잘려 " + "·".join(missing) + "가 누락됐습니다. "
+            "불완전 보고서를 저장하지 않으려고 실패 처리합니다. "
+            "다시 생성하거나 REPORT_MAX_TOKENS 를 늘려주세요.")
 
     # 클러스터 메타(언급량 등)를 보고서에 동봉 — 검증·디버깅용
     if clusters:
