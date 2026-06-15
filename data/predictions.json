@@ -1,7 +1,32 @@
 {
-  "updated": "2026-06-14",
-  "total": 0,
-  "hits": 0,
-  "accuracy": null,
-  "records": []
+  "updated": "2026-06-15",
+  "total": 3,
+  "hits": 3,
+  "accuracy": 100.0,
+  "records": [
+    {
+      "report": "2026-06-12_1007.json",
+      "date": "2026-06-12",
+      "mood": "positive",
+      "next_day": "2026-06-15",
+      "next_ret": 5.2,
+      "hit": true
+    },
+    {
+      "report": "2026-06-13_0850.json",
+      "date": "2026-06-13",
+      "mood": "positive",
+      "next_day": "2026-06-15",
+      "next_ret": 5.2,
+      "hit": true
+    },
+    {
+      "report": "2026-06-14_0430.json",
+      "date": "2026-06-14",
+      "mood": "positive",
+      "next_day": "2026-06-15",
+      "next_ret": 5.2,
+      "hit": true
+    }
+  ]
 }
