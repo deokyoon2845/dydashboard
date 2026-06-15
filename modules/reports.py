@@ -40,6 +40,16 @@ __MOOD_BADGE_CSS__
 .tag-pred{background:var(--tint-up,#FBF2F2);color:var(--up,#B65F5A);}
 .tag-upd{background:#e1f5ee;color:#0f6e56;}
 
+/* ★추가: 보고서 보는 법 팝오버 내부 스타일 (체온계·금리차 팝오버 톤에 맞춤) */
+.rpt-help-h{font-family:'Fraunces','Noto Sans KR',serif;font-size:14px;font-weight:600;color:var(--ink,#34352f);margin:2px 0 6px;}
+.rpt-help-h.second{margin-top:14px;padding-top:12px;border-top:1px solid var(--line,#ECEDE7);}
+.rpt-help-p{font-size:12.5px;line-height:1.7;color:var(--ink,#34352f);margin:0 0 7px;}
+.rpt-help-p b{color:var(--sage-deep,#7E9A83);font-weight:700;}
+.rpt-help-li{font-size:12.5px;line-height:1.65;color:var(--ink,#34352f);padding-left:14px;position:relative;margin-bottom:6px;}
+.rpt-help-li::before{content:"·";position:absolute;left:3px;color:var(--sage,#A7BBA9);font-weight:700;}
+.rpt-help-li b{color:var(--sage-deep,#7E9A83);font-weight:700;}
+.rpt-help-note{font-size:11.5px;line-height:1.6;color:var(--muted,#9a9b92);background:var(--summary-bg,#F6F7F2);border-radius:8px;padding:8px 11px;margin-top:10px;}
+
 /* ⓪ 오늘의 한 줄 TL;DR (상단) */
 .rpt-tldr{background:#fff;border:1px solid var(--line,#ECEDE7);border-left:4px solid var(--sage,#A7BBA9);border-radius:0 16px 16px 0;padding:15px 19px;margin:4px 0 6px;}
 .rpt-tldr .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;}
@@ -327,6 +337,32 @@ def _extract_stocks(text: str) -> list:
     return [p.strip().strip("-•*· ").strip()
             for p in parts
             if p.strip() and len(p.strip()) <= 20 and not p.strip().startswith("#")]
+
+
+# ── ★추가: 보고서 보는 법 팝오버 ─────────────────────────────
+
+def _render_report_help_popover():
+    """제목 옆 ⓘ 보고서 보는 법 팝오버 — 체온계·금리차 팝오버와 동일한 방식.
+    내용: (1) 생성 시점, (2) 독자 활용법."""
+    with st.popover("ⓘ 보고서 보는 법", use_container_width=True):
+        st.markdown(
+            '<div class="rpt-help-h">🕒 생성 시점</div>'
+            '<div class="rpt-help-li"><b>장전 보고서</b>는 평일 아침(KST 07:50경) '
+            '자동 생성돼요. 전일 미국장 마감과 밤사이 시장 시각을 종합해 그날의 시나리오를 제시합니다.</div>'
+            '<div class="rpt-help-li"><b>장마감 후 보고서</b>는 한국장 마감 이후 생성돼요. '
+            '당일 실제 흐름을 반영해 장전 시나리오가 맞았는지 점검하고 다음날 관전 포인트를 정리합니다.</div>'
+            '<div class="rpt-help-li">카드의 <b>분석</b> 시각은 데이터를 취합한 구간, '
+            '<b>생성</b> 시각은 보고서가 실제로 만들어진 시점이에요.</div>'
+            '<div class="rpt-help-h second">📖 독자 활용법</div>'
+            '<div class="rpt-help-li"><b>헤드라인 → 한 줄 요약 → 주제 카드</b> 순으로 읽으면 '
+            '큰 그림부터 디테일까지 자연스럽게 좁혀집니다.</div>'
+            '<div class="rpt-help-li">각 주제의 <b>합의 / 이견</b> 박스는 시장의 컨센서스와 '
+            '반대 시각을 함께 보여줘요. 한쪽만 믿지 말고 양쪽을 견주는 용도로 보세요.</div>'
+            '<div class="rpt-help-li"><b>중요도</b> 숫자가 높은 주제부터 보면 시간이 부족할 때 효율적이에요.</div>'
+            '<div class="rpt-help-li">하단 <b>주목 테마</b>로 그날 자금이 쏠린 섹터를 한눈에 확인할 수 있어요.</div>'
+            '<div class="rpt-help-note">⚠️ 본 보고서는 AI가 생성한 분석이며 투자 권유가 아닙니다. '
+            '최종 판단과 책임은 투자자 본인에게 있어요.</div>',
+            unsafe_allow_html=True)
 
 
 # ── 렌더링: 오늘의 한 줄 TL;DR ───────────────────────────────
@@ -748,8 +784,15 @@ def render_reports():
 
     sel_date = _selected_date(files)
     st.markdown('<div class="rpt2-bar"></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="rpt2-date">{_fmt_date_ko(sel_date)}</div>'
-                f'<div class="rpt2-title">전략·시황 보고서</div>', unsafe_allow_html=True)
+
+    # ★변경: 제목 우측에 ⓘ 보고서 보는 법 팝오버 배치
+    title_col, help_col = st.columns([0.82, 0.18])
+    with title_col:
+        st.markdown(f'<div class="rpt2-date">{_fmt_date_ko(sel_date)}</div>'
+                    f'<div class="rpt2-title">전략·시황 보고서</div>',
+                    unsafe_allow_html=True)
+    with help_col:
+        _render_report_help_popover()
 
     if not files:
         st.markdown(
