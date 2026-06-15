@@ -20,6 +20,31 @@ jobs:
       - name: 저장소 체크아웃
         uses: actions/checkout@v4
 
+      # ── 필수 시크릿 점검: 비어 있으면 '여기서' 빨간 X로 멈춤 ──
+      #    (예전엔 시크릿이 없어도 그냥 돌다가 'DB에 안 들어감 → 뷰어 빈 화면'으로
+      #     조용히 실패했음. 이제 무엇이 비었는지 이름까지 찍고 즉시 실패한다.)
+      - name: 필수 시크릿 점검
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+          TELEGRAM_SESSION: ${{ secrets.TELEGRAM_SESSION }}
+        shell: bash
+        run: |
+          missing=""
+          for v in ANTHROPIC_API_KEY SUPABASE_URL SUPABASE_KEY \
+                   TELEGRAM_API_ID TELEGRAM_API_HASH TELEGRAM_SESSION; do
+            if [ -z "${!v}" ]; then missing="$missing $v"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::필수 시크릿이 비어 있습니다 →$missing"
+            echo "GitHub 저장소 → Settings → Secrets and variables → Actions 에서 추가하세요."
+            exit 1
+          fi
+          echo "✅ 필수 시크릿 모두 존재 — 생성 단계로 진행합니다."
+
       - name: 파이썬 설정
         uses: actions/setup-python@v5
         with:
