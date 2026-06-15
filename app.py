@@ -476,7 +476,14 @@ def _big_index_chart(name: str, ticker: str, days: int):
         hpoints = alt.Chart(seg).mark_point(size=60, color=line_c, filled=True).encode(
             x=x_enc, y=y_enc,
             opacity=alt.condition(hover, alt.value(1), alt.value(0)))
-        chart = (alt.layer(area, selectors, rule, hpoints)
+        # hover 시 값이 눈에 띄게 보이도록 on-chart 라벨 (동적 동작을 분명히)
+        htext = alt.Chart(seg).mark_text(
+            align="left", dx=8, dy=-10, fontSize=12, fontWeight="bold",
+            color=line_c).encode(
+            x=x_enc, y=y_enc,
+            text=alt.condition(hover, alt.Text("종가:Q", format=",.2f"),
+                               alt.value("")))
+        chart = (alt.layer(area, selectors, rule, hpoints, htext)
                  .add_params(zoom)
                  .properties(height=260, background="transparent")
                  .configure_view(strokeWidth=0))
@@ -514,9 +521,6 @@ def _kr_market_open():
 
 # ── 지수 현황 본문 (자동 새로고침 fragment가 이 함수를 주기 실행) ──
 def _render_indices_body():
-    # 보기 방식(카드/히트맵)은 fragment 밖 라디오의 값을 세션에서 읽는다.
-    view = st.session_state.get("idx_view_mode", "카드")
-
     # ── 지수 데이터 먼저 수집 (국내 헤더 asof·통합 기준일 캡션에 필요) ──
     group_data, group_asof = {}, {}
     for group_name, tickers in INDEX_GROUPS.items():
@@ -549,10 +553,9 @@ def _render_indices_body():
     render_indicators()
     render_calendar()
 
-    # ── ④ 국내 제외 나머지 그룹 (미국·환율·원자재·암호화폐 등): 카드 또는 히트맵 ──
-    if view == "히트맵":
-        st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
-        st.caption("🌡️ 히트맵 · 타일 색 = 등락률 (빨강 상승 / 파랑 하락, ±3%에서 최대 채도)")
+    # ── ④ 국내 제외 나머지 그룹 (미국·환율·원자재·암호화폐 등): 히트맵 ──
+    st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
+    st.caption("🌡️ 히트맵 · 타일 색 = 등락률 (빨강 상승 / 파랑 하락, ±3%에서 최대 채도)")
     for group_name, datas in group_data.items():
         if group_name == "국내":
             continue  # 이미 위에서 차트로 렌더함
@@ -562,12 +565,7 @@ def _render_indices_body():
             head += f'<span class="grp-asof">기준 {group_asof[group_name]}</span>'
         head += "</div>"
         st.markdown(head, unsafe_allow_html=True)
-        if view == "히트맵":
-            st.markdown(_heat_html(datas), unsafe_allow_html=True)
-        else:
-            items = list(datas.items())
-            cards = "".join(_card_html(name, d) for name, d in items)
-            st.markdown(f'<div class="mkt-grid">{cards}</div>', unsafe_allow_html=True)
+        st.markdown(_heat_html(datas), unsafe_allow_html=True)
 
     # ── 수급 상위 종목 (KRX 데이터가 있을 때만) ──
     supply = fetch_supply_demand_summary()
@@ -592,27 +590,22 @@ def render_indices():
     st.caption("데이터: Yahoo Finance · 일별 종가 기준 · 약 15분 지연")
 
     has_frag = hasattr(st, "fragment")   # 구버전 Streamlit이면 자동 새로고침 미노출
-    if has_frag:
-        ctrl1, ctrl2, ctrl3 = st.columns([1, 1.3, 1.5])
-    else:
-        ctrl1, ctrl2 = st.columns([1, 1.6])
-        ctrl3 = None
-
-    with ctrl1:
-        if st.button("🔄 새로고침"):
-            st.cache_data.clear()
-            st.rerun()
-    with ctrl2:
-        st.radio("보기 방식", ["카드", "히트맵"], horizontal=True,
-                 key="idx_view_mode", label_visibility="collapsed")
-
     auto = False
-    if ctrl3 is not None:
-        with ctrl3:
+    if has_frag:
+        ctrl1, ctrl2 = st.columns([1, 1.8])
+        with ctrl1:
+            if st.button("🔄 새로고침"):
+                st.cache_data.clear()
+                st.rerun()
+        with ctrl2:
             auto = st.toggle(
                 "⏱ 장중 자동 새로고침", value=False, key="idx_auto",
                 help="장중(평일 09:00~15:40)에 약 10분마다 지수·수급을 자동 갱신해요. "
                      "데이터는 yfinance 기준 약 15분 지연입니다.")
+    else:
+        if st.button("🔄 새로고침"):
+            st.cache_data.clear()
+            st.rerun()
 
     market_open = _kr_market_open()
     every = 600 if (auto and market_open) else None   # fetch_index 캐시(10분)에 맞춤
