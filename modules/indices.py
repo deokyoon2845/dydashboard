@@ -1,6 +1,15 @@
-"""주요 지수 데이터를 Yahoo Finance(yfinance)에서 가져오는 모듈."""
+"""주요 지수 데이터를 Yahoo Finance(yfinance)에서 가져오는 모듈.
 
+2026-06 보강: 코스피·코스닥(^KS11·^KQ11)은 야후가 최근 거래일을 며칠씩 늦게 주는
+  문제가 있어, 네이버 금융 일별 시세로 '최근 거래일 꼬리'를 보강한다.
+  - fetch_index / fetch_history 가 한국 지수일 때만 _merge_naver_tail()을 거친다.
+  - 네이버가 실패하면 기존 야후 데이터를 그대로 쓴다(무회귀, graceful degradation).
+"""
+
+import json
 import yfinance as yf
+import pandas as pd
+import requests
 import streamlit as st
 from datetime import datetime, timedelta, time as dtime
 
@@ -52,6 +61,9 @@ _INVERT_COLOR = {"^VIX"}
 # 조회 기간 (기본 1개월, 국내 지수는 6개월 추세를 카드에 표시)
 _PERIOD = {"^KS11": "6mo", "^KQ11": "6mo"}
 
+# 야후 티커 → 네이버 금융 지수 심볼 (한국 지수 최근일 보강용)
+_KR_NAVER_SYMBOL = {"^KS11": "KOSPI", "^KQ11": "KOSDAQ"}
+
 
 # ── 장 운영시간 헬퍼 (자동 새로고침 기본값 판단용) ──────────────
 
@@ -63,6 +75,69 @@ def is_kr_market_open() -> bool:
     if now.weekday() >= 5:  # 5=토, 6=일
         return False
     return dtime(9, 0) <= now.time() <= dtime(15, 30)
+
+
+# ── 한국 지수 네이버 보강 ───────────────────────────────────────
+# 야후(yfinance)는 ^KS11·^KQ11의 가장 최근 거래일을 며칠씩 늦게 주는 일이 잦다
+# (미국 지수는 정상). 그래서 코스피·코스닥 최근 종가를 네이버 금융 일별 시세로
+# 받아와 야후 시계열의 '꼬리'를 보강한다. 네이버는 클라우드에서도 안정적으로 응답.
+
+@st.cache_data(ttl=600)  # 10분 캐시 — 네이버 과다 호출 방지
+def _kr_index_recent_naver(symbol: str) -> dict:
+    """네이버 금융에서 코스피/코스닥 최근(약 한 달치) 일별 종가를 가져온다.
+    symbol: 'KOSPI' | 'KOSDAQ'. 반환: {'YYYY-MM-DD': 종가(float)} · 실패 시 {}."""
+    try:
+        end = datetime.now(_KST) if _KST else datetime.now()
+        start = end - timedelta(days=40)
+        url = ("https://api.finance.naver.com/siseJson.naver"
+               f"?symbol={symbol}&requestType=1"
+               f"&startTime={start:%Y%m%d}&endTime={end:%Y%m%d}&timeframe=day")
+        r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        # 응답이 표준 JSON이 아니라 헤더 행에 작은따옴표가 섞여 옴 → 큰따옴표로 치환 후 파싱
+        rows = json.loads(r.text.strip().replace("'", '"'))
+        out = {}
+        for row in rows[1:]:  # 0번째 행은 헤더(['날짜','시가',...])
+            if not row or len(row) < 5:
+                continue
+            d = str(row[0]).strip()
+            if len(d) < 8:
+                continue
+            try:
+                key = f"{d[:4]}-{d[4:6]}-{d[6:8]}"
+                out[key] = float(row[4])  # 종가
+            except (ValueError, TypeError):
+                continue
+        return out
+    except Exception:
+        return {}
+
+
+def _merge_naver_tail(close, ticker: str):
+    """야후 종가 Series에 네이버 최근 종가를 병합해 최근 거래일을 보강한다.
+    한국 지수(^KS11·^KQ11)에만 적용 · 그 외 티커는 원본을 그대로 반환.
+    실패하면 원본(close)을 그대로 돌려줘 무회귀를 보장한다."""
+    sym = _KR_NAVER_SYMBOL.get(ticker)
+    if not sym:
+        return close
+    recent = _kr_index_recent_naver(sym)
+    if not recent:
+        return close
+    try:
+        merged = {}
+        if close is not None:
+            for ts, v in close.items():
+                t = pd.Timestamp(ts)
+                if t.tzinfo is not None:
+                    t = t.tz_localize(None)
+                merged[t.normalize()] = float(v)
+        for k, v in recent.items():
+            merged[pd.Timestamp(k)] = float(v)  # 네이버가 최신 → 우선 반영
+        if not merged:
+            return close
+        return pd.Series(merged).sort_index()
+    except Exception:
+        return close
 
 
 @st.cache_data(ttl=600)  # 10분 동안 결과 재사용 -> 야후 과다 호출 방지
@@ -80,6 +155,11 @@ def fetch_index(ticker: str):
         scale = _SCALE.get(ticker, 1.0)
         if scale != 1.0:
             close = close * scale
+
+        # 한국 지수(코스피·코스닥): 야후가 최근 거래일을 늦게 주므로 네이버로 보강
+        close = _merge_naver_tail(close, ticker)
+        if close is None or len(close) < 2:
+            return None
 
         current = float(close.iloc[-1])   # 가장 최근 종가
         prev = float(close.iloc[-2])      # 그 전 거래일 종가
@@ -109,7 +189,7 @@ def fetch_index(ticker: str):
 @st.cache_data(ttl=1800)  # 30분 캐시 — pykrx 호출 비용 고려
 def fetch_supply_demand_summary():
     """외국인·기관 순매수 상위 5종목 (최근 거래일).
-    
+
     반환값: {
         "코스피": {"외국인": [("삼성전자", +1200), ...], "기관": [...], "date": "2024-01-15"},
         "코스닥": { ... }
@@ -176,19 +256,25 @@ def sparkline_points(series, width=100, height=28, pad=3, n=20):
 
 @st.cache_data(ttl=3600)
 def fetch_history(ticker: str, period: str = "3mo"):
-    """일별 종가 Series (정규화된 날짜 인덱스). 실패 시 None."""
+    """일별 종가 Series (정규화된 날짜 인덱스). 실패 시 None.
+    한국 지수는 네이버로 최근 거래일을 보강한다(야후 지연 대응)."""
+    close = None
     try:
         df = yf.Ticker(ticker).history(period=period, interval="1d")
-        if df.empty:
-            return None
-        close = df["Close"].dropna()
-        idx = close.index
-        if getattr(idx, "tz", None) is not None:
-            idx = idx.tz_localize(None)
-        close.index = idx.normalize()
-        return close
+        if not df.empty:
+            close = df["Close"].dropna()
+            idx = close.index
+            if getattr(idx, "tz", None) is not None:
+                idx = idx.tz_localize(None)
+            close.index = idx.normalize()
     except Exception:
-        return None
+        close = None
+
+    # 한국 지수(^KS11·^KQ11)면 네이버 최근 종가로 꼬리 보강
+    merged = _merge_naver_tail(close, ticker)
+    if merged is not None and len(merged):
+        return merged
+    return close
 
 
 @st.cache_data(ttl=120)  # 장중 갱신을 위해 2분 캐시 (일봉보다 짧게)
