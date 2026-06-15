@@ -503,20 +503,19 @@ def _render_domestic_charts():
                "가로 스크롤·드래그로 기간을 확대할 수 있어요.")
 
 
-# ── 지수 현황 탭 렌더 ──
-def render_indices():
-    st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
-    st.title("주요 지수 현황")
-    st.caption("데이터: Yahoo Finance · 일별 종가 기준 · 약 15분 지연")
+def _kr_market_open():
+    """한국 증시 장중(평일 09:00~15:40 KST) 여부. 자동 새로고침 게이트용."""
+    n = datetime.now(ZoneInfo("Asia/Seoul"))
+    if n.weekday() >= 5:        # 토(5)·일(6)
+        return False
+    t = n.hour * 60 + n.minute
+    return 9 * 60 <= t <= 15 * 60 + 40
 
-    ctrl1, ctrl2 = st.columns([1, 1.6])
-    with ctrl1:
-        if st.button("🔄 새로고침"):
-            st.cache_data.clear()
-            st.rerun()
-    with ctrl2:
-        view = st.radio("보기 방식", ["카드", "히트맵"], horizontal=True,
-                        key="idx_view_mode", label_visibility="collapsed")
+
+# ── 지수 현황 본문 (자동 새로고침 fragment가 이 함수를 주기 실행) ──
+def _render_indices_body():
+    # 보기 방식(카드/히트맵)은 fragment 밖 라디오의 값을 세션에서 읽는다.
+    view = st.session_state.get("idx_view_mode", "카드")
 
     # ── 지수 데이터 먼저 수집 (국내 헤더 asof·통합 기준일 캡션에 필요) ──
     group_data, group_asof = {}, {}
@@ -584,6 +583,50 @@ def render_indices():
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     from modules.rate_gap import render_rate_gap
     render_rate_gap()
+
+
+# ── 지수 현황 탭 렌더 (컨트롤 + 자동 새로고침 디스패치) ──
+def render_indices():
+    st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
+    st.title("주요 지수 현황")
+    st.caption("데이터: Yahoo Finance · 일별 종가 기준 · 약 15분 지연")
+
+    has_frag = hasattr(st, "fragment")   # 구버전 Streamlit이면 자동 새로고침 미노출
+    if has_frag:
+        ctrl1, ctrl2, ctrl3 = st.columns([1, 1.3, 1.5])
+    else:
+        ctrl1, ctrl2 = st.columns([1, 1.6])
+        ctrl3 = None
+
+    with ctrl1:
+        if st.button("🔄 새로고침"):
+            st.cache_data.clear()
+            st.rerun()
+    with ctrl2:
+        st.radio("보기 방식", ["카드", "히트맵"], horizontal=True,
+                 key="idx_view_mode", label_visibility="collapsed")
+
+    auto = False
+    if ctrl3 is not None:
+        with ctrl3:
+            auto = st.toggle(
+                "⏱ 장중 자동 새로고침", value=False, key="idx_auto",
+                help="장중(평일 09:00~15:40)에 약 10분마다 지수·수급을 자동 갱신해요. "
+                     "데이터는 yfinance 기준 약 15분 지연입니다.")
+
+    market_open = _kr_market_open()
+    every = 600 if (auto and market_open) else None   # fetch_index 캐시(10분)에 맞춤
+    if auto and not market_open:
+        st.caption("⏸ 지금은 장 시간이 아니라 자동 새로고침은 다음 개장(평일 09:00) 때부터 작동해요.")
+    elif every:
+        st.caption("🟢 자동 새로고침 켜짐 · 약 10분 주기 (데이터는 약 15분 지연)")
+
+    # 자동 새로고침 ON + 장중일 때만 fragment로 감싸 주기 실행.
+    # OFF(기본)면 직접 호출 → 기존 동작과 100% 동일.
+    if every:
+        st.fragment(_render_indices_body, run_every=every)()
+    else:
+        _render_indices_body()
 
 
 # ── 사용량 · 비용 ──
