@@ -107,6 +107,12 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 .rsi-gauge i { position:absolute; top:-3px; width:8px; height:12px; border-radius:3px; transform:translateX(-50%); background:var(--muted); }
 .rsi-gauge i.up { background:var(--up); } .rsi-gauge i.down { background:var(--down); }
 
+/* 히트맵 타일 (등락률 색) */
+.heat-tile { border:1px solid rgba(52,53,47,.06); border-radius:16px; padding:14px 14px 12px; }
+.heat-name { font-size:12.5px; font-weight:600; }
+.heat-val { font-size:18px; font-weight:700; margin-top:3px; letter-spacing:-.02em; }
+.heat-pct { font-size:12.5px; font-weight:700; margin-top:2px; }
+
 /* 수급 상위 종목 테이블 */
 .supply-wrap { background:var(--summary-bg); border:1px solid var(--line); border-radius:14px; padding:14px 16px; margin-bottom:10px; }
 .supply-mkt { font-size:12px; font-weight:700; letter-spacing:.05em; color:var(--muted); margin-bottom:10px; }
@@ -186,7 +192,7 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
   from { opacity:0; transform:translateY(10px); }
   to   { opacity:1; transform:translateY(0); }
 }
-.mkt-card, .kw-row, .theme-card, .supply-wrap, .cal-wrap, .rpt-kt-box {
+.mkt-card, .heat-tile, .kw-row, .theme-card, .supply-wrap, .cal-wrap, .rpt-kt-box {
   animation: mm-fade-up .5s cubic-bezier(.22,.61,.36,1) both;
 }
 /* staggered: 그리드 안에서 위→아래 시차 (최대 8개) */
@@ -208,10 +214,10 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 .kw-row:nth-child(7){ animation-delay:.27s; }
 
 /* ── 2. 호버 리프트 ── */
-.mkt-card, .theme-card, .cal-wrap, .supply-wrap {
+.mkt-card, .heat-tile, .theme-card, .cal-wrap, .supply-wrap {
   transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
 }
-.mkt-card:hover, .theme-card:hover {
+.mkt-card:hover, .heat-tile:hover, .theme-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 18px rgba(52,53,47,.08);
   border-color: var(--sage);
@@ -271,7 +277,7 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 
 /* ── 접근성: 움직임 최소화 선호 시 모두 비활성화 ── */
 @media (prefers-reduced-motion: reduce) {
-  .mkt-card, .kw-row, .theme-card, .supply-wrap, .cal-wrap,
+  .mkt-card, .heat-tile, .kw-row, .theme-card, .supply-wrap, .cal-wrap,
   .rpt-kt-box, .gauge, .rsi-gauge, .gauge i, .rsi-gauge i,
   .mkt-chg {
     animation: none !important;
@@ -320,6 +326,46 @@ def _card_html(name, data):
             f'{spark}</div>')
 
 
+# ── 히트맵 타일 (등락률 색) ──
+def _heat_color(pct):
+    """등락률(%) → (배경색, 글자색). up=빨강 / down=파랑, 0 부근은 중립 베이스.
+    ±3%에서 최대 채도. 단순 RGB 보간이라 외부 의존 없음."""
+    if pct is None:
+        return "#F6F7F2", "#34352f"
+    t = max(-1.0, min(1.0, pct / 3.0))
+    base = (246, 247, 242)            # --summary-bg
+    up = (182, 95, 90)                # --up #B65F5A
+    down = (90, 124, 160)             # --down #5A7CA0
+    tgt = up if t >= 0 else down
+    k = abs(t)
+    r = round(base[0] + (tgt[0] - base[0]) * k)
+    g = round(base[1] + (tgt[1] - base[1]) * k)
+    b = round(base[2] + (tgt[2] - base[2]) * k)
+    txt = "#ffffff" if k > 0.55 else "#34352f"
+    return f"rgb({r},{g},{b})", txt
+
+
+def _heat_html(datas):
+    """한 그룹(미국·환율 등)의 지수들을 등락률 색 타일로. .mkt-grid 레이아웃 재사용."""
+    tiles = ""
+    for name, d in datas.items():
+        if d is None:
+            tiles += (f'<div class="heat-tile" style="background:#F6F7F2;color:#9a9b92;">'
+                      f'<div class="heat-name">{name}</div>'
+                      f'<div class="heat-val" style="font-size:14px;">데이터 없음</div></div>')
+            continue
+        pct = d.get("pct", 0.0)
+        bg, txt = _heat_color(pct)
+        arrow = "▲" if d["change"] > 0 else ("▼" if d["change"] < 0 else "▬")
+        tiles += (
+            f'<div class="heat-tile" style="background:{bg};">'
+            f'<div class="heat-name" style="color:{txt};opacity:.92;">{name}</div>'
+            f'<div class="heat-val" style="color:{txt};">{d["current"]:,.2f}</div>'
+            f'<div class="heat-pct" style="color:{txt};">{arrow} {pct:+.2f}%</div>'
+            f'</div>')
+    return f'<div class="mkt-grid">{tiles}</div>'
+
+
 # ── 수급 상위 종목 HTML ──
 def _supply_html(supply_data: dict) -> str:
     if not supply_data:
@@ -358,7 +404,11 @@ _KRX_PERIODS = {"1개월": 31, "3개월": 92, "6개월": 183, "1년": 366}
 
 
 def _big_index_chart(name: str, ticker: str, days: int):
-    """기간 선택형 대형 지수 차트 + 현재가/전일 대비 헤더."""
+    """기간 선택형 대형 지수 차트 + 현재가/전일 대비 헤더.
+
+    2026-06 인터랙티브: hover 크로스헤어(세로 점선 + 해당일 점), 가로 스크롤·드래그
+    x줌. 셀렉션 구성에 실패하면 기존 정적 영역 차트로 안전하게 폴백한다(탭 보호).
+    """
     close = fetch_history(ticker, "1y")
     if close is None or len(close) < 2:
         st.caption(f"{name} 데이터를 불러오지 못했어요. (잠시 후 새로고침)")
@@ -402,18 +452,38 @@ def _big_index_chart(name: str, ticker: str, days: int):
     pad_v = (hi_v - lo_v) * 0.08 or 1.0
     y_dom = [lo_v - pad_v, hi_v + pad_v]
 
-    chart = alt.Chart(seg).mark_area(
+    x_enc = alt.X("날짜:T", axis=alt.Axis(title=None, format="%m/%d",
+                                          labelColor=axis_c, grid=False))
+    y_enc = alt.Y("종가:Q", scale=alt.Scale(domain=y_dom, nice=False, clamp=True),
+                  axis=alt.Axis(title=None, labelColor=axis_c, gridColor=grid_c,
+                                format=",.0f"))
+    tip = [alt.Tooltip("날짜:T", format="%Y-%m-%d"),
+           alt.Tooltip("종가:Q", format=",.2f")]
+
+    area = alt.Chart(seg).mark_area(
         color=line_c, opacity=0.13,
         line={"color": line_c, "strokeWidth": 2},
-    ).encode(
-        x=alt.X("날짜:T", axis=alt.Axis(title=None, format="%m/%d",
-                                       labelColor=axis_c, grid=False)),
-        y=alt.Y("종가:Q", scale=alt.Scale(domain=y_dom, nice=False, clamp=True),
-                axis=alt.Axis(title=None, labelColor=axis_c, gridColor=grid_c,
-                              format=",.0f")),
-        tooltip=[alt.Tooltip("날짜:T", format="%Y-%m-%d"),
-                 alt.Tooltip("종가:Q", format=",.2f")],
-    ).properties(height=260, background="transparent").configure_view(strokeWidth=0)
+    ).encode(x=x_enc, y=y_enc, tooltip=tip)
+
+    try:
+        hover = alt.selection_point(fields=["날짜"], nearest=True,
+                                    on="mouseover", empty=False)
+        zoom = alt.selection_interval(bind="scales", encodings=["x"])
+        selectors = alt.Chart(seg).mark_point().encode(
+            x=x_enc, opacity=alt.value(0)).add_params(hover)
+        rule = alt.Chart(seg).mark_rule(color=axis_c, strokeDash=[3, 3]).encode(
+            x=x_enc).transform_filter(hover)
+        hpoints = alt.Chart(seg).mark_point(size=60, color=line_c, filled=True).encode(
+            x=x_enc, y=y_enc,
+            opacity=alt.condition(hover, alt.value(1), alt.value(0)))
+        chart = (alt.layer(area, selectors, rule, hpoints)
+                 .add_params(zoom)
+                 .properties(height=260, background="transparent")
+                 .configure_view(strokeWidth=0))
+    except Exception:
+        chart = (area.properties(height=260, background="transparent")
+                 .configure_view(strokeWidth=0))
+
     st.altair_chart(chart, use_container_width=True)
 
 
@@ -429,6 +499,8 @@ def _render_domestic_charts():
         _big_index_chart("코스피", "^KS11", days)
     with c2:
         _big_index_chart("코스닥", "^KQ11", days)
+    st.caption("차트 위에서 마우스를 올리면 해당일 값이 표시되고, "
+               "가로 스크롤·드래그로 기간을 확대할 수 있어요.")
 
 
 # ── 지수 현황 탭 렌더 ──
@@ -436,9 +508,15 @@ def render_indices():
     st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
     st.title("주요 지수 현황")
     st.caption("데이터: Yahoo Finance · 일별 종가 기준 · 약 15분 지연")
-    if st.button("🔄 새로고침"):
-        st.cache_data.clear()
-        st.rerun()
+
+    ctrl1, ctrl2 = st.columns([1, 1.6])
+    with ctrl1:
+        if st.button("🔄 새로고침"):
+            st.cache_data.clear()
+            st.rerun()
+    with ctrl2:
+        view = st.radio("보기 방식", ["카드", "히트맵"], horizontal=True,
+                        key="idx_view_mode", label_visibility="collapsed")
 
     # ── 지수 데이터 먼저 수집 (국내 헤더 asof·통합 기준일 캡션에 필요) ──
     group_data, group_asof = {}, {}
@@ -472,7 +550,10 @@ def render_indices():
     render_indicators()
     render_calendar()
 
-    # ── ④ 국내 제외 나머지 그룹 카드 (미국·환율·원자재·암호화폐 등) ──
+    # ── ④ 국내 제외 나머지 그룹 (미국·환율·원자재·암호화폐 등): 카드 또는 히트맵 ──
+    if view == "히트맵":
+        st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
+        st.caption("🌡️ 히트맵 · 타일 색 = 등락률 (빨강 상승 / 파랑 하락, ±3%에서 최대 채도)")
     for group_name, datas in group_data.items():
         if group_name == "국내":
             continue  # 이미 위에서 차트로 렌더함
@@ -482,9 +563,12 @@ def render_indices():
             head += f'<span class="grp-asof">기준 {group_asof[group_name]}</span>'
         head += "</div>"
         st.markdown(head, unsafe_allow_html=True)
-        items = list(datas.items())
-        cards = "".join(_card_html(name, d) for name, d in items)
-        st.markdown(f'<div class="mkt-grid">{cards}</div>', unsafe_allow_html=True)
+        if view == "히트맵":
+            st.markdown(_heat_html(datas), unsafe_allow_html=True)
+        else:
+            items = list(datas.items())
+            cards = "".join(_card_html(name, d) for name, d in items)
+            st.markdown(f'<div class="mkt-grid">{cards}</div>', unsafe_allow_html=True)
 
     # ── 수급 상위 종목 (KRX 데이터가 있을 때만) ──
     supply = fetch_supply_demand_summary()
