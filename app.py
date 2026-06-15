@@ -439,13 +439,8 @@ def render_indices():
     if st.button("🔄 새로고침"):
         st.cache_data.clear()
         st.rerun()
-# ── 외국인·기관 수급 추세 (네이버 금융) ──
-    st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
-    from modules.supply_trend import render_supply_trend
-    render_supply_trend()
-    render_indicators()
-    render_calendar()
 
+    # ── 지수 데이터 먼저 수집 (국내 헤더 asof·통합 기준일 캡션에 필요) ──
     group_data, group_asof = {}, {}
     for group_name, tickers in INDEX_GROUPS.items():
         datas = {name: fetch_index(t) for name, t in tickers.items()}
@@ -460,21 +455,33 @@ def render_indices():
             f'<div class="data-asof">데이터 기준 {next(iter(distinct))} · '
             f'해외 지수·환율은 직전 거래일 종가</div>', unsafe_allow_html=True)
 
-    for gi, (group_name, datas) in enumerate(group_data.items()):
-        # 그룹 사이 얇은 구분선 (첫 그룹=국내 제외)
-        if gi > 0:
-            st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
+    # ── ① 국내(코스피·코스닥) 대형 차트 — 수급 추세 바로 위에 연속 배치 ──
+    krx_head = '<div class="mkt-group">국내'
+    if not unified and group_asof.get("국내"):
+        krx_head += f'<span class="grp-asof">기준 {group_asof["국내"]}</span>'
+    krx_head += "</div>"
+    st.markdown(krx_head, unsafe_allow_html=True)
+    _render_domestic_charts()
 
+    # ── ② 외국인·기관 수급 추세 (네이버 금융) — 국내 지수 바로 아래로 이동 (연속성) ──
+    from modules.supply_trend import render_supply_trend
+    render_supply_trend()
+
+    # ── ③ 시장 지표(체온계) · 다가오는 일정 ──
+    st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
+    render_indicators()
+    render_calendar()
+
+    # ── ④ 국내 제외 나머지 그룹 카드 (미국·환율·원자재·암호화폐 등) ──
+    for group_name, datas in group_data.items():
+        if group_name == "국내":
+            continue  # 이미 위에서 차트로 렌더함
+        st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
         head = f'<div class="mkt-group">{group_name}'
         if not unified and group_asof[group_name]:
             head += f'<span class="grp-asof">기준 {group_asof[group_name]}</span>'
         head += "</div>"
         st.markdown(head, unsafe_allow_html=True)
-
-        if group_name == "국내":
-            _render_domestic_charts()
-            continue
-
         items = list(datas.items())
         cards = "".join(_card_html(name, d) for name, d in items)
         st.markdown(f'<div class="mkt-grid">{cards}</div>', unsafe_allow_html=True)
