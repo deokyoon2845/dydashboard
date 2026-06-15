@@ -7,6 +7,8 @@
 
 ECOS 항목코드는 시점에 따라 바뀔 수 있어, 항목 '이름'으로 코드를 찾아 쓴다.
 모든 외부 호출은 실패해도 빈 값으로 떨어지며 앱을 멈추지 않는다.
+
+2026-06 추가: 금리차 해석 팝오버(st.popover) — 구버전이면 조용히 생략.
 """
 
 import os
@@ -99,10 +101,30 @@ def _last(vals):
     return vals[-1] if vals else None
 
 
+def _gap_help():
+    """한·미 금리차 해석 팝오버. st.popover 미지원(구버전)이면 조용히 생략."""
+    if not hasattr(st, "popover"):
+        return
+    with st.popover("ⓘ 금리차 보는 법"):
+        st.markdown(
+            "**한·미 금리차 = 미국 금리 − 한국 금리**  \n"
+            "양수(미국 우위)일수록 더 높은 금리를 좇아 외국인 자금이 미국으로 이동하기 쉬워 "
+            "**외국인 자금 유출·원화 약세** 압력으로 읽혀요. "
+            "음수(한국 우위)면 반대로 원화에 우호적인 구간입니다.\n\n"
+            "단기는 미2년−한2/3년, 장기는 미10년−한10년 국고채 기준이에요.  \n"
+            "미국: FRED(미 재무부 금리) · 한국: 한국은행 ECOS."
+        )
+
+
 # ── 렌더 ────────────────────────────────────────────────────
 def render_rate_gap():
-    st.markdown('<div class="mkt-group">🇰🇷🇺🇸 한·미 금리차</div>',
-                unsafe_allow_html=True)
+    # 헤더 + 설명 팝오버
+    hc1, hc2 = st.columns([4, 1])
+    with hc1:
+        st.markdown('<div class="mkt-group">🇰🇷🇺🇸 한·미 금리차</div>',
+                    unsafe_allow_html=True)
+    with hc2:
+        _gap_help()
 
     key = _cfg("ECOS_API_KEY")
     if not key:
