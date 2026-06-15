@@ -16,7 +16,6 @@ jobs:
       - name: 저장소 체크아웃
         uses: actions/checkout@v5
 
-      # 비면 '여기서' 빨간 X로 멈춤 → 조용한 실패 방지
       - name: 필수 시크릿 점검
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
