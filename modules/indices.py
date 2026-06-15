@@ -200,7 +200,10 @@ def fetch_intraday(ticker: str, interval: str = "5m"):
     - 인덱스는 KST(tz-naive)로 변환해 시:분이 그대로 보이게 한다.
 
     반환: {"series": pd.Series(시각→종가), "asof": "YYYY-MM-DD",
-           "current": float, "change": float, "pct": float}  실패 시 None.
+           "current": float, "change": float, "pct": float,
+           "prev_close": float|None, "base_is_prev": bool}  실패 시 None.
+    등락(change·pct)은 '전일 종가' 대비로 계산하며, 전일 종가를 못 구하면
+    당일 시가로 폴백한다(base_is_prev=False).
     """
     try:
         # 최근 5거래일 범위를 받아 안전하게 마지막 거래일만 슬라이스
@@ -239,8 +242,31 @@ def fetch_intraday(ticker: str, interval: str = "5m"):
             day_series = close
 
         current = float(day_series.iloc[-1])
-        # 1일 등락 기준 = 당일 시가(첫 분봉) 대비
-        base = float(day_series.iloc[0])
+
+        # 1일 등락 기준 = '전일 종가' 대비 (시가 대비가 아님).
+        # 일봉을 별도로 받아 last_day 직전 거래일의 종가를 base로 사용한다.
+        base = None
+        try:
+            daily = yf.Ticker(ticker).history(period="7d", interval="1d")
+            if not daily.empty:
+                dclose = daily["Close"].dropna()
+                # 배율 동일 적용
+                if scale != 1.0:
+                    dclose = dclose * scale
+                # 인덱스를 날짜로 비교 (tz 영향 제거)
+                dates = [ix.date() for ix in dclose.index]
+                # last_day 이전(미만)의 가장 마지막 종가 = 전일 종가
+                prev_idx = [i for i, dd in enumerate(dates) if dd < last_day]
+                if prev_idx:
+                    base = float(dclose.iloc[prev_idx[-1]])
+        except Exception:
+            base = None
+
+        # 전일 종가를 못 구하면 당일 첫 분봉(시가)으로 안전 폴백
+        base_is_prev = base is not None
+        if base is None:
+            base = float(day_series.iloc[0])
+
         change = current - base
         pct = (change / base) * 100 if base else 0.0
 
@@ -250,6 +276,8 @@ def fetch_intraday(ticker: str, interval: str = "5m"):
             "current": current,
             "change": change,
             "pct": pct,
+            "prev_close": base if base_is_prev else None,
+            "base_is_prev": base_is_prev,  # True면 전일 종가 기준, False면 시가 폴백
             "invert_color": ticker in _INVERT_COLOR,
         }
     except Exception:
