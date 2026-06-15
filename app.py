@@ -458,21 +458,28 @@ def _big_index_chart_intraday(name: str, ticker: str):
     change = d["change"]
     pct = d["pct"]
     day_up = change >= 0
+    prev_close = d.get("prev_close")
+    base_is_prev = d.get("base_is_prev", False)
 
     up_c, down_c = "#B65F5A", "#5A7CA0"
     line_c = up_c if day_up else down_c
     axis_c, grid_c = "#9a9b92", "#ECEDE7"
 
+    base_label = "전일 종가 대비" if base_is_prev else "시가 대비"
     arrow = "▲" if change > 0 else ("▼" if change < 0 else "▬")
     chg_cls = "up" if day_up else "down"
     st.markdown(
         f'<div style="margin-bottom:2px;">'
-        f'<span class="mkt-name">{name} · {d.get("asof","")} (시가 대비)</span><br>'
+        f'<span class="mkt-name">{name} · {d.get("asof","")} ({base_label})</span><br>'
         f'<span class="mkt-val" style="font-size:24px;">{cur:,.2f}</span> '
         f'<span class="mkt-chg {chg_cls}">{arrow} {change:+,.2f} ({pct:+.2f}%)</span>'
         f'</div>', unsafe_allow_html=True)
 
+    # y축 범위: 분봉 최소~최대에 전일 종가까지 포함시켜야 기준선이 잘림 없이 보임
     lo_v, hi_v = float(df["종가"].min()), float(df["종가"].max())
+    if base_is_prev and prev_close is not None:
+        lo_v = min(lo_v, prev_close)
+        hi_v = max(hi_v, prev_close)
     pad_v = (hi_v - lo_v) * 0.08 or 1.0
     y_dom = [lo_v - pad_v, hi_v + pad_v]
 
@@ -489,6 +496,13 @@ def _big_index_chart_intraday(name: str, ticker: str):
         line={"color": line_c, "strokeWidth": 2},
     ).encode(x=x_enc, y=y_enc, tooltip=tip)
 
+    layers = [area]
+    # 전일 종가 기준선 (회색 점선) — 등락 기준을 한눈에 보여줌
+    if base_is_prev and prev_close is not None:
+        baseline = alt.Chart(pd.DataFrame({"y": [prev_close]})).mark_rule(
+            color=axis_c, strokeDash=[4, 4], opacity=0.7).encode(y="y:Q")
+        layers.insert(0, baseline)
+
     try:
         hover = alt.selection_point(fields=["시각"], nearest=True,
                                     on="mouseover", empty=False)
@@ -499,11 +513,12 @@ def _big_index_chart_intraday(name: str, ticker: str):
         hpoints = alt.Chart(df).mark_point(size=60, color=line_c, filled=True).encode(
             x=x_enc, y=y_enc,
             opacity=alt.condition(hover, alt.value(1), alt.value(0)))
-        chart = (alt.layer(area, selectors, rule, hpoints)
+        chart = (alt.layer(*layers, selectors, rule, hpoints)
                  .properties(height=260, background="transparent")
                  .configure_view(strokeWidth=0))
     except Exception:
-        chart = (area.properties(height=260, background="transparent")
+        chart = (alt.layer(*layers)
+                 .properties(height=260, background="transparent")
                  .configure_view(strokeWidth=0))
 
     st.altair_chart(chart, use_container_width=True)
@@ -622,7 +637,7 @@ def _render_domestic_charts():
             _big_index_chart("코스닥", "^KQ11", days)
 
     if is_intraday:
-        st.caption("당일(휴장 시 직전 거래일) 5분봉 · 시가 대비 등락 · "
+        st.caption("당일(휴장 시 직전 거래일) 5분봉 · 전일 종가 대비 등락(회색 점선=전일 종가) · "
                    "yfinance 기준 약 15분 지연이며 한국 지수 분봉은 일부 누락될 수 있어요.")
     else:
         st.caption("차트 위에서 마우스를 올리면 해당일 값이 표시되고, "
