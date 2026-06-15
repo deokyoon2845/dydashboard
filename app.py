@@ -495,25 +495,24 @@ def _big_index_chart_intraday(name: str, ticker: str):
 
     x_enc = alt.X("시각:T", axis=alt.Axis(title=None, format="%H:%M",
                                           labelColor=axis_c, grid=False))
-    y_enc = alt.Y("종가:Q", scale=alt.Scale(domain=y_dom, nice=False, clamp=True),
+    y_enc = alt.Y("종가:Q", scale=alt.Scale(domain=y_dom, nice=False, clamp=True, zero=False),
                   axis=alt.Axis(title=None, labelColor=axis_c, gridColor=grid_c,
                                 format=",.0f"))
     tip = [alt.Tooltip("시각:T", format="%H:%M"),
            alt.Tooltip("종가:Q", format=",.2f")]
 
-    # 변동성이 작은 분봉은 area 채우기가 평평해 보이므로, 라인 위주로 그리고
-    # 옅은 영역은 보조로만 둔다. (y축이 좁아 채우기 바닥이 도메인 하단이 됨)
-    area = alt.Chart(df).mark_area(
-        color=line_c, opacity=0.10,
-        line={"color": line_c, "strokeWidth": 2},
-    ).encode(x=x_enc,
-             y=alt.Y("종가:Q", scale=alt.Scale(domain=y_dom, nice=False, clamp=True),
-                     axis=alt.Axis(title=None, labelColor=axis_c, gridColor=grid_c,
-                                   format=",.0f")),
-             tooltip=tip)
+    # area 채우기 바닥을 0이 아니라 y축 도메인 하단으로 고정한다.
+    # (mark_area 기본 y2=0 → 코스닥처럼 평평한 날 차트가 0까지 채워지는 문제 방지)
+    y_floor = y_dom[0]
+    df_a = df.copy()
+    df_a["바닥"] = y_floor
+    area = alt.Chart(df_a).mark_area(color=line_c, opacity=0.10).encode(
+        x=x_enc, y=y_enc,
+        y2=alt.Y2("바닥:Q"),
+        tooltip=tip)
 
     layers = [area]
-    # 변동을 또렷하게: 라인을 별도 레이어로 한 번 더 그린다 (area 위에 강조)
+    # 변동을 또렷하게: 라인을 별도 레이어로 그린다
     line_layer = alt.Chart(df).mark_line(color=line_c, strokeWidth=2).encode(
         x=x_enc, y=y_enc, tooltip=tip)
     layers.append(line_layer)
@@ -595,16 +594,19 @@ def _big_index_chart(name: str, ticker: str, days: int):
 
     x_enc = alt.X("날짜:T", axis=alt.Axis(title=None, format="%m/%d",
                                           labelColor=axis_c, grid=False))
-    y_enc = alt.Y("종가:Q", scale=alt.Scale(domain=y_dom, nice=False, clamp=True),
+    y_enc = alt.Y("종가:Q", scale=alt.Scale(domain=y_dom, nice=False, clamp=True, zero=False),
                   axis=alt.Axis(title=None, labelColor=axis_c, gridColor=grid_c,
                                 format=",.0f"))
     tip = [alt.Tooltip("날짜:T", format="%Y-%m-%d"),
            alt.Tooltip("종가:Q", format=",.2f")]
 
-    area = alt.Chart(seg).mark_area(
-        color=line_c, opacity=0.13,
-        line={"color": line_c, "strokeWidth": 2},
-    ).encode(x=x_enc, y=y_enc, tooltip=tip)
+    # area 바닥을 y축 도메인 하단으로 고정 (mark_area 기본 y2=0 방지)
+    seg_a = seg.copy()
+    seg_a["바닥"] = y_dom[0]
+    area = alt.Chart(seg_a).mark_area(color=line_c, opacity=0.13).encode(
+        x=x_enc, y=y_enc, y2=alt.Y2("바닥:Q"), tooltip=tip)
+    line_main = alt.Chart(seg).mark_line(color=line_c, strokeWidth=2).encode(
+        x=x_enc, y=y_enc, tooltip=tip)
 
     try:
         hover = alt.selection_point(fields=["날짜"], nearest=True,
@@ -624,12 +626,13 @@ def _big_index_chart(name: str, ticker: str, days: int):
             x=x_enc, y=y_enc,
             text=alt.condition(hover, alt.Text("종가:Q", format=",.2f"),
                                alt.value("")))
-        chart = (alt.layer(area, selectors, rule, hpoints, htext)
+        chart = (alt.layer(area, line_main, selectors, rule, hpoints, htext)
                  .add_params(zoom)
                  .properties(height=260, background="transparent")
                  .configure_view(strokeWidth=0))
     except Exception:
-        chart = (area.properties(height=260, background="transparent")
+        chart = (alt.layer(area, line_main)
+                 .properties(height=260, background="transparent")
                  .configure_view(strokeWidth=0))
 
     st.altair_chart(chart, use_container_width=True)
