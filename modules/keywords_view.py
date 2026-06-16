@@ -2,6 +2,7 @@
 
 데스크톱: 2열 그리드 카드 (TOP15) / 모바일: 1열로 자동 전환.
 뉴스 제목은 카드 높이 균일화를 위해 1줄로 표시(말줄임).
+상단에는 키워드 네트워크 그래프 대신 '종목 무게중심 랭킹'을 표시(modules.keyword_stocks).
 """
 
 import html
@@ -248,16 +249,15 @@ def render_keywords():
     when = str(data.get("generated", ""))[:16].replace("T", " ")
     st.caption(f"기준: {when} · 네이버 뉴스 기반")
 
-    # 관계 그래프 (공통 종목·공통 키워드로 연결) — 항상 표시
-    st.markdown('<div class="mkt-group">🕸️ 키워드 관계 — 오늘 시장이 무엇을 중심으로 도는가</div>',
-                unsafe_allow_html=True)
-    try:
-        from modules.keyword_graph import render_keyword_graph
-        render_keyword_graph(data["items"])
-    except Exception as e:
-        st.caption(f"관계 그래프를 그릴 수 없어요 · {e}")
-
     watch_set = _watch_set()
+
+    # 종목 언급 랭킹 (TOP15 키워드 → 종목 무게중심) — 키워드 네트워크 그래프 대체
+    try:
+        from modules.keyword_stocks import render_stock_ranking
+        render_stock_ranking(data["items"], watch_set)
+    except Exception as e:
+        st.caption(f"종목 랭킹을 표시할 수 없어요 · {e}")
+
     _render_items(data["items"], watch_set)
     st.caption("※ 키워드·종목·카테고리·중요도는 AI 추출, 링크는 네이버 뉴스 실제 기사. "
                "🔥 = 연속 등장 일수, NEW = 오늘 첫 등장, ⭐ = 내 워치리스트 종목 포함, "
