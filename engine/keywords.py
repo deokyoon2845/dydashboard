@@ -12,6 +12,7 @@ URL을 새로 만들지 않으므로 가짜 링크가 생기지 않습니다.
 - 카테고리 균형 (거시 편중 방지, 거시 최대 5개)
 - 같은 기사가 여러 키워드에 중복 배정되지 않도록 코드 레벨 차단
 - 오늘 처음 등장한 키워드에 is_new 플래그 (뷰어의 NEW 배지용)
+- ★종목 태깅 강화: 거시·정책 키워드도 수혜/피해주로 연결해 종목 랭킹(modules.keyword_stocks)을 채움
 """
 
 import json
@@ -43,6 +44,12 @@ _PRICE_NOISE = re.compile(
 )
 _PRICE_NOISE2 = re.compile(r"(장\s*마감|개장|시황|마감\s*시황|오전\s*시황|오후\s*시황)\s*$")
 
+# stocks 에 섞여 들어오면 안 되는 비종목 토큰 (지수·ETF·일반어) — 정규화 비교
+_NON_STOCK = {
+    "코스피", "코스닥", "kospi", "kosdaq", "나스닥", "다우", "s&p500", "sp500",
+    "etf", "지수", "관련주", "수혜주", "테마주", "반도체주", "건설주", "방산주",
+}
+
 
 def _is_price_noise(title: str) -> bool:
     """'코스피 1.2% 상승' 류 단순 시세 헤드라인이면 True."""
@@ -52,6 +59,23 @@ def _is_price_noise(title: str) -> bool:
     if _PRICE_NOISE2.search(t):
         return True
     return False
+
+
+def _clean_stocks(raw) -> list:
+    """stocks 정리 — ⭐·공백 제거, 중복 제거(순서 보존), 비종목 토큰 제외, 최대 3개."""
+    out, seen = [], set()
+    for s in (raw or []):
+        name = str(s).replace("⭐", "").strip()
+        if not name:
+            continue
+        key = name.lower().replace(" ", "")
+        if key in seen or key in _NON_STOCK:
+            continue
+        seen.add(key)
+        out.append(name)
+        if len(out) >= 3:
+            break
+    return out
 
 
 def _parse_json(text: str):
@@ -214,7 +238,7 @@ def build_today_keywords() -> dict:
         f"{listing}\n\n"
         "이 중에서 오늘 증시에서 가장 중요한 키워드 16개를 중요도 순으로 뽑아주세요 "
         "(서로 확실히 다른 사건·주제여야 합니다).\n"
-        "각 키워드마다 (1) 관련 한국 종목명 0~3개, (2) 그 키워드를 대표하는 "
+        "각 키워드마다 (1) 관련 한국 상장 종목명 1~3개(가능하면 반드시 채움), (2) 그 키워드를 대표하는 "
         "헤드라인 번호를 중요도 순으로 최대 3개, (3) 카테고리, (4) 중요도 점수를 매기세요.\n\n"
         "규칙:\n"
         "- 의미가 겹치는 키워드는 하나의 대표어로 통합하세요 "
@@ -229,6 +253,14 @@ def build_today_keywords() -> dict:
         "  나쁜 예) 종목이 같고 근거 기사가 겹치는 두 키워드(예: 같은 반도체 기사를 공유) "
         "→ 같은 키워드일 가능성이 큽니다. 통합을 먼저 검토하세요.\n"
         "  합칠 게 있으면 차라리 16개를 못 채우고 개수가 줄어도 좋습니다. 중복보다 적은 게 낫습니다.\n"
+        "- ★종목 태깅(중요): 각 키워드에 직접 관련된 한국 상장 종목을 1~3개 stocks 에 넣으세요. "
+        "거시·정책 키워드도 반드시 그 사건의 수혜·피해 종목으로 연결하세요.\n"
+        "  예) 미·이란 종전 → 삼성E&A·에스오일·한화에어로스페이스, "
+        "원유 가격 급락 → 에스오일·대한항공, 엔저 고착화 → 현대차·기아, "
+        "AI 반도체 수요 → 삼성전자·SK하이닉스, 스페이스X 상장 → 한화에어로스페이스·한국항공우주, "
+        "초과세수 정책 → 한국전력·현대건설.\n"
+        "  실제 한국 상장사의 정확한 종목명만 쓰세요(지수·ETF·해외 종목·'반도체주' 같은 일반 업종명 금지). "
+        "한국 종목과 연결점이 전혀 없을 때만 빈 배열로 두세요.\n"
         "- ★카테고리 균형: 거시 키워드는 최대 5개까지만. 섹터와 종목 카테고리를 합쳐 "
         "7개 이상 포함되도록, 덜 중요한 거시 이슈 대신 구체적인 섹터·개별 기업 이슈를 발굴하세요.\n"
         "- 하나의 기사 번호는 가능한 한 키워드에만 배정하세요. 두 키워드가 같은 기사를 "
@@ -239,8 +271,7 @@ def build_today_keywords() -> dict:
         "- category 는 다음 중 하나: 거시(금리·환율·물가 등 매크로), 섹터(산업·테마), "
         "종목(개별 기업 이슈), 정책(정부·규제·제도).\n"
         "- weight 는 1~10 정수 (오늘 시장 영향력).\n"
-        "- article_indices 의 번호는 위 목록에 실제 있는 번호여야 합니다. 지어내지 마세요.\n"
-        "- 종목이 분명하지 않으면 stocks 는 빈 배열로 두세요.\n\n"
+        "- article_indices 의 번호는 위 목록에 실제 있는 번호여야 합니다. 지어내지 마세요.\n\n"
         "아래 JSON 배열로만 응답하세요(설명·코드블록 없이):\n"
         '[{"keyword":"...","category":"거시","weight":8,'
         '"stocks":["...","..."],"article_indices":[정수,정수,정수]}, ...]'
@@ -248,7 +279,7 @@ def build_today_keywords() -> dict:
 
     client = Anthropic()
     resp = client.messages.create(
-        model=MODEL, max_tokens=3000, system=SYSTEM,
+        model=MODEL, max_tokens=3500, system=SYSTEM,
         messages=[{"role": "user", "content": prompt}],
     )
 
@@ -303,7 +334,7 @@ def build_today_keywords() -> dict:
             "keyword": kw,
             "category": cat,
             "weight": weight,
-            "stocks": [str(s).strip() for s in (obj.get("stocks") or [])][:3],
+            "stocks": _clean_stocks(obj.get("stocks")),
             "news": news,
         })
         if len(items) >= MAX_KEYWORDS:
