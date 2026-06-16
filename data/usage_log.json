@@ -137,5 +137,24 @@
     "cost_usd": 0.013028,
     "kind": "keywords",
     "count": 15
+  },
+  {
+    "time": "2026-06-17T01:16:05.592064+09:00",
+    "model": "claude-opus-4-8 + haiku 클러스터링",
+    "input_tokens": 86970,
+    "output_tokens": 13756,
+    "cost_usd": 0.31949399999999994,
+    "messages": 107,
+    "report": "2026-06-17_0116.json",
+    "kind": "pre"
+  },
+  {
+    "time": "2026-06-17T01:20:10.030693+09:00",
+    "model": "claude-haiku-4-5",
+    "input_tokens": 6183,
+    "output_tokens": 1399,
+    "cost_usd": 0.013178,
+    "kind": "keywords",
+    "count": 15
   }
 ]
