@@ -2,8 +2,13 @@
 
 pykrx가 클라우드(해외 IP)에서 차단되어 외부 페이지 스크래핑으로 대체한다.
 소스를 순서대로 시도하고, 모두 실패하면 None(섹션 생략):
-  1) 네이버 지수 일별 시세 페이지 (거래대금) + 네이버 sise 메인 (등락 종목 수)
+  1) 네이버 지수 일별 시세 페이지 (거래대금) + 네이버 모바일 지수 API/sise 메인 (등락 종목 수)
   2) 다음(Daum) 금융 모바일 페이지 (거래대금 + 등락 종목 수)
+
+2026-06 보강: 등락 종목 수가 1/1/1 같은 엉뚱한 값으로 찍히던 문제를 고쳤다.
+  - 네이버 모바일 지수 API(구조화 JSON)를 1순위로 시도.
+  - 데스크톱 페이지 정규식은 폴백으로 유지하되, 합계가 비현실적으로 작으면(<100)
+    오파싱으로 보고 버려서 '정보 없음'으로 정직하게 표기한다(가짜 1/1/1 방지).
 
 DEBUG=True로 두면 실패 시 화면에 진단 정보를 표시한다(원인 파악용).
 원인 확인이 끝나면 DEBUG=False로 되돌린다.
@@ -26,6 +31,10 @@ _HEADERS_DAUM = {
 
 _NAVER_CODE = {"코스피": "KOSPI", "코스닥": "KOSDAQ"}
 _DAUM_SYMBOL = {"코스피": "KOSPI", "코스닥": "KOSDAQ"}
+
+# 등락 종목 수 합계가 이 값보다 작으면 오파싱으로 보고 버린다.
+# (코스피·코스닥은 상장 종목이 수백~천 단위라 한 자릿수는 비정상)
+_MIN_BREADTH_TOTAL = 100
 
 # 진단 로그 (DEBUG일 때 화면에 표시)
 _diag = []
@@ -83,11 +92,58 @@ def _naver_trade_value(market_label: str):
     return None
 
 
-# ── 소스 1-b: 네이버 sise 메인 (등락 종목 수) ─────────────────
+# ── 소스 1-b: 등락 종목 수 (네이버 모바일 JSON → 데스크톱 정규식 폴백) ──
+
+def _naver_updown_api(market_label: str):
+    """네이버 모바일 지수 API(JSON)에서 상승/보합/하락 종목 수를 받는다.
+    필드명이 버전에 따라 달라 여러 후보 키를 시도한다. 실패/비정상 시 None."""
+    code = _NAVER_CODE.get(market_label)
+    if not code:
+        return None
+    url = f"https://m.stock.naver.com/api/index/{code}/basic"
+    try:
+        r = requests.get(
+            url,
+            headers={"User-Agent": _UA,
+                     "Referer": "https://m.stock.naver.com/"},
+            timeout=10,
+        )
+        if not r.ok:
+            _log(f"[naver updown api] HTTP {r.status_code}")
+            return None
+        j = r.json()
+    except Exception as e:
+        _log(f"[naver updown api] 실패: {e}")
+        return None
+
+    def _pick(*keys):
+        for k in keys:
+            if k in j and j[k] is not None:
+                return _to_int(j[k])
+        return None
+
+    u = _pick("riseCount", "upCount", "increaseCount", "advanceCount")
+    f = _pick("steadyCount", "unchangedCount", "flatCount", "evenCount")
+    d = _pick("fallCount", "downCount", "decreaseCount", "declineCount")
+
+    if u is None or d is None:
+        _log(f"[naver updown api] 카운트 키 없음 (keys={list(j)[:12]})")
+        return None
+    if (u or 0) + (d or 0) < _MIN_BREADTH_TOTAL:
+        _log(f"[naver updown api] 비정상 합계 up={u} flat={f} down={d}")
+        return None
+    return u or 0, f or 0, d or 0
+
 
 def _naver_updown(market_label: str):
-    """finance.naver.com/sise/ — 상승/보합/하락 종목 수. 실패 시 (0,0,0)."""
-    # 코스피/코스닥 각각 별도 영역. 메인 페이지 텍스트에서 라벨 근처 숫자.
+    """상승/보합/하락 종목 수. 모바일 API(JSON) 우선, 실패 시 데스크톱 정규식.
+    비정상(합계<100) 값은 버려 (0,0,0) 반환 → 화면엔 '정보 없음'으로 정직 표기."""
+    # 1) 모바일 지수 API (구조화 JSON)
+    api = _naver_updown_api(market_label)
+    if api is not None:
+        return api
+
+    # 2) 데스크톱 시세 메인 페이지 정규식 폴백
     url = "https://finance.naver.com/sise/"
     try:
         r = requests.get(url, headers=_HEADERS, timeout=12)
@@ -105,9 +161,9 @@ def _naver_updown(market_label: str):
     u = _to_int(up.group(1)) if up else 0
     f = _to_int(flat.group(1)) if flat else 0
     d = _to_int(down.group(1)) if down else 0
-    # 한 자릿수만 잡히면(=잘못 파싱) 무효 처리
-    if (u or 0) + (d or 0) < 2:
-        _log(f"[naver updown] 비정상 값 up={u} flat={f} down={d}")
+    # 합계가 비현실적으로 작으면(=오파싱) 버린다 → 엉뚱한 1/1/1 방지.
+    if (u or 0) + (d or 0) < _MIN_BREADTH_TOTAL:
+        _log(f"[naver updown] 비정상 값 버림 up={u} flat={f} down={d}")
         return 0, 0, 0
     return u or 0, f or 0, d or 0
 
@@ -140,6 +196,10 @@ def _daum_mobile(market_label: str):
     res["flat"] = (_to_int(mf.group(1)) if mf else 0) or 0
     res["decline"] = (_to_int(md.group(1)) if md else 0) or 0
 
+    # 다음도 등락 합계가 비현실적으로 작으면 등락 정보는 버린다(거래대금은 유지).
+    if (res["advance"] + res["decline"]) < _MIN_BREADTH_TOTAL:
+        res["advance"] = res["flat"] = res["decline"] = 0
+
     if res["value_eok"] is None and (res["advance"] + res["decline"]) == 0:
         _log(f"[daum] 값 없음 (페이지 길이 {len(text)}, '{market_label}' "
              f"위치 {start})")
@@ -153,7 +213,7 @@ def fetch_breadth(market_label: str):
     # 1) 네이버
     val = _naver_trade_value(market_label)
     up, flat, down = _naver_updown(market_label)
-    if val is not None or (up + down) >= 2:
+    if val is not None or (up + down) >= _MIN_BREADTH_TOTAL:
         return {"value_eok": val, "advance": up, "flat": flat,
                 "decline": down, "asof": None}
 
