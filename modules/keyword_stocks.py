@@ -10,6 +10,7 @@
 """
 
 import html
+import re
 
 import streamlit as st
 
@@ -26,6 +27,17 @@ STREAK_BONUS = 0.05   # 연속 등장(🔥) 하루당 +5%. 0으로 두면 순수
 
 def _norm(s: str) -> str:
     return "".join(str(s).split()).casefold()
+
+
+def _short_kw(title: str) -> str:
+    """칩 라벨용: 키워드 끝의 괄호 설명을 떼어 핵심만 (잘림 없이 전체 표시).
+
+    예) '반도체 강세 (삼성전자·SK하이닉스 랠리)' -> '반도체 강세'
+        '미·이란 종전 합의 (지정학적 리스크 완화)'  -> '미·이란 종전 합의'
+    """
+    t = (title or "").strip()
+    t = re.sub(r"\s*[\(（].*?[\)）]\s*$", "", t).strip()
+    return t or (title or "").strip()
 
 
 def _watch_set() -> set:
@@ -99,7 +111,7 @@ _CSS = """
 @keyframes ks-grow{from{transform:scaleX(0);}to{transform:scaleX(1);}}
 .ks-src{margin-left:30px;display:flex;flex-wrap:wrap;gap:5px;align-items:center;}
 .ks-chip{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:6px;
-  color:#fff;opacity:.92;}
+  color:#fff;opacity:.92;word-break:keep-all;line-height:1.45;}
 .ks-more{font-size:10.5px;color:var(--muted,#9a9b92);}
 @media(prefers-reduced-motion:reduce){.ks-row,.ks-bar>span{animation:none !important;}}
 </style>
@@ -144,8 +156,7 @@ def render_stock_ranking(items, watch_set=None, top_n=12):
         chips = ""
         for s in r["sources"][:4]:
             c = _CAT_COLOR.get(s["cat"], _CAT_DEFAULT)
-            t = s["title"]
-            short = t if len(t) <= 13 else t[:12] + "…"
+            short = _short_kw(s["title"])     # 괄호 설명 제거, 잘림 없이 전체 표시
             chips += (f'<span class="ks-chip" style="background:{c}">'
                       f'#{s["rank"]} {html.escape(short)}</span>')
         more = (f'<span class="ks-more">+{len(r["sources"]) - 4}</span>'
