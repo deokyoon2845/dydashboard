@@ -701,6 +701,11 @@ def _render_indices_body():
     from modules.market_breadth import render_market_breadth
     render_market_breadth()
 
+    # ── ②-c 업종 등락 (섹터 ETF · yfinance) ──
+    st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
+    from modules.sectors import render_sectors
+    render_sectors()
+
     # ── ③ 시장 지표(체온계) · 다가오는 일정 ──
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     render_indicators()
