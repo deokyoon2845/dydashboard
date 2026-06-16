@@ -1,312 +1,331 @@
 {
-  "generated": "2026-06-16T08:16:42.164176+09:00",
+  "generated": "2026-06-16T17:13:42.215997+09:00",
   "items": [
     {
-      "keyword": "미·이란 종전 합의 (지정학적 리스크 완화)",
-      "category": "거시",
-      "weight": 10,
-      "stocks": [],
-      "news": [
-        {
-          "title": "[박정식의 국내 주식시황] 미국-이란 종전 MOU 기대감 지속으로 강한 매...",
-          "url": "https://www.newsquest.co.kr/news/articleView.html?idxno=267879"
-        },
-        {
-          "title": "미·이란 종전 합의에 뉴욕증시 일제히 급등-[글로벌 마감 시황]",
-          "url": "http://www.wowtv.co.kr/NewsCenter/News/Read?articleId=A202606160153&t=NN"
-        },
-        {
-          "title": "[마감시황] 코스피, 美·이란 종전 합의에 5% 급등…8500선 회복",
-          "url": "http://www.kdfnews.com/news/articleView.html?idxno=184248"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "코스피 8,500선 회복 및 9,000선 도전",
+      "keyword": "미·이란 종전 합의에 따른 중동 리스크 해소",
       "category": "거시",
       "weight": 9,
-      "stocks": [],
+      "stocks": [
+        "에스오일",
+        "한화에어로스페이스",
+        "현대미포조선"
+      ],
       "news": [
         {
-          "title": "[마감시황] 코스피 5.2% 폭등에 8500선 안착…원·달러 환율 8.7원 내린 ...",
-          "url": "https://www.businesskorea.co.kr/news/articleView.html?idxno=271322"
+          "title": "[마감시황] 코스피, 미·이란 종전에 2% 급등…8700선 안착",
+          "url": "http://www.kdfnews.com/news/articleView.html?idxno=184294"
         },
         {
-          "title": "[마감시황] 전쟁 리스크 걷어낸 코스피, 8500선 안착",
-          "url": "http://www.hansbiz.co.kr/news/articleView.html?idxno=844410"
+          "title": "미·이란 종전 물류망 정상화 초읽기…해운업계, 엇갈린 생존 셈법",
+          "url": "https://www.mediapen.com/news/view/1104683"
         },
         {
-          "title": "[오늘의 증시]종전 MOU 서명에 뉴욕 환호…코스피, 다시 '구천피' 향한다",
-          "url": "https://www.newsis.com/view/NISX20260616_0003670252"
+          "title": "미·이란 극적 합의에 비트코인 급등…중동 리스크 걷히자 ‘안도 랠리...",
+          "url": "https://www.ddaily.co.kr/page/view/2026061611513812179"
         }
       ],
       "streak": 1,
       "is_new": true
     },
     {
-      "keyword": "외국인 투자자 순매수 전환 (셀코리아 중단)",
+      "keyword": "외국인 4거래일 연속 순매수 복귀",
       "category": "거시",
-      "weight": 9,
-      "stocks": [],
-      "news": [
-        {
-          "title": "종전랠리 코스피, 외국인도 '사자'…올들어 26번째 사이드카 [시황종합...",
-          "url": "https://www.news1.kr/finance/general-stock/6197871"
-        },
-        {
-          "title": "'외국인 조단위 순매수' 코스피 7거래일만에 8500 탈환",
-          "url": "https://www.mt.co.kr/stock/2026/06/16/2026061515513425641"
-        },
-        {
-          "title": "'셀 코리아' 멈춘 외국인…코스피 5% 오르며 8500선 회복 [장중시황]",
-          "url": "https://www.news1.kr/finance/general-stock/6197459"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "반도체 강세 (삼성전자·SK하이닉스 랠리)",
-      "category": "섹터",
       "weight": 9,
       "stocks": [
         "삼성전자",
+        "SK하이닉스",
+        "KB금융"
+      ],
+      "news": [
+        {
+          "title": "외국인 1.5조 '사자'…코스피, 사상최고치까지 3% 남았다 [시황종합]",
+          "url": "https://www.news1.kr/finance/market-exr/6199111"
+        },
+        {
+          "title": "1.5조원 쓸어 담은 외국인, 사흘 연속 ‘사자’…코스피 8700선 돌파 [투...",
+          "url": "https://biz.heraldcorp.com/article/10772988?ref=naver"
+        },
+        {
+          "title": "[거래소 외국인] SK하이닉스 삼성전기 삼성전자우 쓸어 담고 SK스퀘어 H...",
+          "url": "https://www.pinpointnews.co.kr/news/articleView.html?idxno=460607"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "AI 반도체 수요 증가에 따른 메모리칩 가격 상승",
+      "category": "섹터",
+      "weight": 8,
+      "stocks": [
+        "SK하이닉스",
+        "삼성전자",
+        "가온전선"
+      ],
+      "news": [
+        {
+          "title": "5월 수출물가, 반도체 수요에 0.3%↑…11개월째 상승",
+          "url": "http://www.hansbiz.co.kr/news/articleView.html?idxno=844484"
+        },
+        {
+          "title": "AI 열풍에 D램값 급등…수출물가 11개월째 상승",
+          "url": "https://www.dnews.co.kr/uhtml/view.jsp?idxno=202606161454518230575"
+        },
+        {
+          "title": "5월 수출물가 0.3% 상승…반도체 강세에 전년 대비 46.9% 급등",
+          "url": "https://www.ziksir.com/news/articleView.html?idxno=137021"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "SK그룹 상장사 시총 2천조 원 돌파",
+      "category": "종목",
+      "weight": 7,
+      "stocks": [
+        "SK하이닉스",
+        "SK스퀘어",
+        "SK실트론"
+      ],
+      "news": [
+        {
+          "title": "'1,700조 하이닉스의 힘'…SK그룹, 상장사 시총 2천조 원 돌파",
+          "url": "https://news.tvchosun.com/site/data/html_dir/2026/06/16/2026061690241.html"
+        },
+        {
+          "title": "SK 뉴 이천포럼 끝났다…SK실트론 매각 운명 가를 분수령",
+          "url": "https://www.newsway.co.kr/news/view?ud=2026061615243499825"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "삼성전자 하반기 AI·HBM4 전략 전환",
+      "category": "종목",
+      "weight": 7,
+      "stocks": [
+        "삼성전자",
+        "삼성전기"
+      ],
+      "news": [
+        {
+          "title": "삼성전자, 하반기 전략회의 돌입…AI 주도권 회복 해법 찾는다",
+          "url": "http://www.thebigdata.co.kr/view.php?ud=2026061615502046830ecbf9426b_23"
+        },
+        {
+          "title": "삼성전자 사흘간 글로벌 전략회의… HBM4 등 하반기 사업 전략 점검",
+          "url": "https://www.financialpost.co.kr/news/articleView.html?idxno=262783"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "건설·방산주 중동 재건 특수 기대감",
+      "category": "섹터",
+      "weight": 7,
+      "stocks": [
+        "일성건설",
+        "화신",
+        "현대건설"
+      ],
+      "news": [
+        {
+          "title": "[급등락주 짚어보기] 중동 재건·로봇 호재…일성건설·화신 등 '上'",
+          "url": "https://www.etoday.co.kr/news/view/2594195"
+        },
+        {
+          "title": "[ETF시황] 방산·건설 ETF 강세…레버리지 상품 수익률 상위권",
+          "url": "https://www.newspim.com/news/view/20260616001005"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "스페이스X 공모주 추가 배정",
+      "category": "정책",
+      "weight": 6,
+      "stocks": [
+        "한화에어로스페이스",
+        "한국항공우주"
+      ],
+      "news": [
+        {
+          "title": "[경제읽기] 코스피 이틀째 상승세…스페이스X 공모주 추가 배정",
+          "url": "http://www.yonhapnewstv.co.kr/news/MYH20260616134509VSW"
+        },
+        {
+          "title": "스페이스X 샀다가 꼭대기 잡나…시총 6위 초대형주에 부는 역풍",
+          "url": "https://www.newsis.com/view/NISX20260616_0003671437"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "일본 기준금리 31년 만에 1% 인상",
+      "category": "거시",
+      "weight": 6,
+      "stocks": [
+        "현대차",
+        "기아"
+      ],
+      "news": [
+        {
+          "title": "일본 기준금리 31년 만에 연 1%로…BOJ “경제·물가·금융 따라 계속 인...",
+          "url": "https://www.joongang.co.kr/article/25437235"
+        },
+        {
+          "title": "닛케이, 장중 사상 첫 '7만 선' 돌파 후 숨고르기… BOJ 무난한 통과에 ...",
+          "url": "https://www.g-enews.com/view.php?ud=20260616165443550e7e8286d56_1"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "은행주 외국인 지분 확대(KB금융 80% 돌파)",
+      "category": "종목",
+      "weight": 6,
+      "stocks": [
+        "KB금융",
+        "농협금융"
+      ],
+      "news": [
+        {
+          "title": "“은행주 외면받는다는데”...KB금융지주, 외인 지분율 80% 넘겼다",
+          "url": "https://www.ekn.kr/web/view.php?key=20260616021413731"
+        },
+        {
+          "title": "농협銀, 신용대출 한도 1억 원으로 축소…'빚투'에 대출 조이기",
+          "url": "https://www.news1.kr/finance/general-finance/6199210"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "코스닥 신규 상장(져스텍·에이치엘지노믹스)",
+      "category": "종목",
+      "weight": 6,
+      "stocks": [
+        "져스텍",
+        "에이치엘지노믹스"
+      ],
+      "news": [
+        {
+          "title": "‘초정밀 모션제어’ 져스텍, 공모가 상단 1만2500원 확정… 경쟁률 129...",
+          "url": "https://biz.chosun.com/stock/stock_general/2026/06/16/4DDZ45QWMBDYFO3DWBETNITPTM/?utm_source=naver&utm_medium=original&utm_campaign=biz"
+        },
+        {
+          "title": "에이치엘지노믹스, 증권신고서 제출…코스닥 입성 본격화",
+          "url": "https://daily.hankooki.com/news/articleView.html?idxno=1377106"
+        },
+        {
+          "title": "[더벨][져스텍 IPO] 수요예측 '흥행 성공'…반도체·우주 성장성 통했다",
+          "url": "https://www.thebell.co.kr/free/content/ArticleView.asp?key=202606161645101520105361"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "전력 인프라 투자 수요 증가",
+      "category": "섹터",
+      "weight": 6,
+      "stocks": [
+        "효성중공업",
+        "엘앤에프",
+        "한국전력"
+      ],
+      "news": [
+        {
+          "title": "효성중공업·엘앤에프 강세…전력설비주, 전력 인프라 투자 기대감 부각",
+          "url": "https://www.cbci.co.kr/news/articleView.html?idxno=582370"
+        },
+        {
+          "title": "\"삼척, ESS 복합 시험·인증 플랫폼 유치\"…\"미래 에너지 거점 도약\"",
+          "url": "https://www.newspim.com/news/view/20260616000956"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "환율 1,511원대 안정화에 수출주 호재",
+      "category": "거시",
+      "weight": 5,
+      "stocks": [
+        "삼성전자",
+        "현대차",
         "SK하이닉스"
       ],
       "news": [
         {
-          "title": "[오늘의 투자전략] 코스피 추가 반등 시도…‘삼전ㆍ닉스’ 반도체 강세...",
-          "url": "https://www.etoday.co.kr/news/view/2593874"
+          "title": "종전에도 요지부동…환율 0.5원 오른 1511.6원 마감",
+          "url": "https://biz.sbs.co.kr/article_hub/20000316946?division=NAVER"
         },
         {
-          "title": "종전랠리, 다시 반도체 불장…삼전ㆍSK하닉 새 기록 쓰나",
-          "url": "https://www.dt.co.kr/article/12067739?ref=naver"
-        },
-        {
-          "title": "미국발 훈풍에 반도체 또 뛴다…삼전·SK하닉, 프리마켓서 2%대 강세",
-          "url": "https://www.dt.co.kr/article/12067748?ref=naver"
+          "title": "외국인 순매수·위험선호 심리에 환율 0.5원 오른 1,511.6원",
+          "url": "https://news.sbs.co.kr/news/endPage.do?news_id=N1008613152&plink=ORI&cooper=NAVER"
         }
       ],
       "streak": 1,
       "is_new": true
     },
     {
-      "keyword": "비트코인 1억원 회복 (가상자산 강세)",
+      "keyword": "AI 인재 양성 정책(마이스터고 지정)",
+      "category": "정책",
+      "weight": 5,
+      "stocks": [],
+      "news": [
+        {
+          "title": "AI·반도체 인재 키운다…교육부, 마이스터고 6곳 신규 지정",
+          "url": "https://www.hankyung.com/article/202606169637i"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "육상양식 산업 확대(김 양식 고도화)",
       "category": "섹터",
-      "weight": 8,
-      "stocks": [],
-      "news": [
-        {
-          "title": "[코인시황] 비트코인 1억원선 회복",
-          "url": "http://www.hansbiz.co.kr/news/articleView.html?idxno=844471"
-        },
-        {
-          "title": "“크립토 겨울 끝났다”…비트코인 1억원 돌파[코인 모닝콜]",
-          "url": "https://www.edaily.co.kr/news/newspath.asp?newsid=02528886645482376"
-        },
-        {
-          "title": "[코인시황] 전쟁 끝나자 살아난 투심…비트코인, 다시 1억 '정조준'",
-          "url": "https://www.newsworks.co.kr/news/articleView.html?idxno=843909"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "반도체 수출물가 상승 (AI 투수요 증대)",
-      "category": "거시",
-      "weight": 7,
-      "stocks": [],
-      "news": [
-        {
-          "title": "수출물가지수 11개월 연속 ↑…AI 투자 확대에 반도체·비철금속 수요 ...",
-          "url": "https://www.joongangenews.com/news/articleView.html?idxno=526120"
-        },
-        {
-          "title": "AI 투자 훈풍에 반도체값 '급등'…수출물가 11개월 연속 상승",
-          "url": "https://www.youthdaily.co.kr/news/article.html?no=220969"
-        },
-        {
-          "title": "반도체 수요 증가에 5월 수출물가지수 11개월째 상승",
-          "url": "https://biz.sbs.co.kr/article_hub/20000316733?division=NAVER"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "원·달러 환율 하락",
-      "category": "거시",
-      "weight": 7,
-      "stocks": [],
-      "news": [
-        {
-          "title": "원/달러 환율 \"중동 리스크 완화에 1510원선 등락 전망\"",
-          "url": "http://www.the-biz.co.kr/news/articleView.html?idxno=722650"
-        },
-        {
-          "title": "코스피 종전 소식에 8,500선 회복…환율도 하락",
-          "url": "https://news.kbs.co.kr/news/pc/view/view.do?ncd=8587069&ref=A"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "IT·반도체 레버리지 ETF 상승",
-      "category": "섹터",
-      "weight": 7,
-      "stocks": [],
-      "news": [
-        {
-          "title": "[ETF 시황] 증시 급반등에 IT·조선 레버리지 ETF 질주",
-          "url": "https://www.newspim.com/news/view/20260615001118"
-        },
-        {
-          "title": "ETF도 삼전닉스에 '몰빵'…수급의 다음 행선지는?[클릭 e종목]",
-          "url": "https://view.asiae.co.kr/article/2026061517315733944"
-        },
-        {
-          "title": "‘삼전닉스 레버리지’ 고점 물렸다면…본주 10% 이상 올라야 탈출 [이...",
-          "url": "https://www.sedaily.com/article/20056050?ref=naver"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "스페이스X 상장 (한국 거래소 데뷔)",
-      "category": "종목",
-      "weight": 7,
-      "stocks": [],
-      "news": [
-        {
-          "title": "[퇴근길머니] 종전 훈풍에 증시도 '방긋'…스페이스X 0주 '후폭풍'",
-          "url": "http://www.yonhapnewstv.co.kr/news/MYH20260615174529RKX"
-        },
-        {
-          "title": "[증시전략] 스페이스X, 거래 둘째 날에도 19% 폭등…평가는?",
-          "url": "https://biz.sbs.co.kr/article_hub/20000316730?division=NAVER"
-        },
-        {
-          "title": "[미-이란 종전 합의] 외국인 국장 컴백?…전쟁도 스페이스X도 '일단락'",
-          "url": "https://www.dailian.co.kr/news/view/1656136/?sc=Naver"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "엔비디아 채권 발행 및 시장 영향",
-      "category": "종목",
-      "weight": 6,
+      "weight": 5,
       "stocks": [
-        "엔비디아"
+        "CJ",
+        "풀무원"
       ],
       "news": [
         {
-          "title": "엔비디아, 30조 회사채 발행 추진…한국 AI·반도체 산업엔 기회인가 경...",
-          "url": "https://www.sjsori.com/news/articleView.html?idxno=86687"
-        },
-        {
-          "title": "엔비디아, 250억달러 규모 채권 발행 추진",
-          "url": "https://www.g-enews.com/view.php?ud=2026061608052832849a1f309431_1"
+          "title": "'검은 반도체' 김, 바다 한계 넘는다···CJ·풀무원 육상양식 선점 경...",
+          "url": "https://www.sisajournal-e.com/news/articleView.html?idxno=421775"
         }
       ],
       "streak": 1,
       "is_new": true
     },
     {
-      "keyword": "코스닥 정책 모멘텀 (승강제 유예 논의)",
-      "category": "정책",
-      "weight": 6,
-      "stocks": [],
-      "news": [
-        {
-          "title": "종전 훈풍에 서머랠리 기대…\"반도체 실적·코스닥 정책 모멘텀 기대\"",
-          "url": "https://www.edaily.co.kr/news/newspath.asp?newsid=02778166645482376"
-        },
-        {
-          "title": "[더벨][thebell interview | 국민성장펀드 열전] \"저평가 코스닥, 정책자...",
-          "url": "https://www.thebell.co.kr/free/content/ArticleView.asp?key=202606101536389880106162"
-        },
-        {
-          "title": "코스닥의 변화…증권가 \"정책 모멘텀 재부각 기대\"",
-          "url": "https://www.mt.co.kr/stock/2026/06/15/2026061517065614830"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "게임업계 배당·소각 확산",
-      "category": "섹터",
+      "keyword": "업스테이지 'AI 컴퍼니' 출범으로 글로벌 AI 도전",
+      "category": "종목",
       "weight": 5,
-      "stocks": [],
-      "news": [
-        {
-          "title": "게임업계, 배당·소각 확산...'상대적 소외' 주가 끌어올릴까",
-          "url": "https://www.digitaltoday.co.kr/news/articleView.html?idxno=675139"
-        }
+      "stocks": [
+        "업스테이지"
       ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "금융 망분리 규제 완화",
-      "category": "정책",
-      "weight": 5,
-      "stocks": [],
       "news": [
         {
-          "title": "[핀테크핫이슈] 韓 증시 역대급 변동성...빗장 풀린 금융 망분리 규제",
-          "url": "https://www.digitaltoday.co.kr/news/articleView.html?idxno=675142"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "초과세수 15~20조원 활용 (미래투자·양극화 해소)",
-      "category": "정책",
-      "weight": 5,
-      "stocks": [],
-      "news": [
-        {
-          "title": "초과세수 15조~20조원 현실화되나…정부, 활용방안 놓고 고심",
-          "url": "http://www.intn.co.kr/news/articleView.html?idxno=2051288"
+          "title": "김성훈 업스테이지 대표 \"업스테이지 컴퍼니 출범…'모두를 위한 AI' 시...",
+          "url": "https://www.epnc.co.kr/news/articleView.html?idxno=403093"
         },
         {
-          "title": "구윤철 부총리 \"초과 세수, 미래 대비에 사용해야…양극화 해소에도 배...",
-          "url": "https://www.ajunews.com/view/20260615174417296"
+          "title": "[현장] \"美·中 AI 패권, 큰 새우 되겠다\"···업스테이지, 글로벌 도전",
+          "url": "http://www.enewstoday.co.kr/news/articleView.html?idxno=2439407"
         },
         {
-          "title": "구윤철 부총리 \"초과세수, 미래 대비·양극화 해소 지원에 활용해야\"",
-          "url": "http://www.yonhapnewstv.co.kr/news/AKR20260615170804lvh"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "바이오 기업 임상자금 조달 및 상폐 리스크",
-      "category": "섹터",
-      "weight": 5,
-      "stocks": [],
-      "news": [
-        {
-          "title": "[韓-中 바이오 명암]③임상할 돈 모으면 상폐…K-바이오 옥죄는 이중고",
-          "url": "https://view.asiae.co.kr/article/2026060908161005960"
-        },
-        {
-          "title": "VC가 말하는 바이오 투자유치 전략은?…\"기술은 기본, IR은 투자자 눈높...",
-          "url": "https://www.medigatenews.com/news/1252442081"
-        },
-        {
-          "title": "'프리IPO 4배' 거둔 뉴라클사이언스...난청 효능 데이터 '촉각'",
-          "url": "https://dealsite.co.kr/articles/163498"
+          "title": "업스테이지, '업스테이지 컴퍼니' 출범으로 인공지능 대중화 박차",
+          "url": "https://www.tokenpost.kr/news/tech/369849"
         }
       ],
       "streak": 1,
