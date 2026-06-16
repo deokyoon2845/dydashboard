@@ -92,80 +92,48 @@ def _naver_trade_value(market_label: str):
     return None
 
 
-# ── 소스 1-b: 등락 종목 수 (네이버 모바일 JSON → 데스크톱 정규식 폴백) ──
-
-def _naver_updown_api(market_label: str):
-    """네이버 모바일 지수 API(JSON)에서 상승/보합/하락 종목 수를 받는다.
-    필드명이 버전에 따라 달라 여러 후보 키를 시도한다. 실패/비정상 시 None."""
-    code = _NAVER_CODE.get(market_label)
-    if not code:
-        return None
-    url = f"https://m.stock.naver.com/api/index/{code}/basic"
-    try:
-        r = requests.get(
-            url,
-            headers={"User-Agent": _UA,
-                     "Referer": "https://m.stock.naver.com/"},
-            timeout=10,
-        )
-        if not r.ok:
-            _log(f"[naver updown api] HTTP {r.status_code}")
-            return None
-        j = r.json()
-    except Exception as e:
-        _log(f"[naver updown api] 실패: {e}")
-        return None
-
-    def _pick(*keys):
-        for k in keys:
-            if k in j and j[k] is not None:
-                return _to_int(j[k])
-        return None
-
-    u = _pick("riseCount", "upCount", "increaseCount", "advanceCount")
-    f = _pick("steadyCount", "unchangedCount", "flatCount", "evenCount")
-    d = _pick("fallCount", "downCount", "decreaseCount", "declineCount")
-
-    if u is None or d is None:
-        _log(f"[naver updown api] 카운트 키 없음 (keys={list(j)[:12]})")
-        return None
-    if (u or 0) + (d or 0) < _MIN_BREADTH_TOTAL:
-        _log(f"[naver updown api] 비정상 합계 up={u} flat={f} down={d}")
-        return None
-    return u or 0, f or 0, d or 0
-
+# ── 소스 1-b: 등락 종목 수 (네이버 지수 상세 페이지 파싱) ──
+# 모바일 /basic JSON엔 종목 수가 없음(DEBUG로 확인). 종목 수가 '텍스트'로 들어있는
+# 데스크톱 지수 상세 페이지(sise_index.naver)를 파싱한다. 태그를 모두 제거하고
+# '상승/보합/하락' 라벨 바로 뒤 숫자를 잡는다. 합계가 비현실적으로 작으면(<100)
+# 오파싱으로 보고 버린다. 실패 시 원문 일부를 DEBUG에 남겨 다음 수정의 단서로 쓴다.
 
 def _naver_updown(market_label: str):
-    """상승/보합/하락 종목 수. 모바일 API(JSON) 우선, 실패 시 데스크톱 정규식.
-    비정상(합계<100) 값은 버려 (0,0,0) 반환 → 화면엔 '정보 없음'으로 정직 표기."""
-    # 1) 모바일 지수 API (구조화 JSON)
-    api = _naver_updown_api(market_label)
-    if api is not None:
-        return api
+    """상승/보합/하락 종목 수. 실패/비정상 시 (0,0,0) → 화면엔 '정보 없음'."""
+    code = _NAVER_CODE.get(market_label)  # 'KOSPI' | 'KOSDAQ'
+    if not code:
+        return 0, 0, 0
 
-    # 2) 데스크톱 시세 메인 페이지 정규식 폴백
-    url = "https://finance.naver.com/sise/"
+    url = f"https://finance.naver.com/sise/sise_index.naver?code={code}"
     try:
         r = requests.get(url, headers=_HEADERS, timeout=12)
         r.encoding = "euc-kr"
         html = r.text
     except Exception as e:
-        _log(f"[naver updown] 요청 실패: {e}")
+        _log(f"[updown {market_label}] 요청 실패: {e}")
         return 0, 0, 0
 
-    start = html.find(market_label)
-    seg = html[start:start + 6000] if start >= 0 else html
-    up = re.search(r"상승[^\d]{0,30}?([\d,]+)", seg)
-    flat = re.search(r"보합[^\d]{0,30}?([\d,]+)", seg)
-    down = re.search(r"하락[^\d]{0,30}?([\d,]+)", seg)
-    u = _to_int(up.group(1)) if up else 0
-    f = _to_int(flat.group(1)) if flat else 0
-    d = _to_int(down.group(1)) if down else 0
-    # 합계가 비현실적으로 작으면(=오파싱) 버린다 → 엉뚱한 1/1/1 방지.
-    if (u or 0) + (d or 0) < _MIN_BREADTH_TOTAL:
-        _log(f"[naver updown] 비정상 값 버림 up={u} flat={f} down={d}")
+    # 모든 HTML 태그 제거 후 공백 정리 → 라벨 기준 텍스트 앵커링
+    txt = re.sub(r"<[^>]+>", " ", html)
+    txt = re.sub(r"\s+", " ", txt)
+
+    def _grab(label):
+        # 라벨 뒤 비숫자 6자(공백·화살표 등)까지 건너뛰고 첫 숫자를 잡는다(너무 멀리 X)
+        m = re.search(label + r"[^\d]{0,6}([\d,]+)", txt)
+        return (_to_int(m.group(1)) or 0) if m else 0
+
+    u = _grab("상승")
+    f = _grab("보합")
+    d = _grab("하락")
+
+    if u + d < _MIN_BREADTH_TOTAL:
+        # 실패 원인 파악용: '상승' 주변 원문 일부를 남긴다(다음 수정의 단서).
+        i = txt.find("상승")
+        snippet = txt[max(0, i - 20):i + 90] if i >= 0 else "('상승' 라벨 없음)"
+        _log(f"[updown {market_label}] 파싱 실패 up={u} flat={f} down={d} · "
+             f"원문≈ {snippet}")
         return 0, 0, 0
-    return u or 0, f or 0, d or 0
+    return u, f, d
 
 
 # ── 소스 2: 다음 모바일 페이지 (거래대금 + 등락) ──────────────
