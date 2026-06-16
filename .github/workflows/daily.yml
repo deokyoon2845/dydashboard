@@ -2,9 +2,14 @@ name: 전략시황 보고서 자동 생성
 
 on:
   schedule:
-    - cron: "50 22 * * 0-4"   # KST 평일 07:50 (장전)
-    - cron: "0 8 * * 1-5"     # KST 평일 17:00 (장마감 후)
-  workflow_dispatch:
+    # 평일(KST) 장전 07:50  = UTC 전일 22:50 (UTC 일~목 → KST 월~금 아침)
+    - cron: "50 22 * * 0-4"
+    # 평일(KST) 장마감 후 17:07 = UTC 당일 08:07 (UTC 월~금 → KST 월~금 저녁)
+    #   ※ 정각(08:00)은 전 세계 cron이 몰려 GitHub이 종종 스킵 → 7분 비켜 누락 방지.
+    - cron: "7 8 * * 1-5"
+    # ※ 두 cron 모두 요일 지정으로 토·일(KST)에는 실행되지 않음.
+    #   장전/장후 구분은 generate.py가 생성 시각(KST)으로 자동 판별(오전=장전, 오후=장후).
+  workflow_dispatch:        # GitHub에서 수동 실행 버튼도 제공
 
 permissions:
   contents: write
@@ -16,6 +21,9 @@ jobs:
       - name: 저장소 체크아웃
         uses: actions/checkout@v5
 
+      # ── 필수 시크릿 점검: 비어 있으면 '여기서' 빨간 X로 멈춤 ──
+      #    (예전엔 시크릿이 없어도 그냥 돌다가 'DB에 안 들어감 → 뷰어 빈 화면'으로
+      #     조용히 실패했음. 이제 무엇이 비었는지 이름까지 찍고 즉시 실패한다.)
       - name: 필수 시크릿 점검
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -33,10 +41,10 @@ jobs:
           done
           if [ -n "$missing" ]; then
             echo "::error::필수 시크릿이 비어 있습니다 →$missing"
-            echo "Settings → Secrets and variables → Actions 에서 추가하세요."
+            echo "GitHub 저장소 → Settings → Secrets and variables → Actions 에서 추가하세요."
             exit 1
           fi
-          echo "✅ 필수 시크릿 모두 존재"
+          echo "✅ 필수 시크릿 모두 존재 — 생성 단계로 진행합니다."
 
       - name: 파이썬 설정
         uses: actions/setup-python@v6
@@ -55,18 +63,29 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # ★ 빈 문자열이면 400 에러("model: String should have at least 1 character")
+          #    → 시크릿이 비어 있거나 없어도 기본값으로 폴백.
           REPORT_MODEL: ${{ secrets.REPORT_MODEL || 'claude-opus-4-8' }}
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          # ★★ 보고서는 이제 Supabase DB에 저장됨. 이 둘이 없으면 생성돼도 DB에 안 들어가
+          #     뷰어에 아무것도 안 뜸. (가장 유력한 원인)
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          # 한·미 금리차 등 ECOS 데이터가 필요하면 같이 전달 (없으면 해당 부분만 빈 값 처리)
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
         run: python -m engine.run_all
 
-      - name: 결과 커밋 & 푸시 (백업용 — 보고서는 DB에 저장됨)
+      - name: 결과 커밋 & 푸시 (키워드·data 백업용 — 보고서는 DB에 저장됨)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add reports/ data/ || true
-          git diff --staged --quiet || git commit -m "자동 생성: $(date -u +%Y-%m-%d) ($(date -u +%H:%MUTC))"
+          if git diff --staged --quiet; then
+            echo "커밋할 변경 없음 — 건너뜀"
+            exit 0
+          fi
+          git commit -m "자동 생성: $(date -u +%Y-%m-%d) ($(date -u +%H:%MUTC))"
+          # 혹시 모를 원격 변경과의 충돌을 자동 흡수 (push 거부 방지)
+          git pull --rebase origin main || true
           git push
