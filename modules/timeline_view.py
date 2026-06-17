@@ -394,7 +394,7 @@ def render_timeline():
     else:
         dates_html = ""
     st.markdown('<div class="tl-bar"></div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="tl-title">시황 타임라인 {dates_html}</div>',
+    st.markdown(f'<div class="tl-title">타임라인 {dates_html}</div>',
                 unsafe_allow_html=True)
     st.markdown('<div class="tl-sub">최근 5개 거래일의 보고서 흐름 (같은 날은 장마감 후 우선)</div>',
                 unsafe_allow_html=True)
