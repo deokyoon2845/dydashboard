@@ -1,7 +1,48 @@
 {
-  "updated": "2026-06-16",
-  "total": 0,
-  "hits": 0,
-  "accuracy": null,
-  "records": []
+  "updated": "2026-06-17",
+  "total": 5,
+  "hits": 5,
+  "accuracy": 100.0,
+  "records": [
+    {
+      "report": "2026-06-12_1007.json",
+      "date": "2026-06-12",
+      "mood": "positive",
+      "next_day": "2026-06-15",
+      "next_ret": 5.2,
+      "hit": true
+    },
+    {
+      "report": "2026-06-15_0833.json",
+      "date": "2026-06-15",
+      "mood": "positive",
+      "next_day": "2026-06-16",
+      "next_ret": 2.11,
+      "hit": true
+    },
+    {
+      "report": "2026-06-15_1913.json",
+      "date": "2026-06-15",
+      "mood": "positive",
+      "next_day": "2026-06-16",
+      "next_ret": 2.11,
+      "hit": true
+    },
+    {
+      "report": "2026-06-16_0812.json",
+      "date": "2026-06-16",
+      "mood": "positive",
+      "next_day": "2026-06-17",
+      "next_ret": 1.58,
+      "hit": true
+    },
+    {
+      "report": "2026-06-16_1709.json",
+      "date": "2026-06-16",
+      "mood": "positive",
+      "next_day": "2026-06-17",
+      "next_ret": 1.58,
+      "hit": true
+    }
+  ]
 }
