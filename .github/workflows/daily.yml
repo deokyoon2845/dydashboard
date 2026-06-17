@@ -1,23 +1,20 @@
-name: 전략시황 보고서 자동 생성
+name: 전략시황 보고서 생성 (수동 전용)
+
+# ──────────────────────────────────────────────────────────────────────────
+#  ★자동(예약) 실행 전면 제거됨.★
+#  예전의 schedule(cron) 블록을 삭제해, GitHub이 스스로 돌리는 일은 더 이상 없다.
+#  이제 보고서는 '내가 원할 때'만 만들어진다. 두 가지 수동 방법:
+#   1) GitHub → Actions → '전략시황 보고서 생성 (수동 전용)' → Run workflow
+#      (리포트+키워드 생성 + 텔레그램 발송까지 전체 파이프라인 실행)
+#   2) Streamlit 앱 → 시황 탭 맨 아래 '🌅 장전 / 🌆 장마감 후 보고서 생성' 버튼
+#      (DB에 저장됨. 단, 이 경로는 텔레그램 발송은 안 함)
+# ──────────────────────────────────────────────────────────────────────────
 
 on:
-  schedule:
-    # 평일(KST) 장전 07:50  = UTC 전일 22:50 (UTC 일~목 → KST 월~금 아침)
-    - cron: "50 22 * * 0-4"
-    # 평일(KST) 장마감 후 17:07 = UTC 당일 08:07 (UTC 월~금 → KST 월~금 저녁)
-    #   ※ 정각(08:00)은 전 세계 cron이 몰려 GitHub이 종종 스킵 → 7분 비켜 누락 방지.
-    - cron: "7 8 * * 1-5"
-    # ※ 두 cron 모두 요일 지정으로 토·일(KST)에는 실행되지 않음.
-    #   장전/장후 구분은 generate.py가 생성 시각(KST)으로 자동 판별(오전=장전, 오후=장후).
-  workflow_dispatch:        # GitHub에서 수동 실행 버튼도 제공
+  workflow_dispatch:        # 오직 수동 실행 버튼으로만 트리거
 
 permissions:
   contents: write
-
-# 같은 워크플로가 겹쳐 돌면(수동+예약 동시 등) 뒤엣것만 살리고 앞엣것 취소 → 중복 보고서 방지.
-concurrency:
-  group: daily-report
-  cancel-in-progress: false
 
 jobs:
   generate:
@@ -27,8 +24,6 @@ jobs:
         uses: actions/checkout@v5
 
       # ── 필수 시크릿 점검: 비어 있으면 '여기서' 빨간 X로 멈춤 ──
-      #    (예전엔 시크릿이 없어도 그냥 돌다가 'DB에 안 들어감 → 뷰어 빈 화면'으로
-      #     조용히 실패했음. 이제 무엇이 비었는지 이름까지 찍고 즉시 실패한다.)
       - name: 필수 시크릿 점검
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -68,45 +63,25 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          # ★ 빈 문자열이면 400 에러("model: String should have at least 1 character")
-          #    → 시크릿이 비어 있거나 없어도 기본값으로 폴백.
+          # ★ 빈 문자열이면 400 에러 → 시크릿이 없어도 기본값으로 폴백.
           REPORT_MODEL: ${{ secrets.REPORT_MODEL || 'claude-opus-4-8' }}
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
-          # ★★ 보고서는 이제 Supabase DB에 저장됨. 이 둘이 없으면 생성돼도 DB에 안 들어가
-          #     뷰어에 아무것도 안 뜸. (가장 유력한 원인)
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-          # 한·미 금리차 등 ECOS 데이터가 필요하면 같이 전달 (없으면 해당 부분만 빈 값 처리)
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
         run: python -m engine.run_all
 
-      - name: 결과 커밋 & 푸시 (키워드·data 백업 + 하트비트)
+      - name: 결과 커밋 & 푸시 (키워드·data 백업 — 보고서는 DB에 저장됨)
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # ── 하트비트(중요) ──────────────────────────────────────────────
-          #  GitHub은 '60일간 저장소에 아무 활동(커밋)도 없으면' 예약(cron) 워크플로를
-          #  자동으로 비활성화한다. 보고서는 이제 DB에 저장되고 reports/ 커밋이 .gitignore
-          #  등으로 건너뛰어지면, 매 실행이 '커밋할 변경 없음'으로 끝나 활동이 0이 되고
-          #  결국 예약이 꺼질 수 있다. → 매 실행마다 마지막 실행 시각을 기록해 강제로
-          #  '활동'을 만들어 예약 워크플로가 자동 비활성화되지 않게 한다.
-          mkdir -p data
-          {
-            echo "last_run_utc: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            echo "last_run_kst: $(TZ=Asia/Seoul date +'%Y-%m-%d %H:%M:%S')"
-            echo "trigger: ${{ github.event_name }}"
-          } > data/last_run.txt
-          git add -f data/last_run.txt          # .gitignore에 막혀도 강제로 추적
-
           git add reports/ data/ || true
           if git diff --staged --quiet; then
             echo "커밋할 변경 없음 — 건너뜀"
             exit 0
           fi
-          git commit -m "자동 생성: $(date -u +%Y-%m-%d) ($(date -u +%H:%MUTC))"
-          # 혹시 모를 원격 변경과의 충돌을 자동 흡수 (push 거부 방지)
+          git commit -m "수동 생성: $(date -u +%Y-%m-%d) ($(date -u +%H:%MUTC))"
           git pull --rebase origin main || true
           git push
