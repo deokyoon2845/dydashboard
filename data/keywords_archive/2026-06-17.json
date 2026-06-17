@@ -1,8 +1,8 @@
 {
-  "generated": "2026-06-17T20:43:57.078850+09:00",
+  "generated": "2026-06-17T22:04:12.711574+09:00",
   "items": [
     {
-      "keyword": "SK하이닉스 신고가 돌파 및 '250만원 시대' 진입",
+      "keyword": "SK하이닉스 250만원 신고가 돌파",
       "category": "종목",
       "weight": 10,
       "stocks": [
@@ -10,28 +10,28 @@
       ],
       "news": [
         {
+          "title": "코스피, 8864로 최고가 마감...SK하이닉스 250만원선 뚫었다 [fn마감시황...",
+          "url": "http://www.fnnews.com/news/202606171622075750"
+        },
+        {
+          "title": "코스피 8,864 사상 최고치 마감…'250만 닉스' 돌파",
+          "url": "https://www.idaegu.co.kr/news/articleView.html?idxno=551400"
+        },
+        {
           "title": "코스피, 8864.24 사상 최고치 마감﻿...사상 첫 '250만닉스' 달성",
           "url": "https://www.newsinside.kr/news/articleView.html?idxno=4768914"
-        },
-        {
-          "title": "SK하이닉스, 252만원...역대 종가 최고치",
-          "url": "https://www.m-economynews.com/news/article.html?no=67975"
-        },
-        {
-          "title": "시총 200조 돌파 SK하이닉스…'100조 주주환원설'은 선 그었지만 기대감...",
-          "url": "https://www.econovill.com/news/articleView.html?idxno=742707"
         }
       ],
       "streak": 1,
       "is_new": true
     },
     {
-      "keyword": "코스피 사상 최고치 8,864 마감, '9천피' 진격",
+      "keyword": "코스피 8864 종가 기준 사상 최고치 경신",
       "category": "거시",
       "weight": 9,
       "stocks": [
-        "SK하이닉스",
-        "삼성전자"
+        "삼성전자",
+        "SK하이닉스"
       ],
       "news": [
         {
@@ -39,98 +39,57 @@
           "url": "https://www.businesskorea.co.kr/news/articleView.html?idxno=271501"
         },
         {
-          "title": "(마감시황) 코스피, 8,860선 안착하며 사상 최고치…SK하이닉스 첫 250만...",
-          "url": "https://www.news2day.co.kr/article/20260617500183"
-        },
-        {
           "title": "[마감시황] 코스피 1.58% 오른 8864 마감…종가 기준 최고",
           "url": "https://www.newspim.com/news/view/20260617000912"
+        },
+        {
+          "title": "“9000선이 보인다” 코스피, 8864.24 마감...종가 기준 사상 최고치",
+          "url": "https://futurechosun.com/?p=151932"
         }
       ],
       "streak": 1,
       "is_new": true
     },
     {
-      "keyword": "미 FOMC 금리 결정 앞 시장 관망, 변동성 확대",
+      "keyword": "미국 FOMC 금리결정 시장 경계",
       "category": "거시",
       "weight": 9,
       "stocks": [
+        "삼성전자",
         "SK하이닉스",
-        "삼성전자"
+        "현대차"
       ],
       "news": [
         {
-          "title": "[코인 시황] 비트코인 6만4000달러대로 후퇴…시장 시선은 워시 첫 FOMC로",
-          "url": "https://www.newspim.com/news/view/20260617001059"
-        },
-        {
-          "title": "암호화폐 시장은 왜 오늘 하락했나?…FOMC 앞두고 얼어붙은 투자심리",
-          "url": "http://coinreaders.com/242812"
+          "title": "'워시 FOMC' 앞둔 코스피 8864 최고가 마감…SK하닉 신고가 [시황종합]",
+          "url": "https://www.news1.kr/finance/market-exr/6200320"
         },
         {
           "title": "[경제읽기] 코스피, 미 FOMC 앞두고 '숨 고르기'…전망은",
           "url": "http://www.yonhapnewstv.co.kr/news/MYH20260617135055nQo"
+        },
+        {
+          "title": "코스피 운명 가를 美 연준 금리…추가 랠리냐, 차익실현이냐",
+          "url": "https://www.dailian.co.kr/news/view/1656967/?sc=Naver"
         }
       ],
       "streak": 1,
       "is_new": true
     },
     {
-      "keyword": "SK하이닉스 주주환원(무상증자·배당) 기대감 급증",
-      "category": "종목",
-      "weight": 8,
-      "stocks": [
-        "SK하이닉스",
-        "SK스퀘어"
-      ],
-      "news": [
-        {
-          "title": "100조 주주환원? \"검토한 바 없다\" 선 그었지만‥코스피는 '하닉 랠리'",
-          "url": "https://imnews.imbc.com/replay/2026/nwdesk/article/6830956_37004.html"
-        },
-        {
-          "title": "'주주환원설 'SK하이닉스 250만원 넘었다",
-          "url": "http://www.fnnews.com/news/202606171826456482"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "개인투자자 순매수 주도, 기관·외국인 신중",
-      "category": "거시",
-      "weight": 8,
-      "stocks": [
-        "SK하이닉스",
-        "삼성전자"
-      ],
-      "news": [
-        {
-          "title": "[마감시황] 코스피, 개인·기관 쌍끌이 힘입어 종가 사상 최고치 경신",
-          "url": "https://www.shinailbo.co.kr/news/articleView.html?idxno=5031636"
-        },
-        {
-          "title": "FOMC 앞두고 숨 고르기...개미 홀로 순매수에 코스피 '보합권' [fn오전시...",
-          "url": "http://www.fnnews.com/news/202606171011192359"
-        },
-        {
-          "title": "외국인, 4거래일만에 '팔자'로 전환...그래도 코스피 8864.24로 '사상 최...",
-          "url": "https://www.livebiz.today/news/articleView.html?idxno=202698"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "AI 메모리 수요 부족 우려와 반도체 선순환",
+      "keyword": "반도체 업황 회복 및 AI 메모리 수요",
       "category": "섹터",
-      "weight": 7,
+      "weight": 9,
       "stocks": [
         "SK하이닉스",
         "삼성전자",
-        "마이크론"
+        "삼성전기"
       ],
       "news": [
+        {
+          "title": "SK하이닉스, 첫 250만 원 돌파…반도체 투자 심리 회복세",
+          "url": "https://www.tokenpost.kr/news/market/370357"
+        },
         {
           "title": "도이체방크 \"마이크론 47% 더 뛴다\"...AI 메모리 부족에 목표가 1500달러",
           "url": "https://www.newspim.com/news/view/20260617001110"
@@ -138,6 +97,73 @@
         {
           "title": "메모리 반도체 따라 기판도 웃는다…삼성전기·LG이노텍 ‘훈풍’",
           "url": "https://www.khan.co.kr/article/202606172032035"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "SK그룹주 동반 상승 (SK스퀘어·SK하이닉스)",
+      "category": "섹터",
+      "weight": 8,
+      "stocks": [
+        "SK하이닉스",
+        "SK스퀘어"
+      ],
+      "news": [
+        {
+          "title": "코스피, 종가 기준 사상 최고치 마감...SK스퀘어, SK하이닉스 상승 VS 현...",
+          "url": "http://www.econonews.co.kr/news/articleView.html?idxno=439824"
+        },
+        {
+          "title": "8800선 넘은 코스피, 최고치 마감… SK그룹주 동반 상승",
+          "url": "https://www.womennews.co.kr/news/articleView.html?idxno=278865"
+        },
+        {
+          "title": "SK스퀘어, SK하이닉스 주주환원 기대에 6% 급등",
+          "url": "https://www.tokenpost.kr/news/economy/370327"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "외국인 투매 속 개인투자자 순매수",
+      "category": "거시",
+      "weight": 8,
+      "stocks": [
+        "SK하이닉스",
+        "삼성전자"
+      ],
+      "news": [
+        {
+          "title": "외국인, 4거래일만에 '팔자'로 전환...그래도 코스피 8864.24로 '사상 최...",
+          "url": "https://www.livebiz.today/news/articleView.html?idxno=202698"
+        },
+        {
+          "title": "코스피 8,864 사상 최고치...외국인 1조원 매도에도 '9천피' 눈앞",
+          "url": "https://www.polinews.co.kr/news/articleView.html?idxno=734346"
+        },
+        {
+          "title": "[거래소 외국인] 한화오션 SK하이닉스 삼성전기 담고 삼성전자 SK스퀘어...",
+          "url": "https://www.pinpointnews.co.kr/news/articleView.html?idxno=460930"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "반도체 기판주 수혜 (PCB·BCP)",
+      "category": "섹터",
+      "weight": 7,
+      "stocks": [
+        "삼성전기",
+        "LG이노텍"
+      ],
+      "news": [
+        {
+          "title": "LG이노텍 “반도체 기판, 5년 내 영업익 1조 달성”",
+          "url": "https://www.sedaily.com/article/20057029?ref=naver"
         },
         {
           "title": "전기차 주춤해도 AI가 받친다…롯데에너지머티리얼즈, PCB 동박서 반등 ...",
@@ -148,12 +174,115 @@
       "is_new": true
     },
     {
-      "keyword": "한국은행 '하반기 물가 3% 안팎' 전망, 인플레 지속",
+      "keyword": "2차전지 에너지안보 테마 재평가",
+      "category": "섹터",
+      "weight": 7,
+      "stocks": [
+        "LG에너지솔루션",
+        "SK이노베이션"
+      ],
+      "news": [
+        {
+          "title": "2차전지 이젠 '에너지 안보 테마주' [한경 프리미엄9 TODAY]",
+          "url": "https://www.hankyung.com/article/2026061726741"
+        },
+        {
+          "title": "2차전지업체 엔켐, 유증·CB 발행으로 빚 부담 덜기 나섰다",
+          "url": "https://www.mt.co.kr/stock/2026/06/17/2026061716121461705"
+        },
+        {
+          "title": "[창간기획: 미래를 설계하는 기업들] AI가 부른 배터리 대전환…LG에너...",
+          "url": "https://www.s-journal.co.kr/news/articleView.html?idxno=41792"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "원·달러 환율 1513.4원 상승",
+      "category": "거시",
+      "weight": 7,
+      "stocks": [
+        "삼성전자",
+        "현대차",
+        "LG전자"
+      ],
+      "news": [
+        {
+          "title": "'美 FOMC 경계감' 원·달러 환율, 1.8원 오른 1513.4원 마감...코스피는 ...",
+          "url": "https://www.betanews.net/article/view/beta202606170100"
+        },
+        {
+          "title": "[외환-마감] 워시 첫 FOMC 앞두고 상승…1.80원↑",
+          "url": "https://news.einfomax.co.kr/news/articleView.html?idxno=4420520"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "삼성·SK 시가총액 집중도 64% (쏠림 현상)",
       "category": "거시",
       "weight": 7,
       "stocks": [
         "삼성전자",
         "SK하이닉스"
+      ],
+      "news": [
+        {
+          "title": "삼성·SK가 코스피 64% 장악...AI가 키운 '초집중' 증시",
+          "url": "https://www.pinpointnews.co.kr/news/articleView.html?idxno=460967"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "암호화폐 시장 FOMC 불안정",
+      "category": "섹터",
+      "weight": 6,
+      "stocks": [],
+      "news": [
+        {
+          "title": "[코인 시황] 비트코인 6만4000달러대로 후퇴…시장 시선은 워시 첫 FOMC로",
+          "url": "https://www.newspim.com/news/view/20260617001059"
+        },
+        {
+          "title": "암호화폐 시장은 왜 오늘 하락했나?…FOMC 앞두고 얼어붙은 투자심리",
+          "url": "http://coinreaders.com/242812"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "홍콩·대만 증시 부진 대비 한국 강세",
+      "category": "거시",
+      "weight": 6,
+      "stocks": [
+        "삼성전자",
+        "SK하이닉스"
+      ],
+      "news": [
+        {
+          "title": "[올댓차이나] 대만 증시, 금융주 막판 매수세로 나흘째 상승 마감…0.15...",
+          "url": "https://www.newsis.com/view/NISX20260617_0003673352"
+        },
+        {
+          "title": "[올댓차이나] 홍콩 증시, 中 경기선행 불안에 속락 마감…H주 1.17%↓",
+          "url": "https://www.newsis.com/view/NISX20260617_0003673327"
+        }
+      ],
+      "streak": 1,
+      "is_new": true
+    },
+    {
+      "keyword": "한은 하반기 물가 3% 안팎 지속 전망",
+      "category": "거시",
+      "weight": 6,
+      "stocks": [
+        "한국전력",
+        "가스공사"
       ],
       "news": [
         {
@@ -173,129 +302,38 @@
       "is_new": true
     },
     {
-      "keyword": "2차전지 에너지 안보 테마, 배터리 대전환",
+      "keyword": "코스닥 1031.96 반등 (바이오·로봇주)",
       "category": "섹터",
       "weight": 6,
-      "stocks": [
-        "LG에너지솔루션",
-        "삼성SDI"
-      ],
-      "news": [
-        {
-          "title": "2차전지 이젠 '에너지 안보 테마주' [한경 프리미엄9 TODAY]",
-          "url": "https://www.hankyung.com/article/2026061726741"
-        },
-        {
-          "title": "반도체·배터리 '쌍끌이'…불기둥 뿜은 후성",
-          "url": "https://www.hankyung.com/article/2026061725501"
-        },
-        {
-          "title": "2차전지업체 엔켐, 유증·CB 발행으로 빚 부담 덜기 나섰다",
-          "url": "https://www.mt.co.kr/stock/2026/06/17/2026061716121461705"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "SK그룹주 동반 상승, SK스퀘어 6% 급등",
-      "category": "종목",
-      "weight": 6,
-      "stocks": [
-        "SK스퀘어",
-        "SK하이닉스"
-      ],
-      "news": [
-        {
-          "title": "[오늘의 주목주] '주주환원 기대감' SK스퀘어 주가 6%대 급등, 코스피 개...",
-          "url": "https://www.businesspost.co.kr/BP?command=article_view&num=440233"
-        },
-        {
-          "title": "8800선 넘은 코스피, 최고치 마감… SK그룹주 동반 상승",
-          "url": "https://www.womennews.co.kr/news/articleView.html?idxno=278865"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "미·이란 종전 우려 해소, 글로벌 리스크 완화",
-      "category": "거시",
-      "weight": 6,
-      "stocks": [
-        "한화에어로스페이스",
-        "현대차"
-      ],
-      "news": [
-        {
-          "title": "“전쟁 끝, 1만피 도전 시작”…종전 이후 판 바뀌는 투자 지도 [美-이란...",
-          "url": "https://www.mk.co.kr/article/12076810"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "키움증권 MTS 먹통 재발, 투자자 신뢰 훼손",
-      "category": "종목",
-      "weight": 5,
-      "stocks": [
-        "키움증권"
-      ],
-      "news": [
-        {
-          "title": "개인거래 1위 키움증권, 또 MTS '먹통'… 신뢰 흔들",
-          "url": "http://www.newsroad.co.kr/news/articleView.html?idxno=60570"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "코스닥 반등, 바이오·로봇주 강세",
-      "category": "섹터",
-      "weight": 5,
       "stocks": [
         "휴림로봇",
-        "바이오 섹터"
+        "알테오젠"
       ],
       "news": [
         {
           "title": "[마감시황] 코스닥, 하루 만에 반등하며 1031.96 마감…바이오·로봇주 ...",
           "url": "https://www.seoul.co.kr/news/economy/securities/2026/06/17/20260617500209?wlog_tag3=naver"
-        }
-      ],
-      "streak": 1,
-      "is_new": true
-    },
-    {
-      "keyword": "메모리 반도체 가격 상승률 임금·물가 파급",
-      "category": "섹터",
-      "weight": 5,
-      "stocks": [
-        "SK하이닉스",
-        "삼성전자"
-      ],
-      "news": [
+        },
         {
-          "title": "\"반도체 성과급 등 임금 상승이 물가 자극… 하반기 3% 갈 것\" [꿈틀대는...",
-          "url": "http://www.fnnews.com/news/202606171849144229"
+          "title": "코스닥, 외인 매수에 상승 마감...코오롱티슈진, 알테오젠, HLB 상승 VS 주...",
+          "url": "http://www.econonews.co.kr/news/articleView.html?idxno=439825"
         }
       ],
       "streak": 1,
       "is_new": true
     },
     {
-      "keyword": "코스피 변동성 급증, 대차거래 잔고 재증가",
+      "keyword": "미국 증시 고평가 경고 (닷컴·1929년 수준)",
       "category": "거시",
-      "weight": 5,
+      "weight": 6,
       "stocks": [
+        "삼성전자",
         "SK하이닉스"
       ],
       "news": [
         {
-          "title": "9000피 앞두고 경계감 확산…다시 불어난 대차거래 잔고",
-          "url": "http://www.fnnews.com/news/202606171826512798"
+          "title": "1929년·닷컴 버블도 넘었다! 미국 증시 고평가 경고음",
+          "url": "http://coinreaders.com/242840"
         }
       ],
       "streak": 1,
