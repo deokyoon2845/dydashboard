@@ -1,7 +1,18 @@
-"""Supabase 보고서 저장소 — 엔진(GitHub Actions)·뷰어(Streamlit) 공용 얇은 계층.
+"""Supabase 보고서·관심종목 저장소 — 엔진(GitHub Actions)·뷰어(Streamlit) 공용 얇은 계층.
 
 - 뷰어에서는 Streamlit Secrets, 엔진에서는 환경변수로 키를 읽는다(둘 다 지원).
 - 보고서는 reports 테이블에 (report_date, report_kind) 기준 upsert 된다.
+- 관심종목(워치리스트)은 watchlist 테이블의 단일 행(id=1)에 jsonb 배열로 저장한다.
+  → Streamlit Cloud 파일시스템이 휘발성이라, 앱에서 바꾼 관심종목이 reboot에도 보존되게 한다.
+  (※ 최초 1회 아래 SQL로 테이블을 만들어야 함)
+
+    create table if not exists watchlist (
+      id int primary key,
+      stocks jsonb not null default '[]'::jsonb,
+      updated_at timestamptz default now()
+    );
+    insert into watchlist (id, stocks) values (1, '[]'::jsonb)
+      on conflict (id) do nothing;
 """
 import os
 import re
@@ -10,6 +21,8 @@ from datetime import datetime
 from supabase import create_client, Client
 
 TABLE = "reports"
+WL_TABLE = "watchlist"
+WL_ID = 1
 _CLIENT: Client | None = None
 
 
@@ -23,6 +36,21 @@ def _cfg(key: str) -> str:
         return st.secrets[key]
     except Exception as e:
         raise RuntimeError(f"{key}가 설정되지 않았어요 (Secrets 또는 환경변수 확인).") from e
+
+
+def supabase_configured() -> bool:
+    """SUPABASE_URL·SUPABASE_KEY가 (환경변수 또는 Secrets에) 모두 있으면 True. 예외 없이 판별."""
+    for key in ("SUPABASE_URL", "SUPABASE_KEY"):
+        val = os.environ.get(key)
+        if not val:
+            try:
+                import streamlit as st
+                val = st.secrets.get(key)
+            except Exception:
+                val = None
+        if not val:
+            return False
+    return True
 
 
 def _client() -> Client:
@@ -53,7 +81,7 @@ def _meta_from_data(data: dict):
     return f"{d}_{hhmm}", d, kind
 
 
-# ── 쓰기 ──────────────────────────────────────────────────────
+# ── 보고서: 쓰기 ──────────────────────────────────────────────
 
 def save_report(data: dict) -> str:
     """보고서 dict를 DB에 저장(upsert). 같은 날·같은 종류는 덮어쓴다. slug 반환."""
@@ -69,7 +97,7 @@ def save_report(data: dict) -> str:
     return slug
 
 
-# ── 읽기 ──────────────────────────────────────────────────────
+# ── 보고서: 읽기 ──────────────────────────────────────────────
 
 def list_slugs() -> list[str]:
     """모든 보고서 slug를 최신 날짜순으로 반환."""
@@ -93,3 +121,34 @@ def load_by_slug(slug: str) -> dict | None:
 def delete_by_slug(slug: str) -> None:
     """slug로 보고서 삭제 (삭제 UI용)."""
     _client().table(TABLE).delete().eq("slug", slug).execute()
+
+
+# ── 관심종목(워치리스트): 읽기·쓰기 ───────────────────────────
+# watchlist 테이블의 단일 행(id=1)에 종목명 배열을 jsonb로 보관.
+# Streamlit Cloud 재시작에도 보존되는 영속 저장소.
+
+def load_watchlist_db() -> list[str]:
+    """관심종목 목록을 DB에서 읽어 반환. 행이 없으면 빈 리스트."""
+    res = (_client().table(WL_TABLE)
+           .select("stocks")
+           .eq("id", WL_ID)
+           .limit(1)
+           .execute())
+    if res.data:
+        stocks = res.data[0].get("stocks") or []
+        return [str(s).strip() for s in stocks if str(s).strip()]
+    return []
+
+
+def save_watchlist_db(stocks: list) -> list[str]:
+    """관심종목 목록을 DB에 저장(upsert, id=1 단일 행). 정리된 목록 반환."""
+    clean = []
+    for s in stocks:
+        s = str(s).strip()
+        if s and s not in clean:
+            clean.append(s)
+    clean = clean[:20]
+    _client().table(WL_TABLE).upsert(
+        {"id": WL_ID, "stocks": clean, "updated_at": datetime.now().isoformat()},
+        on_conflict="id").execute()
+    return clean
