@@ -10,14 +10,18 @@
 
 2026-06 레이아웃 개선(⑥⑧): 생성 로직 무변경, 뷰어 순서/위치만 조정.
   - ⑧ 주목 테마를 장전·장후 카드 '위'로 이동 (TL;DR → 테마 → 좌우 카드).
-  - ⑥ 취합된 텔레그램 원문을 카드 밖 '맨 아래'로 강등(검증용 메타).
 
 2026-06 추가(기본값·탭):
   - 기본 표시 날짜를 '오늘(date.today)'이 아니라 '가장 최근 보고서 일자'로 변경.
-    (Streamlit Cloud 서버가 UTC라 KST 아침엔 date.today()가 하루 뒤처져 '어제'를
-     띄우던 문제를 근본 차단.)
-  - 장전·장마감 후가 둘 다 있으면 좌우 2단 대신 '탭'으로 묶고 장마감 후를 기본 노출,
-    장전은 탭 뒤로 숨긴다(모바일 스크롤 과다 완화 + 원하면 장전 탭으로 펼침).
+  - 장전·장마감 후가 둘 다 있으면 세그먼트(탭)로 묶고 장마감 후를 기본 노출.
+
+2026-06 수정(요청 반영):
+  - 탭 위치 스왑: '🌅 장전'을 왼쪽, '🌆 장마감 후'를 오른쪽으로. 단, 기본 선택(클릭된
+    상태)은 여전히 '장마감 후'. (st.tabs는 항상 첫 탭이 기본 선택돼 이 조합이 불가 →
+    st.segmented_control(default=장마감 후)로 교체.)
+  - 검증용 '취합된 텔레그램 원문' 섹션 전면 제거.
+  - 주목 테마가 비어 있던 문제: 새 topics 스키마 보고서는 themes를 따로 만들지 않아
+    'themes' 키가 비어 있었음 → topics에서 테마 카드를 폴백 생성해 항상 표시.
 """
 
 import html
@@ -50,6 +54,9 @@ __MOOD_BADGE_CSS__
 .rpt2-grp .tag{font-size:10.5px;font-weight:700;letter-spacing:.02em;text-transform:none;padding:2px 9px;border-radius:20px;}
 .tag-pred{background:var(--tint-up,#FBF2F2);color:var(--up,#B65F5A);}
 .tag-upd{background:#e1f5ee;color:#0f6e56;}
+
+/* 보고서 구분 세그먼트(🌅 장전 / 🌆 장마감 후) — 탭 대용 */
+div[data-testid="stSegmentedControl"]{margin-bottom:14px;}
 
 /* ★추가: 보고서 보는 법 팝오버 내부 스타일 (체온계·금리차 팝오버 톤에 맞춤) */
 .rpt-help-h{font-family:'Fraunces','Noto Sans KR',serif;font-size:14px;font-weight:600;color:var(--ink,#34352f);margin:2px 0 6px;}
@@ -201,15 +208,6 @@ __MOOD_BADGE_CSS__
 .ch-new .ch-item::before{content:"+ ";color:#0f6e56;font-weight:700;}
 .ch-cont .ch-item::before{content:"· ";color:var(--muted,#9a9b92);font-weight:700;}
 
-/* 취합된 텔레그램 원문 (검증용) */
-.srcmsg-cap{font-size:11.5px;color:var(--muted,#9a9b92);line-height:1.6;margin-bottom:10px;}
-.srcmsg-wrap{display:flex;flex-direction:column;gap:9px;max-height:460px;overflow-y:auto;padding-right:4px;}
-.srcmsg{border:1px solid var(--line,#ECEDE7);border-left:3px solid var(--sage,#A7BBA9);border-radius:0 10px 10px 0;padding:9px 13px;background:#fff;}
-.srcmsg-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:5px;}
-.srcmsg-ch{font-size:11.5px;font-weight:700;color:var(--sage-deep,#7E9A83);word-break:break-all;}
-.srcmsg-dt{font-size:10.5px;color:var(--muted,#9a9b92);white-space:nowrap;flex:none;}
-.srcmsg-tx{font-size:12.5px;line-height:1.62;color:var(--ink,#34352f);white-space:pre-wrap;}
-
 /* 주목 테마 (전체 폭) */
 .rpt-theme-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
 @media(max-width:900px){.rpt-theme-grid{grid-template-columns:repeat(2,1fr);}}
@@ -304,8 +302,6 @@ def _selected_date(files) -> date:
     if pk and Path(pk).stem in {f.stem for f in files}:
         return _report_date(Path(pk))
     # ★기본값: 항상 '가장 최근 일자' 보고서.
-    #   (Streamlit Cloud 서버가 UTC라 KST 아침엔 date.today()가 하루 뒤처져
-    #    '어제'를 띄우던 문제를 근본 차단)
     return _latest_date(files)
 
 
@@ -356,11 +352,10 @@ def _extract_stocks(text: str) -> list:
             if p.strip() and len(p.strip()) <= 20 and not p.strip().startswith("#")]
 
 
-# ── ★수정: 보고서 보는 법 팝오버 (⑥⑧ 새 순서 반영) ─────────
+# ── 보고서 보는 법 팝오버 ────────────────────────────────────
 
 def _render_report_help_popover():
-    """제목 옆 ⓘ 보고서 보는 법 팝오버 — 체온계·금리차 팝오버와 동일한 방식.
-    내용: (1) 생성 시점, (2) 독자 활용법 — 화면 순서(테마 위, 원문 맨 아래)에 맞춤."""
+    """제목 옆 ⓘ 보고서 보는 법 팝오버 — 체온계·금리차 팝오버와 동일한 방식."""
     with st.popover("ⓘ 보고서 보는 법", use_container_width=True):
         st.markdown(
             '<div class="rpt-help-h">🕒 생성 시점</div>'
@@ -375,14 +370,12 @@ def _render_report_help_popover():
             '장전·장후 분위기 뱃지와 핵심 수치가 함께 붙어 있어요.</div>'
             '<div class="rpt-help-li">바로 아래 <b>주목 테마</b>에서 그날 자금이 쏠린 섹터를 먼저 훑으면 '
             '큰 그림이 잡혀요. 세부 근거는 그 아래 카드에서 확인합니다.</div>'
-            '<div class="rpt-help-li"><b>장마감 후 / 장전 탭</b>으로 보고서가 나뉘어요. '
-            '둘 다 있으면 그날의 결과를 담은 <b>장마감 후</b>가 먼저 보이고, '
-            '아침 시나리오인 <b>장전</b>은 탭을 눌러 펼쳐볼 수 있어요. '
+            '<div class="rpt-help-li"><b>장전 / 장마감 후 탭</b>으로 보고서가 나뉘어요. '
+            '둘 다 있으면 그날의 결과를 담은 <b>장마감 후</b>가 기본으로 펼쳐지고, '
+            '아침 시나리오인 <b>장전</b>은 탭을 눌러 확인할 수 있어요. '
             '각 주제의 <b>합의 / 이견</b> 박스는 시장 컨센서스와 반대 시각을 함께 보여주니 '
             '한쪽만 믿지 말고 양쪽을 견주는 용도로 보세요. <b>중요도</b>가 높은 주제부터 보면 '
             '시간이 부족할 때 효율적이에요.</div>'
-            '<div class="rpt-help-li">맨 아래 <b>취합된 텔레그램 원문</b>은 보고서 생성에 실제로 '
-            '쓰인 메시지 전문이에요. 분석 내용을 원문과 직접 대조해 검증하고 싶을 때 펼쳐 보세요.</div>'
             '<div class="rpt-help-note">⚠️ 본 보고서는 AI가 생성한 분석이며 투자 권유가 아닙니다. '
             '최종 판단과 책임은 투자자 본인에게 있어요.</div>',
             unsafe_allow_html=True)
@@ -615,55 +608,7 @@ def _change_html(data: dict) -> str:
     return f'<div class="ch">{cols}</div>'
 
 
-# ── 렌더링: 취합된 텔레그램 원문 (검증용) ────────────────────
-# ⑥ 변경: _render_report_card 안에서 호출하지 않고, render_reports 맨 아래에서
-#         pre/post를 한데 모아 호출한다. (검증용 메타로 강등)
-
-def _render_source_messages(data: dict, kind: str, path: Path):
-    msgs = data.get("source_messages") or []
-    if not msgs:
-        return
-    from collections import Counter
-    chan_counts = Counter(str(m.get("channel", "")).strip() or "(미상)" for m in msgs)
-    n_chan = len(chan_counts)
-    kind_ko = "장전" if kind == "pre" else "장마감 후"
-    with st.expander(f"📨 [{kind_ko}] 취합된 텔레그램 원문 {len(msgs)}건 · 채널 {n_chan}곳 — 검증용"):
-        st.markdown(
-            '<div class="srcmsg-cap">이 보고서 생성에 실제로 들어간 메시지 전문입니다. '
-            '원문과 직접 대조해 검증하세요. (작성시각 오름차순)</div>', unsafe_allow_html=True)
-        rows = ""
-        for m in msgs:
-            ch = html.escape(str(m.get("channel", "")).strip() or "(미상)")
-            dt = html.escape(str(m.get("date", "")).strip()[:16])
-            tx = html.escape(str(m.get("text", "")).strip())
-            rows += (
-                '<div class="srcmsg">'
-                f'<div class="srcmsg-head"><span class="srcmsg-ch">{ch}</span>'
-                f'<span class="srcmsg-dt">{dt}</span></div>'
-                f'<div class="srcmsg-tx">{tx}</div>'
-                '</div>')
-        st.markdown(f'<div class="srcmsg-wrap">{rows}</div>', unsafe_allow_html=True)
-
-
-def _render_source_section(pre, post):
-    """⑥ 하단 검증용 원문 섹션 — pre/post 둘 다 있으면 각각 expander로."""
-    (pre_path, pre_data) = pre
-    (post_path, post_data) = post
-    has_pre = bool(pre_data and (pre_data.get("source_messages")))
-    has_post = bool(post_data and (post_data.get("source_messages")))
-    if not (has_pre or has_post):
-        return
-    st.markdown('<div class="rpt2-grp">🔎 검증용 원문</div>', unsafe_allow_html=True)
-    # 최신(장후)을 먼저, 장전을 뒤에.
-    if has_post:
-        _render_source_messages(post_data, "post", post_path)
-    if has_pre:
-        _render_source_messages(pre_data, "pre", pre_path)
-
-
 # ── 렌더링: 장전/장후 카드 ───────────────────────────────────
-# ⑥ 변경: 이 함수 안에서 _render_source_messages 호출을 제거.
-#         원문은 render_reports 맨 아래 _render_source_section이 담당.
 
 def _render_report_card(data: dict, kind: str, path: Path):
     icon = "🌅" if kind == "pre" else "🌆"
@@ -735,9 +680,6 @@ def _render_report_card(data: dict, kind: str, path: Path):
             f'<div class="rc-src">{src_html}</div>'
             f'</div>', unsafe_allow_html=True)
 
-    # ⑥ 제거됨: 취합된 텔레그램 원문은 더 이상 카드 안에서 렌더하지 않는다.
-    #           (render_reports 맨 아래 _render_source_section이 담당)
-
     # PDF · JSON 다운로드
     b1, b2 = st.columns(2)
     with b1:
@@ -770,11 +712,13 @@ def _render_placeholder(kind: str):
 
 
 def _render_report_pair(pre, post):
-    """장전·장마감 후 표시 — 둘 다 있으면 '탭'으로 묶는다.
+    """장전·장마감 후 표시 — 둘 다 있으면 세그먼트(탭 대용)로 묶는다.
 
-    - 둘 다 있음: st.tabs로 묶고 '🌆 장마감 후'를 기본(먼저) 노출, '🌅 장전'은 탭 뒤로 숨김.
-      (그날의 결과지인 장마감 후를 우선 보여주고, 글이 길어 스크롤이 과해지는 문제 완화.
-       원하면 장전 탭을 눌러 다시 펼쳐볼 수 있음.)
+    탭 위치(요청 반영): '🌅 장전'을 왼쪽, '🌆 장마감 후'를 오른쪽.
+    단, 기본 선택(클릭된 상태)은 여전히 '장마감 후'.
+      → st.tabs는 항상 첫 탭이 기본 선택돼 '왼쪽=장전 + 기본=장마감 후' 조합이 불가능.
+        st.segmented_control(default="🌆 장마감 후")로 교체해 둘 다 만족.
+
     - 장마감 후만 있음: 그 카드만 표시.
     - 장전만 있음(보통 장중 이전): 장전 카드 + '장마감 후 생성 전' 안내.
     - 둘 다 없음: 양쪽 안내(placeholder).
@@ -783,11 +727,18 @@ def _render_report_pair(pre, post):
     post_path, post_data = post
 
     if pre_data and post_data:
-        tab_post, tab_pre = st.tabs(["🌆 장마감 후", "🌅 장전"])
-        with tab_post:
-            _render_report_card(post_data, "post", post_path)
-        with tab_pre:
+        SEG_PRE, SEG_POST = "🌅 장전", "🌆 장마감 후"
+        choice = st.segmented_control(
+            "보고서 구분",
+            options=[SEG_PRE, SEG_POST],   # 왼쪽=장전, 오른쪽=장마감 후
+            default=SEG_POST,              # 기본 선택=장마감 후 (클릭된 상태)
+            label_visibility="collapsed",
+            key="rpt_kind_seg",
+        )
+        if choice == SEG_PRE:
             _render_report_card(pre_data, "pre", pre_path)
+        else:  # 장마감 후(기본) · 또는 선택 해제(None) → 장마감 후로
+            _render_report_card(post_data, "post", post_path)
     elif post_data:
         _render_report_card(post_data, "post", post_path)
     elif pre_data:
@@ -800,8 +751,37 @@ def _render_report_pair(pre, post):
 
 # ── 렌더링: 주목 테마 (전체 폭) ──────────────────────────────
 
+def _derive_themes_from_topics(data: dict) -> list:
+    """새 topics 스키마 보고서는 'themes'를 따로 만들지 않는다.
+    → 주제 카드(topics)에서 주목 테마 카드를 폴백 생성한다.
+    (themes 키가 비어 '이 보고서에는 테마 정보가 없어요'만 뜨던 문제 해결)"""
+    topics = (data or {}).get("topics") or []
+    derived = []
+    for tp in topics:
+        if not isinstance(tp, dict):
+            continue
+        name = str(tp.get("title", "")).strip()
+        if not name:
+            continue
+        detail = str(tp.get("fact", "")).strip()
+        if len(detail) > 95:
+            detail = detail[:93].rstrip() + "…"
+        stocks = [str(s).strip() for s in (tp.get("stocks") or []) if str(s).strip()]
+        derived.append({
+            "name": name,
+            "detail": detail,
+            "tickers": ", ".join(stocks),
+        })
+        if len(derived) >= 6:
+            break
+    return derived
+
+
 def _render_themes(data: dict):
-    themes = data.get("themes", []) if data else []
+    themes = (data.get("themes") if data else None) or []
+    # 새 보고서(topics)는 themes가 비어 있으므로 topics에서 폴백 생성
+    if not themes:
+        themes = _derive_themes_from_topics(data or {})
     st.markdown('<div class="rpt2-grp">🎯 주목 테마</div>', unsafe_allow_html=True)
     if not themes:
         st.markdown('<div class="rpt-side-empty">이 보고서에는 테마 정보가 없어요.</div>',
@@ -817,8 +797,8 @@ def _render_themes(data: dict):
             for t in tickers)
         cards += (
             f'<div class="theme-card">'
-            f'<div class="theme-name">{name}</div>'
-            f'<div class="theme-detail">{detail}</div>'
+            f'<div class="theme-name">{html.escape(str(name))}</div>'
+            f'<div class="theme-detail">{html.escape(str(detail))}</div>'
             + (f'<div class="theme-tickers">관련: {tk_html}</div>' if tk_html else "")
             + '</div>')
     st.markdown(f'<div class="rpt-theme-grid">{cards}</div>', unsafe_allow_html=True)
@@ -858,7 +838,7 @@ def render_reports():
     sel_date = _selected_date(files)
     st.markdown('<div class="rpt2-bar"></div>', unsafe_allow_html=True)
 
-    # ★변경: 제목 우측에 ⓘ 보고서 보는 법 팝오버 배치
+    # 제목 우측에 ⓘ 보고서 보는 법 팝오버 배치
     title_col, help_col = st.columns([0.82, 0.18])
     with title_col:
         st.markdown(f'<div class="rpt2-date">{_fmt_date_ko(sel_date)}</div>'
@@ -889,12 +869,9 @@ def render_reports():
     # ⑧ 주목 테마 (전체 폭) — 좌우 카드 '위'로 이동
     _render_themes(latest)
 
-    # ② 장전·장마감 후 — 탭(장마감 후 기본, 장전은 탭 뒤). 둘 다 있을 때만 탭.
+    # ② 장전·장마감 후 — 세그먼트(왼쪽=장전, 기본 선택=장마감 후). 둘 다 있을 때만 세그먼트.
     st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
     _render_report_pair((pre_path, pre_data), (post_path, post_data))
-
-    # ⑥ 취합된 텔레그램 원문 — 맨 아래 검증용 메타로 강등
-    _render_source_section((pre_path, pre_data), (post_path, post_data))
 
 
 # ── 메인: 리포트 관리 (탭 하단) ──────────────────────────────
