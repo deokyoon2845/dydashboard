@@ -1,926 +1,512 @@
-"""전략·시황 보고서 뷰어 — 하루 단위(장전·장마감 후) 레이아웃, 미니멀 미스트.
+"""[엔진] 텔레그램 메시지 → 구조화 JSON 시황 보고서 (2단계 파이프라인, 장전/장후 양식 분리).
 
-2026-06 재설계: 새 topics 스키마(주제 카드) 지원 + 과거 보고서 폴백.
-- 새 보고서(topics 있음): 주제 카드(사실/시장시각[합의·이견]/정량/시사점) + 목적별 꼬리 + 변화 추적
-- 과거 보고서(topics 없음): 기존 sections/market_drivers/cross_check 레이아웃 그대로
+재설계(2026-06): 목적 분리 + 주제 클러스터링 기반 새 양식.
 
-2026-06 저장소 이전: 보고서를 reports/ 폴더 대신 Supabase DB에서 읽고/쓴다.
-  list_reports()는 DB의 보고서를 '가상 경로(Path)'로 반환해, 기존 path 기반 로직을
-  그대로 재사용한다. (slug = 파일명 stem = "2026-06-14_0430")
+1차(Haiku): 메시지를 '주제 클러스터'로 구조화 — 주제별 핵심·언급량·합의/이견·사실/의견 구분
+2차(Opus): 클러스터 + 정량 데이터 + 뉴스 + 어제 보고서 + 워치리스트로 최종 보고서 생성
 
-2026-06 레이아웃 개선(⑥⑧): 생성 로직 무변경, 뷰어 순서/위치만 조정.
-  - ⑧ 주목 테마를 장전·장후 카드 '위'로 이동 (TL;DR → 테마 → 좌우 카드).
-  - ⑥ 취합된 텔레그램 원문을 카드 밖 '맨 아래'로 강등(검증용 메타).
+새 스키마(topics 중심):
+- headline / mood / snapshot_line
+- topics[]: {title, importance, fact, market_view{consensus,dissent}, metrics, implication, stocks[]}
+  · 상위 8개 이내(최대), 각 필드 문장 수 '범위' 지정 → 깊이 있게 쓰되 길이 통제
+    (주제가 적은 날은 8개보다 적어도 됨 — 억지로 늘리지 않음)
+  · 기존 market_drivers(매트릭스)·cross_check(교차검증)를 topics로 흡수 (중복 제거)
+- outlook: 장전=오늘 볼 것 / 장마감=장전 점검+내일 가설  (목적별 분기 = 중복 방지)
+- change_tracking: 어제 대비 새 주제 / 지속 주제  (매일 반복 방지)
 
-2026-06 추가(기본값·탭):
-  - 기본 표시 날짜를 '오늘(date.today)'이 아니라 '가장 최근 보고서 일자'로 변경.
-    (Streamlit Cloud 서버가 UTC라 KST 아침엔 date.today()가 하루 뒤처져 '어제'를
-     띄우던 문제를 근본 차단.)
-  - 장전·장마감 후가 둘 다 있으면 좌우 2단 대신 '탭'으로 묶고 장마감 후를 기본 노출,
-    장전은 탭 뒤로 숨긴다(모바일 스크롤 과다 완화 + 원하면 장전 탭으로 펼침).
+과거 호환: 뷰어는 topics가 있으면 새 카드, 없으면 기존 sections로 폴백.
+잘림 방지: Opus 출력이 max_tokens로 끊기면 이어받아(continuation) 완성.
+잘림 안전장치(2026-06): 이어받기 후에도 잘려서 themes(또는 keywords)가 비면, 불완전
+  보고서를 조용히 저장하지 않고 크게 실패시킨다. (themes·keywords는 JSON 끝쪽이라
+  출력이 잘리면 가장 먼저 비는 필드 → '주목 테마 없음'의 근본 원인)
+
+2026-06 보강(시황 이해도 향상):
+  - 주제 카드 상한 6 → 8 (말 그대로 '최대', 화제 적으면 더 적게).
+  - 개별 섹션 분량 약 2배(fact 4~6문장, consensus/dissent 2~3문장, implication 3~4문장).
+  - 다양성 가드레일: 한 메가테마(AI·지정학)가 슬롯을 독식하지 않게 배분.
+  - 1차 클러스터링을 더 잘게(12~18개, 작은 화제도 따로) → 묻히는 메시지 감소.
+  - 분량↑로 출력이 길어지므로 max_tokens 기본값 상향(잘림 하드페일 방지).
 """
 
-import html
 import json
+import os
 import re
-from datetime import date
-from pathlib import Path
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
-import streamlit as st
+from anthropic import Anthropic
 
-from modules.stocks import naver_stock_url
-from modules.mood import MOOD_KO, mood_css
-from modules import db
+MODEL = os.environ.get("REPORT_MODEL", "claude-opus-4-8")
+HAIKU = "claude-haiku-4-5"
+CLUSTER_THRESHOLD = int(os.environ.get("CLUSTER_THRESHOLD", "12"))  # 이 수↑면 1차 클러스터링
+CLUSTER_MAX_TOKENS = int(os.environ.get("CLUSTER_MAX_TOKENS", "10000"))  # Haiku 클러스터 출력 한도
+MAX_TOKENS = int(os.environ.get("REPORT_MAX_TOKENS", "24000"))  # 분량 2배·8섹션 대응 상향
+MAX_CONTINUE = 2
 
-REPORTS_DIR = Path("reports")  # (보존용 — 이제 목록/로드는 DB가 담당)
-MOOD_CLS = {"positive": "mood-pos", "neutral": "mood-neu", "cautious": "mood-cau"}
+MAX_TOPICS = int(os.environ.get("REPORT_MAX_TOPICS", "8"))  # 주제 카드 상한(최대)
+
 _WD = "월화수목금토일"
 
-_RPT_CSS = """
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Hanken+Grotesk:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap');
-.rpt-wrap{font-family:'Hanken Grotesk','Noto Sans KR',sans-serif;}
-.mood-badge{font-size:10.5px;font-weight:700;letter-spacing:.06em;padding:3px 11px;border-radius:20px;display:inline-block;}
-__MOOD_BADGE_CSS__
-.rpt2-bar{height:3px;width:34px;background:var(--sage,#A7BBA9);border-radius:3px;margin:0 0 10px;}
-.rpt2-date{font-family:'Fraunces','Noto Sans KR',serif;font-size:15px;font-weight:600;color:var(--sage-deep,#7E9A83);letter-spacing:.02em;}
-.rpt2-title{font-family:'Fraunces','Noto Sans KR',serif;font-size:30px;font-weight:600;line-height:1.3;color:var(--ink,#34352f);margin:2px 0 16px;}
-.rpt2-grp{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted,#9a9b92);margin:22px 0 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-.rpt2-grp .sub{font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted,#9a9b92);font-size:11px;}
-.rpt2-grp .tag{font-size:10.5px;font-weight:700;letter-spacing:.02em;text-transform:none;padding:2px 9px;border-radius:20px;}
-.tag-pred{background:var(--tint-up,#FBF2F2);color:var(--up,#B65F5A);}
-.tag-upd{background:#e1f5ee;color:#0f6e56;}
-
-/* ★추가: 보고서 보는 법 팝오버 내부 스타일 (체온계·금리차 팝오버 톤에 맞춤) */
-.rpt-help-h{font-family:'Fraunces','Noto Sans KR',serif;font-size:14px;font-weight:600;color:var(--ink,#34352f);margin:2px 0 6px;}
-.rpt-help-h.second{margin-top:14px;padding-top:12px;border-top:1px solid var(--line,#ECEDE7);}
-.rpt-help-p{font-size:12.5px;line-height:1.7;color:var(--ink,#34352f);margin:0 0 7px;}
-.rpt-help-p b{color:var(--sage-deep,#7E9A83);font-weight:700;}
-.rpt-help-li{font-size:12.5px;line-height:1.65;color:var(--ink,#34352f);padding-left:14px;position:relative;margin-bottom:6px;}
-.rpt-help-li::before{content:"·";position:absolute;left:3px;color:var(--sage,#A7BBA9);font-weight:700;}
-.rpt-help-li b{color:var(--sage-deep,#7E9A83);font-weight:700;}
-.rpt-help-note{font-size:11.5px;line-height:1.6;color:var(--muted,#9a9b92);background:var(--summary-bg,#F6F7F2);border-radius:8px;padding:8px 11px;margin-top:10px;}
-
-/* ⓪ 오늘의 한 줄 TL;DR (상단) */
-.rpt-tldr{background:#fff;border:1px solid var(--line,#ECEDE7);border-left:4px solid var(--sage,#A7BBA9);border-radius:0 16px 16px 0;padding:15px 19px;margin:4px 0 6px;}
-.rpt-tldr .top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;}
-.rpt-tldr .lab{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted,#9a9b92);}
-.tldr-step{display:inline-flex;align-items:center;gap:5px;}
-.tldr-steplab{font-size:11px;font-weight:700;color:var(--muted,#9a9b92);}
-.tldr-arrow{color:var(--muted,#9a9b92);font-size:11px;font-weight:700;}
-.rpt-tldr .hl{font-family:'Fraunces','Noto Sans KR',serif;font-size:19px;font-weight:600;line-height:1.42;color:var(--ink,#34352f);}
-.rpt-tldr .kt{font-size:12.5px;color:var(--muted,#9a9b92);line-height:1.62;margin-top:7px;}
-/* 숫자 띠 (snapshot_line) */
-.rpt-snap{font-size:12px;font-weight:600;color:var(--sage-deep,#7E9A83);background:var(--summary-bg,#F6F7F2);border-radius:8px;padding:7px 13px;margin-top:9px;display:inline-block;}
-
-/* 시장 동력 매트릭스 (구형 보고서용 — 유지) */
-.dvm{display:grid;grid-template-columns:0.58fr 1.21fr 1.21fr;background:#fff;
-  border:1px solid var(--line,#ECEDE7);border-radius:16px;overflow:hidden;}
-.dvm-h{font-size:12.5px;font-weight:700;padding:11px 16px;display:flex;align-items:center;gap:6px;
-  border-bottom:1px solid var(--line,#ECEDE7);}
-.dvm-h em{font-style:normal;font-size:10px;font-weight:600;color:var(--muted,#9a9b92);margin-left:2px;}
-.dvm-h0{background:var(--summary-bg,#F6F7F2);color:var(--muted,#9a9b92);font-size:11px;
-  letter-spacing:.04em;text-transform:uppercase;}
-.dvm-hup{background:var(--tint-up,#FBF2F2);color:var(--up,#B65F5A);}
-.dvm-hdown{background:var(--tint-down,#F1F5F9);color:var(--down,#5A7CA0);}
-.dvm-tf{padding:14px 16px;border-bottom:1px solid var(--line,#ECEDE7);background:var(--summary-bg,#F6F7F2);
-  display:flex;flex-direction:column;justify-content:center;}
-.tf-name{font-size:15px;font-weight:700;color:var(--ink,#34352f);}
-.tf-name em{display:block;font-style:normal;font-size:10px;color:var(--muted,#9a9b92);
-  font-weight:600;margin:2px 0 0;letter-spacing:.02em;}
-.tf-sub{font-size:10.5px;color:var(--muted,#9a9b92);margin-top:6px;line-height:1.4;}
-.dvm-cell{padding:11px 14px;border-bottom:1px solid var(--line,#ECEDE7);
-  border-left:1px solid var(--line,#ECEDE7);display:flex;flex-direction:column;gap:8px;}
-.dvi{position:relative;padding:8px 11px 8px 13px;border-radius:9px;background:var(--summary-bg,#F6F7F2);
-  border:1px solid var(--line,#ECEDE7);}
-.dvi::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:3px;}
-.dvi.up::before{background:var(--up,#B65F5A);}
-.dvi.down::before{background:var(--down,#5A7CA0);}
-.dvi-lab{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:6px;margin-bottom:4px;}
-.dvi.up .dvi-lab{background:var(--tint-up,#FBF2F2);color:var(--up,#B65F5A);}
-.dvi.down .dvi-lab{background:var(--tint-down,#F1F5F9);color:var(--down,#5A7CA0);}
-.dvi-desc{font-size:12.5px;line-height:1.55;color:var(--ink,#34352f);}
-.dvi-empty{font-size:12px;color:var(--muted,#9a9b92);padding:4px 2px;}
-.dvm-celldir{display:none;}
-.dvm > *:nth-last-child(-n+3){border-bottom:none;}
-@media(max-width:640px){
-  .dvm{grid-template-columns:1fr;}
-  .dvm-h{display:none;}
-  .dvm-tf{background:#fff;padding-bottom:4px;border-bottom:none;}
-  .tf-name{font-size:14px;}
-  .dvm-cell{border-left:none;padding-top:4px;}
-  .dvm > *:nth-last-child(-n+3){border-bottom:1px solid var(--line,#ECEDE7);}
-  .dvm > *:last-child{border-bottom:none;}
-  .dvm-celldir{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;margin-bottom:4px;}
-  .dvm-celldir.up{color:var(--up,#B65F5A);} .dvm-celldir.down{color:var(--down,#5A7CA0);}
+_KIND_INFO = {
+    "pre": {
+        "ko": "장전(개장 전) 보고서",
+        "window": "전일 장 마감(15:30) 이후부터 오늘 아침까지 — 특히 간밤 미국 증시 흐름",
+        "goal": ("간밤 해외(특히 미국장) 흐름과 전일 마감 이후 이슈를 정리해, "
+                 "오늘 한국 장에서 '무엇을 보고 어떻게 대응할지'를 제시하는 것 (앞을 보는 문서)"),
+        "reader": "개인 투자자가 장 시작 전에 읽고 '오늘 무엇을 주목할지' 행동 지침을 얻도록",
+    },
+    "post": {
+        "ko": "장마감 후 보고서",
+        "window": "오늘 아침(07:50)부터 한국 장 마감 이후까지 — 오늘 한국 장에서 일어난 일",
+        "goal": ("오늘 한국 장에서 무슨 일이 왜 일어났는지 데이터로 결산하고, "
+                 "시장 시각의 합의/이견을 정리하는 것 (뒤를 정리하는 문서)"),
+        "reader": "개인 투자자가 장 마감 후 읽고 '오늘을 이해하고 내일 가설을 세울' 재료를 얻도록",
+    },
 }
 
-/* 장전/장후 카드 */
-.rc{background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);border-radius:16px;padding:18px 18px 14px;}
-.rc-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;}
-.rc-kind{font-size:13.5px;font-weight:700;color:var(--ink,#34352f);}
-.rc-win{font-size:11px;color:var(--muted,#9a9b92);margin-bottom:12px;}
-.rc-win b{color:var(--sage-deep,#7E9A83);}
-.rc-headline{font-family:'Fraunces','Noto Sans KR',serif;font-size:18px;font-weight:600;line-height:1.45;letter-spacing:-.01em;color:var(--ink,#34352f);margin-bottom:12px;}
-.rc-ktlab{font-size:10.5px;font-weight:700;letter-spacing:.06em;color:var(--sage-deep,#7E9A83);margin-bottom:5px;text-transform:uppercase;}
-.rc-ktbox{font-size:13.5px;line-height:1.75;color:var(--ink,#34352f);background:var(--summary-bg,#F6F7F2);border-left:3px solid var(--sage,#A7BBA9);padding:12px 15px;border-radius:0 11px 11px 0;margin-bottom:16px;}
-.rc-sectitle{font-size:13.5px;font-weight:700;color:var(--ink,#34352f);border-bottom:1.5px solid var(--sage,#A7BBA9);padding-bottom:4px;margin:14px 0 6px;}
-.rc-secbody{font-size:13px;line-height:1.75;color:var(--ink,#34352f);margin-bottom:6px;}
-.rc-src{margin-top:14px;padding-top:10px;border-top:1px solid var(--line,#ECEDE7);display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
-.src-pill{background:var(--pill-bg,#F1F2EC);color:var(--pill-ink,#5d6258);border:1px solid var(--line,#ECEDE7);font-size:11px;font-weight:600;padding:3px 9px;border-radius:7px;}
-.rc-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;min-height:280px;color:var(--muted,#9a9b92);border:1.5px dashed var(--line,#ECEDE7);border-radius:14px;background:#fdfdfb;}
-.rc-empty .ico{font-size:34px;opacity:.55;}
-.rc-empty .msg{font-size:14px;font-weight:700;color:var(--ink,#34352f);margin-top:12px;}
-.rc-empty .hint{font-size:12px;margin-top:6px;}
-.rc-empty .eta{font-size:11.5px;margin-top:10px;background:var(--pill-bg,#F1F2EC);color:var(--pill-ink,#5d6258);border:1px solid var(--line,#ECEDE7);padding:3px 11px;border-radius:20px;}
 
-/* 교차 검증 (구형 보고서용 — 유지) */
-.rcc{margin:14px 0 12px;padding-top:14px;border-top:1px solid var(--line,#ECEDE7);}
-.rcc-lab{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--sage-deep,#7E9A83);margin-bottom:7px;}
-.rcc-grid{display:flex;gap:9px;flex-wrap:wrap;}
-.rcc-col{flex:1;min-width:185px;border:1px solid var(--line,#ECEDE7);border-radius:11px;padding:10px 13px;background:#fff;}
-.rcc-col.mv{border-top:3px solid var(--sage,#A7BBA9);}
-.rcc-col.df{border-top:3px solid var(--down,#5A7CA0);}
-.rcc-col .h{font-size:11px;font-weight:700;margin-bottom:4px;}
-.rcc-col.mv .h{color:var(--sage-deep,#7E9A83);}
-.rcc-col.df .h{color:var(--down,#5A7CA0);}
-.rcc-col .t{font-size:12.5px;line-height:1.62;color:var(--ink,#34352f);}
-.rcc-verdict{margin-top:9px;background:var(--summary-bg,#F6F7F2);border-radius:9px;padding:10px 13px;font-size:12.5px;line-height:1.62;color:var(--ink,#34352f);}
-.rcc-vbadge{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:20px;background:var(--pill-bg,#F1F2EC);color:var(--pill-ink,#5d6258);margin-right:7px;border:1px solid var(--line,#ECEDE7);}
-
-/* ── 새 주제 카드 (topics 스키마) ── */
-.tp-list{display:flex;flex-direction:column;gap:11px;margin-bottom:6px;}
-.tp{background:#fff;border:1px solid var(--line,#ECEDE7);border-radius:13px;padding:13px 15px;
-  transition:box-shadow .18s ease,border-color .18s ease;}
-.tp:hover{box-shadow:0 4px 14px rgba(52,53,47,.06);border-color:var(--sage,#A7BBA9);}
-.tp-head{display:flex;align-items:center;gap:8px;margin-bottom:7px;}
-.tp-rank{font-family:'Fraunces','Noto Sans KR',serif;font-size:16px;font-weight:600;
-  color:var(--sage-deep,#7E9A83);min-width:18px;}
-.tp-title{font-size:15px;font-weight:700;color:var(--ink,#34352f);flex:1;word-break:keep-all;}
-.tp-imp{font-size:10px;font-weight:700;color:var(--muted,#9a9b92);background:var(--summary-bg,#F6F7F2);
-  padding:2px 7px;border-radius:6px;flex:none;}
-.tp-fact{font-size:13px;line-height:1.7;color:var(--ink,#34352f);margin-bottom:9px;}
-.tp-mv{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:9px;}
-.tp-mv-col{flex:1;min-width:170px;border-radius:9px;padding:8px 11px;font-size:12px;line-height:1.55;}
-.tp-mv-con{background:#eef4ef;border-left:3px solid var(--sage-deep,#7E9A83);}
-.tp-mv-dis{background:#FBF2F2;border-left:3px solid var(--up,#B65F5A);}
-.tp-mv-lab{font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
-  display:block;margin-bottom:3px;}
-.tp-mv-con .tp-mv-lab{color:var(--sage-deep,#7E9A83);}
-.tp-mv-dis .tp-mv-lab{color:var(--up,#B65F5A);}
-.tp-mv-tx{color:var(--ink,#34352f);}
-.tp-metrics{font-size:11.5px;color:var(--down,#5A7CA0);background:var(--tint-down,#F1F5F9);
-  border-radius:7px;padding:6px 10px;margin-bottom:8px;font-weight:600;}
-.tp-impl{font-size:12.5px;line-height:1.62;color:var(--ink,#34352f);
-  border-top:1px dashed var(--line,#ECEDE7);padding-top:8px;}
-.tp-impl b{color:var(--sage-deep,#7E9A83);font-weight:700;}
-.tp-stocks{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px;}
-.tp-stk{font-size:11px;font-weight:600;text-decoration:none;background:var(--pill-bg,#F1F2EC);
-  color:var(--pill-ink,#5d6258);border:1px solid var(--line,#ECEDE7);padding:2px 8px;border-radius:7px;}
-.tp-stk:hover{border-color:var(--sage,#A7BBA9);}
-
-/* 목적별 꼬리 (outlook) */
-.ol{background:var(--summary-bg,#F6F7F2);border:1px solid var(--line,#ECEDE7);border-radius:13px;
-  padding:13px 16px;margin-top:12px;}
-.ol-lab{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
-  color:var(--sage-deep,#7E9A83);margin-bottom:8px;}
-.ol-list{margin:0;padding-left:18px;}
-.ol-list li{font-size:13px;line-height:1.7;color:var(--ink,#34352f);margin-bottom:4px;}
-.ol-list li::marker{color:var(--sage,#A7BBA9);}
-.ol-rev{font-size:13px;line-height:1.7;color:var(--ink,#34352f);margin-bottom:8px;}
-.ol-rev b,.ol-tom b{font-weight:700;color:var(--sage-deep,#7E9A83);}
-.ol-tom{font-size:13px;line-height:1.7;color:var(--ink,#34352f);}
-
-/* 변화 추적 (change_tracking) */
-.ch{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px;}
-.ch-col{flex:1;min-width:180px;border:1px solid var(--line,#ECEDE7);border-radius:11px;padding:10px 13px;background:#fff;}
-.ch-lab{font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-bottom:6px;}
-.ch-new .ch-lab{color:#0f6e56;}
-.ch-cont .ch-lab{color:var(--muted,#9a9b92);}
-.ch-item{font-size:12px;line-height:1.6;color:var(--ink,#34352f);padding:2px 0;}
-.ch-new .ch-item::before{content:"+ ";color:#0f6e56;font-weight:700;}
-.ch-cont .ch-item::before{content:"· ";color:var(--muted,#9a9b92);font-weight:700;}
-
-/* 취합된 텔레그램 원문 (검증용) */
-.srcmsg-cap{font-size:11.5px;color:var(--muted,#9a9b92);line-height:1.6;margin-bottom:10px;}
-.srcmsg-wrap{display:flex;flex-direction:column;gap:9px;max-height:460px;overflow-y:auto;padding-right:4px;}
-.srcmsg{border:1px solid var(--line,#ECEDE7);border-left:3px solid var(--sage,#A7BBA9);border-radius:0 10px 10px 0;padding:9px 13px;background:#fff;}
-.srcmsg-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:5px;}
-.srcmsg-ch{font-size:11.5px;font-weight:700;color:var(--sage-deep,#7E9A83);word-break:break-all;}
-.srcmsg-dt{font-size:10.5px;color:var(--muted,#9a9b92);white-space:nowrap;flex:none;}
-.srcmsg-tx{font-size:12.5px;line-height:1.62;color:var(--ink,#34352f);white-space:pre-wrap;}
-
-/* 주목 테마 (전체 폭) */
-.rpt-theme-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
-@media(max-width:900px){.rpt-theme-grid{grid-template-columns:repeat(2,1fr);}}
-@media(max-width:560px){.rpt-theme-grid{grid-template-columns:1fr;}}
-.theme-card{background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);border-left:3px solid var(--sage,#A7BBA9);border-radius:0 13px 13px 0;padding:13px 16px 11px;}
-.theme-name{font-size:14px;font-weight:700;color:var(--ink,#34352f);margin-bottom:5px;}
-.theme-detail{font-size:13px;line-height:1.7;color:var(--ink,#34352f);margin-bottom:8px;}
-.theme-tickers{font-size:11.5px;color:var(--muted,#9a9b92);}
-.theme-tickers a{color:var(--sage-deep,#7E9A83);font-weight:600;text-decoration:none;background:var(--pill-bg,#F1F2EC);padding:2px 8px;border-radius:6px;border:1px solid var(--line,#ECEDE7);margin-right:4px;}
-.rpt-side-empty{color:var(--muted,#9a9b92);font-size:13px;padding:8px 0;}
-</style>
-"""
-_RPT_CSS = _RPT_CSS.replace("__MOOD_BADGE_CSS__", mood_css("mood"))
+def _today_kst_str() -> str:
+    now = datetime.now(ZoneInfo("Asia/Seoul"))
+    return f"{now.strftime('%Y-%m-%d')}({_WD[now.weekday()]})"
 
 
-# ── 파일 목록 / 유틸 ──────────────────────────────────────────
+# ── JSON 파싱 헬퍼 ─────────────────────────────────────────────
 
-def list_reports():
-    # DB의 보고서를 '가상 경로(Path)'로 반환 — 기존 path 기반 로직을 그대로 재사용.
-    # slug = 파일명 stem (예: "2026-06-14_0430"), 디스크에 실제 파일은 없음.
-    return [Path(f"{slug}.json") for slug in db.list_slugs()]
-
-
-def _report_date(path: Path) -> date:
-    try:
-        y, m, d = path.stem.split("_")[0].split("-")
-        return date(int(y), int(m), int(d))
-    except Exception:
-        return date.today()
-
-
-def _load(path: Path) -> dict:
-    # slug(=stem)로 DB에서 보고서 조회. 없으면 안전한 빈 dict 반환.
-    data = db.load_by_slug(path.stem)
-    if data:
-        return data
-    return {
-        "headline": path.stem, "key_takeaway": "",
-        "sections": [], "themes": [], "keywords": [],
-        "mood": "neutral", "report_kind": _infer_kind_from_name(path),
-        "generated_at": "", "messages_count": 0,
-    }
-
-
-def _infer_kind_from_name(path: Path) -> str:
-    m = re.search(r"_(\d{2})(\d{2})", path.stem)
-    if m:
-        return "pre" if int(m.group(1)) < 12 else "post"
-    return "post"
-
-
-def _kind_of(path: Path, data: dict) -> str:
-    k = (data or {}).get("report_kind")
-    return k if k in ("pre", "post") else _infer_kind_from_name(path)
-
-
-def _label(path: Path) -> str:
-    name = path.stem
-    try:
-        d, t = name.split("_")
-        return f"{d} {t[:2]}:{t[2:]}"
-    except ValueError:
-        return name
-
-
-def _label_with_headline(path: Path) -> str:
-    base = _label(path)
-    try:
-        data = _load(path)
-        hl = data.get("headline", "")
-        if hl:
-            return f"{base} — {hl[:30]}{'…' if len(hl) > 30 else ''}"
-    except Exception:
-        pass
-    return base
-
-
-def _fmt_date_ko(d: date) -> str:
-    return f"{d.strftime('%Y.%m.%d')}({_WD[d.weekday()]})"
-
-
-def _latest_date(files) -> date:
-    """보고서가 존재하는 날짜 중 가장 최근 날짜. 없으면 (서버) 오늘.
-    기본 표시 날짜의 기준점 — date.today()(서버 UTC)에 의존하지 않는다."""
-    dates = {_report_date(f) for f in files}
-    return max(dates) if dates else date.today()
-
-
-def _selected_date(files) -> date:
-    pk = st.session_state.get("rpt_picked_path")
-    # 가상 경로는 디스크에 없으므로 .exists() 대신 '목록에 있는지'로 확인.
-    if pk and Path(pk).stem in {f.stem for f in files}:
-        return _report_date(Path(pk))
-    # ★기본값: 항상 '가장 최근 일자' 보고서.
-    #   (Streamlit Cloud 서버가 UTC라 KST 아침엔 date.today()가 하루 뒤처져
-    #    '어제'를 띄우던 문제를 근본 차단)
-    return _latest_date(files)
-
-
-def _find_for_date(files, d: date):
-    pres, posts = [], []
-    for f in files:
-        if _report_date(f) != d:
+def _fix_inner_quotes(text):
+    out, i, n, in_str = [], 0, len(text), False
+    while i < n:
+        c = text[i]
+        if not in_str:
+            out.append(c)
+            if c == '"':
+                in_str = True
+            i += 1
             continue
+        if c == '\\' and i + 1 < n:
+            out.append(c); out.append(text[i + 1]); i += 2; continue
+        if c == '"':
+            j = i + 1
+            while j < n and text[j] in " \t\r\n":
+                j += 1
+            nxt = text[j] if j < n else ""
+            if nxt in (":", ",", "}", "]", ""):
+                out.append(c); in_str = False; i += 1
+            else:
+                out.append('\\"'); i += 1
+            continue
+        out.append(c); i += 1
+    return "".join(out)
+
+
+def _safe_json_parse(raw):
+    for fn in (lambda t: t, _fix_inner_quotes):
+        t = fn(raw)
         try:
-            data = _load(f)
+            return json.loads(t)
         except Exception:
-            continue
-        bucket = pres if _kind_of(f, data) == "pre" else posts
-        bucket.append((f, data))
-    pres.sort(key=lambda x: x[0].name, reverse=True)
-    posts.sort(key=lambda x: x[0].name, reverse=True)
-    pre = pres[0] if pres else (None, None)
-    post = posts[0] if posts else (None, None)
-    return pre, post
+            pass
+        s, e = t.find("{"), t.rfind("}")
+        chunk = t[s:e + 1] if (s != -1 and e != -1 and e > s) else t
+        try:
+            return json.loads(chunk)
+        except Exception:
+            pass
+        try:
+            fixed = re.sub(r",\s*$", "", chunk)
+            if fixed.count('"') % 2 == 1:
+                fixed += '"'
+            fixed += "]" * max(0, fixed.count("[") - fixed.count("]"))
+            fixed += "}" * max(0, fixed.count("{") - fixed.count("}"))
+            return json.loads(fixed)
+        except Exception:
+            pass
+    return None
 
 
-def _extract_stocks(text: str) -> list:
-    """종목명 추출 — JSON·구형 MD 양쪽 지원. (외부 모듈 호환용)"""
+def _strip_fence(raw):
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.lstrip().startswith("json"):
+            raw = raw.lstrip()[4:]
+        raw = raw.strip()
+    return raw
+
+
+# ── Opus 호출 + 잘림 이어받기 ──────────────────────────────────
+
+def _create_with_continuation(client, model, prompt, max_tokens):
+    msgs = [{"role": "user", "content": prompt}]
+    full, calls, truncated = "", [], False
+    for _ in range(MAX_CONTINUE + 1):
+        resp = client.messages.create(model=model, max_tokens=max_tokens, messages=msgs)
+        calls.append({"model": model,
+                      "input_tokens": resp.usage.input_tokens,
+                      "output_tokens": resp.usage.output_tokens})
+        piece = resp.content[0].text if resp.content else ""
+        full += piece
+        if resp.stop_reason != "max_tokens":
+            truncated = False
+            break
+        truncated = True
+        msgs = [
+            {"role": "user", "content": prompt},
+            {"role": "assistant", "content": full},
+            {"role": "user", "content":
+                "위 JSON이 중간에 끊겼습니다. 끊긴 바로 다음 글자부터 이어서 출력하세요. "
+                "이미 출력한 부분을 반복하지 말고, 설명·코드펜스 없이 JSON 나머지만 "
+                "이어 붙여 닫는 중괄호까지 완성하세요."},
+        ]
+    return full, calls, truncated
+
+
+# ── 추가 컨텍스트 빌더 ─────────────────────────────────────────
+
+def _build_calendar_block():
     try:
-        data = json.loads(text)
-        stocks = set()
-        for tp in data.get("topics", []):
-            for s in (tp.get("stocks") or []):
-                if str(s).strip():
-                    stocks.add(str(s).strip())
-        for th in data.get("themes", []):
-            for t in (th.get("tickers") or "").split(","):
-                if t.strip():
-                    stocks.add(t.strip())
-        for kw in data.get("keywords", []):
-            for t in (kw.get("related") or "").split(","):
-                if t.strip():
-                    stocks.add(t.strip())
-        return sorted(stocks)
+        from engine.calendar_events import build_calendar_text
+        text = build_calendar_text(days=14, include_earnings=True)
+        if text:
+            return f"\n\n=== 다가오는 주요 일정 (검증된 사실) ===\n{text}\n=== 끝 ==="
     except Exception:
         pass
-    m = re.search(r"##\s*언급[^\n]*종목[^\n]*\n+(.+?)(?=\n##|\Z)", text, re.S)
-    if not m:
-        return []
-    parts = re.split(r"[,·\n/]", m.group(1))
-    return [p.strip().strip("-•*· ").strip()
-            for p in parts
-            if p.strip() and len(p.strip()) <= 20 and not p.strip().startswith("#")]
+    return ""
 
 
-# ── ★수정: 보고서 보는 법 팝오버 (⑥⑧ 새 순서 반영) ─────────
+# ── 1차: 메시지 클러스터링 (Haiku, 구조화 JSON) ────────────────
 
-def _render_report_help_popover():
-    """제목 옆 ⓘ 보고서 보는 법 팝오버 — 체온계·금리차 팝오버와 동일한 방식.
-    내용: (1) 생성 시점, (2) 독자 활용법 — 화면 순서(테마 위, 원문 맨 아래)에 맞춤."""
-    with st.popover("ⓘ 보고서 보는 법", use_container_width=True):
-        st.markdown(
-            '<div class="rpt-help-h">🕒 생성 시점</div>'
-            '<div class="rpt-help-li"><b>장전 보고서</b>는 평일 아침(KST 07:50경) '
-            '자동 생성돼요. 전일 미국장 마감과 밤사이 시장 시각을 종합해 그날의 시나리오를 제시합니다.</div>'
-            '<div class="rpt-help-li"><b>장마감 후 보고서</b>는 한국장 마감 이후 생성돼요. '
-            '당일 실제 흐름을 반영해 장전 시나리오가 맞았는지 점검하고 다음날 관전 포인트를 정리합니다.</div>'
-            '<div class="rpt-help-li">카드의 <b>분석</b> 시각은 데이터를 취합한 구간, '
-            '<b>생성</b> 시각은 보고서가 실제로 만들어진 시점이에요.</div>'
-            '<div class="rpt-help-h second">📖 읽는 순서</div>'
-            '<div class="rpt-help-li">맨 위 <b>오늘의 한 줄</b>로 그날 시장을 한 문장으로 파악하세요. '
-            '장전·장후 분위기 뱃지와 핵심 수치가 함께 붙어 있어요.</div>'
-            '<div class="rpt-help-li">바로 아래 <b>주목 테마</b>에서 그날 자금이 쏠린 섹터를 먼저 훑으면 '
-            '큰 그림이 잡혀요. 세부 근거는 그 아래 카드에서 확인합니다.</div>'
-            '<div class="rpt-help-li"><b>장마감 후 / 장전 탭</b>으로 보고서가 나뉘어요. '
-            '둘 다 있으면 그날의 결과를 담은 <b>장마감 후</b>가 먼저 보이고, '
-            '아침 시나리오인 <b>장전</b>은 탭을 눌러 펼쳐볼 수 있어요. '
-            '각 주제의 <b>합의 / 이견</b> 박스는 시장 컨센서스와 반대 시각을 함께 보여주니 '
-            '한쪽만 믿지 말고 양쪽을 견주는 용도로 보세요. <b>중요도</b>가 높은 주제부터 보면 '
-            '시간이 부족할 때 효율적이에요.</div>'
-            '<div class="rpt-help-li">맨 아래 <b>취합된 텔레그램 원문</b>은 보고서 생성에 실제로 '
-            '쓰인 메시지 전문이에요. 분석 내용을 원문과 직접 대조해 검증하고 싶을 때 펼쳐 보세요.</div>'
-            '<div class="rpt-help-note">⚠️ 본 보고서는 AI가 생성한 분석이며 투자 권유가 아닙니다. '
-            '최종 판단과 책임은 투자자 본인에게 있어요.</div>',
-            unsafe_allow_html=True)
+def _stage1_cluster(client, corpus, info):
+    """메시지를 주제 클러스터로 구조화. 텍스트가 아니라 JSON으로 반환.
 
+    각 클러스터: {topic, mention_count, facts[], consensus, dissent, stocks[]}
+    - mention_count: 이 주제를 다룬 메시지 수 (= 시장의 관심도 신호)
+    - facts: 사실 위주 핵심 (수치·원인 보존)
+    - consensus: 채널 다수가 동의하는 시각 / dissent: 갈리는 시각(없으면 빈 문자열)
 
-# ── 렌더링: 오늘의 한 줄 TL;DR ───────────────────────────────
-
-def _lead_text(data: dict) -> str:
-    """카드 요약 한 줄: 새 스키마는 첫 주제 fact, 구형은 key_takeaway."""
-    topics = data.get("topics") or []
-    if topics:
-        return str(topics[0].get("fact", "")).strip()
-    return str(data.get("key_takeaway", "")).strip()
-
-
-def _render_tldr(pre_data, post_data, latest, latest_kind):
-    if not latest:
-        return
-    headline = html.escape(str(latest.get("headline", "")).strip())
-    if not headline:
-        return
-    kt = html.escape(_lead_text(latest))
-    snap = html.escape(str(latest.get("snapshot_line", "")).strip())
-
-    def _step(label, d):
-        m = d.get("mood", "neutral")
-        cls = MOOD_CLS.get(m, "mood-neu")
-        ko = MOOD_KO.get(m, m)
-        return (f'<span class="tldr-step"><span class="tldr-steplab">{label}</span>'
-                f'<span class="mood-badge {cls}">{ko.upper()}</span></span>')
-
-    steps = []
-    if pre_data:
-        steps.append(_step("장전", pre_data))
-    if post_data:
-        steps.append(_step("장후", post_data))
-    pills = '<span class="tldr-arrow">→</span>'.join(steps)
-
-    kt_html = f'<div class="kt">{kt}</div>' if kt else ""
-    snap_html = f'<div class="rpt-snap">{snap}</div>' if snap else ""
-    st.markdown(
-        f'<div class="rpt-tldr">'
-        f'<div class="top"><span class="lab">오늘의 한 줄</span>{pills}</div>'
-        f'<div class="hl">{headline}</div>'
-        f'{kt_html}{snap_html}'
-        f'</div>', unsafe_allow_html=True)
-
-
-# ── 렌더링: 시장 동력 매트릭스 (구형 보고서 전용) ────────────
-
-def _matrix_has_content(md: dict) -> bool:
-    if not md:
-        return False
-    for tf in ("short_term", "long_term"):
-        for dr in ("up", "down"):
-            if ((md.get(tf) or {}).get(dr)):
-                return True
-    return False
-
-
-def _cell_html(items, direction, dir_label):
-    head = f'<div class="dvm-celldir {direction}">{dir_label}</div>'
-    items = items or []
-    if not items:
-        return head + '<div class="dvi-empty">해당 요인 없음</div>'
-    rows = ""
-    for it in items:
-        if not isinstance(it, dict):
-            continue
-        lab = html.escape(str(it.get("label", "")).strip())
-        desc = html.escape(str(it.get("desc", "")).strip())
-        if not lab and not desc:
-            continue
-        lab_html = f'<span class="dvi-lab">{lab}</span>' if lab else ""
-        desc_html = f'<div class="dvi-desc">{desc}</div>' if desc else ""
-        rows += f'<div class="dvi {direction}">{lab_html}{desc_html}</div>'
-    return head + (rows or '<div class="dvi-empty">해당 요인 없음</div>')
-
-
-def _render_matrix(data: dict, kind: str):
-    md = data.get("market_drivers") or {}
-    if not _matrix_has_content(md):
-        return
-    st_ = md.get("short_term") or {}
-    lt = md.get("long_term") or {}
-    tag = ('<span class="tag tag-pred">장전 보고서 기준 · 개장 전 예측</span>' if kind == "pre"
-           else '<span class="tag tag-upd">장마감 후 보고서 기준 · 결과 반영</span>')
-    st.markdown(
-        f'<div class="rpt2-grp">📊 오늘의 시장 동력 매트릭스 '
-        f'<span class="sub">Market Driver Matrix</span> {tag}</div>',
-        unsafe_allow_html=True)
-    grid = (
-        '<div class="dvm">'
-        '<div class="dvm-h dvm-h0">🕒 시계열</div>'
-        '<div class="dvm-h dvm-hup">📈 상승 · 모멘텀 <em>Upward</em></div>'
-        '<div class="dvm-h dvm-hdown">📉 하락 · 리스크 <em>Downward</em></div>'
-        '<div class="dvm-tf"><div class="tf-name">단기 <em>Short-term</em></div>'
-        '<div class="tf-sub">수급 · 심리 · 노이즈</div></div>'
-        f'<div class="dvm-cell">{_cell_html(st_.get("up"), "up", "📈 상승 · 모멘텀")}</div>'
-        f'<div class="dvm-cell">{_cell_html(st_.get("down"), "down", "📉 하락 · 리스크")}</div>'
-        '<div class="dvm-tf"><div class="tf-name">장기 <em>Long-term</em></div>'
-        '<div class="tf-sub">거시 · 실적 · 정책</div></div>'
-        f'<div class="dvm-cell">{_cell_html(lt.get("up"), "up", "📈 상승 · 모멘텀")}</div>'
-        f'<div class="dvm-cell">{_cell_html(lt.get("down"), "down", "📉 하락 · 리스크")}</div>'
-        '</div>'
+    ★다양성: 큰 주제는 하위 화제로 쪼개고, 작지만 뚜렷한 화제는 별도 클러스터로 살린다.
+      (AI·전쟁 같은 메가테마로 과하게 합쳐 작은 화제가 묻히는 것을 방지)
+    """
+    today = _today_kst_str()
+    prompt = (
+        f"다음은 텔레그램 시황 채널 메시지 원문입니다({info['ko']} 작성용). "
+        "이를 '주제 클러스터'로 구조화하세요. 100여 개 메시지라도 핵심 화제는 보통 "
+        "12~18개 정도입니다. 작은 화제도 묻지 말고 따로 살리세요.\n\n"
+        f"기준: 오늘은 {today}. 각 메시지 머리에 [채널] (작성시각)이 붙어 있고, "
+        f"{info['window']} 동안 수집됐습니다.\n\n"
+        f"=== 원문 ===\n{corpus}\n=== 끝 ===\n\n"
+        "규칙:\n"
+        "- 비슷한 주제의 메시지를 하나의 클러스터로 묶으세요. 같은 화제면 채널이 달라도 한 묶음.\n"
+        "- ★과합치기 금지: 'AI'·'반도체'·'전쟁/지정학'처럼 큰 주제는 하위 화제로 쪼개세요 "
+        "(예: AI → 'HBM·메모리 수급', '전력·소부장 병목', 'AI 정책/규제'; "
+        "전쟁 → '종전 협상', '유가·에너지', '재건 수주'). 한 메가테마에 모든 걸 몰아넣지 마세요.\n"
+        "- ★작은 화제 보존: 언급은 적어도 뚜렷한 화제(개별 종목·특정 업종·정책·IPO·실적·환율/금리 등)는 "
+        "큰 주제에 흡수하지 말고 독립 클러스터로 유지하세요. 이런 게 묻히면 시황의 폭이 좁아집니다.\n"
+        "- ★언급량(mention_count): 그 주제를 다룬 메시지 수를 세세요. 시장 관심도 신호입니다.\n"
+        "- ★합의/이견: 같은 주제 안에서 채널 다수가 동의하는 시각은 consensus에, "
+        "소수·반대 시각이 있으면 dissent에 적으세요. 이견이 없으면 dissent는 빈 문자열.\n"
+        "- ★사실 보존: facts에는 수치·고유명사·원인을 그대로. '반도체 급등'이 아니라 "
+        "'○○ 실적 서프라이즈 → 반도체 +7%'처럼 원인→결과로.\n"
+        "- ★날짜 환산: 메시지 속 '오늘·어제·간밤'은 작성시각 기준이므로 실제 'MM/DD'로 환산.\n"
+        "- 광고·잡담·인사·단순 링크는 제외.\n"
+        "- 언급량이 많은 주제부터 정렬.\n\n"
+        "다음 JSON만 반환 (설명·코드펜스 없이):\n"
+        '{"clusters":[{'
+        '"topic":"주제명(짧게)",'
+        '"mention_count":정수,'
+        '"facts":["사실 핵심 1(수치·원인 포함)","사실 핵심 2"],'
+        '"consensus":"채널 다수 시각 1문장(없으면 빈 문자열)",'
+        '"dissent":"갈리는 시각 1문장(없으면 빈 문자열)",'
+        '"stocks":["관련 종목명"]}'
+        ']}'
     )
-    st.markdown(grid, unsafe_allow_html=True)
+    resp = client.messages.create(
+        model=HAIKU, max_tokens=CLUSTER_MAX_TOKENS,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    usage = {"model": HAIKU,
+             "input_tokens": resp.usage.input_tokens,
+             "output_tokens": resp.usage.output_tokens}
+    parsed = _safe_json_parse(_strip_fence(resp.content[0].text))
+    clusters = (parsed or {}).get("clusters", []) if isinstance(parsed, dict) else []
+    return clusters, resp.content[0].text.strip(), usage
 
 
-# ── 렌더링: 교차 검증 (구형 보고서 전용) ─────────────────────
-
-def _cross_check_html(data: dict) -> str:
-    cc = data.get("cross_check") or {}
-    mv = html.escape(str(cc.get("market_view", "")).strip())
-    df = html.escape(str(cc.get("data_fact", "")).strip())
-    vd = html.escape(str(cc.get("verdict", "")).strip())
-    ins = html.escape(str(cc.get("insight", "")).strip())
-    if not (mv or df):
+def _clusters_to_block(clusters):
+    """클러스터 JSON을 Opus 입력용 읽기 좋은 텍스트로."""
+    if not clusters:
         return ""
-    verdict_html = ""
-    if vd or ins:
-        badge = f'<span class="rcc-vbadge">판정 · {vd}</span>' if vd else ""
-        verdict_html = f'<div class="rcc-verdict">{badge}{ins}</div>'
-    return (
-        '<div class="rcc">'
-        '<div class="rcc-lab">🔎 교차 검증 · 시각 vs 데이터</div>'
-        '<div class="rcc-grid">'
-        f'<div class="rcc-col mv"><div class="h">시장 시각 · 텔레그램</div>'
-        f'<div class="t">{mv or "—"}</div></div>'
-        f'<div class="rcc-col df"><div class="h">실제 데이터 · 정량</div>'
-        f'<div class="t">{df or "—"}</div></div>'
-        '</div>'
-        f'{verdict_html}'
-        '</div>'
-    )
-
-
-# ── 렌더링: 새 주제 카드 (topics 스키마) ─────────────────────
-
-def _topics_html(topics: list) -> str:
-    cards = []
-    for i, tp in enumerate(topics, start=1):
-        if not isinstance(tp, dict):
+    parts = []
+    for c in clusters:
+        if not isinstance(c, dict):
             continue
-        title = html.escape(str(tp.get("title", "")).strip())
+        topic = str(c.get("topic", "")).strip()
+        mc = c.get("mention_count", "")
+        facts = c.get("facts", []) or []
+        cons = str(c.get("consensus", "")).strip()
+        diss = str(c.get("dissent", "")).strip()
+        stocks = c.get("stocks", []) or []
+        block = [f"● 주제: {topic} (언급 {mc}건)"]
+        for f in facts:
+            block.append(f"   - 사실: {f}")
+        if cons:
+            block.append(f"   - 합의 시각: {cons}")
+        if diss:
+            block.append(f"   - 이견: {diss}")
+        if stocks:
+            block.append(f"   - 관련 종목: {', '.join(str(s) for s in stocks)}")
+        parts.append("\n".join(block))
+    return "\n\n".join(parts)
+
+
+# ── 어제 보고서 비교 (변화 추적) ───────────────────────────────
+
+def _prev_topics_block(prev_report):
+    """어제(직전) 보고서의 주제 제목 목록을 텍스트로. 변화 추적용."""
+    if not prev_report:
+        return "", []
+    titles = []
+    for t in (prev_report.get("topics") or []):
+        if isinstance(t, dict) and t.get("title"):
+            titles.append(str(t["title"]).strip())
+    # 구형 보고서 폴백: sections 제목
+    if not titles:
+        for s in (prev_report.get("sections") or []):
+            if isinstance(s, dict) and s.get("title"):
+                titles.append(str(s["title"]).strip())
+    if not titles:
+        return "", []
+    block = ("\n\n=== 직전 보고서의 주제 (변화 추적용) ===\n"
+             + "\n".join(f"- {t}" for t in titles) + "\n=== 끝 ===")
+    return block, titles
+
+
+# ── 길이·형식 통제 ─────────────────────────────────────────────
+
+def _cap_topics(topics, max_n=MAX_TOPICS):
+    """주제 카드를 importance 내림차순 상위 max_n개로 제한, 형식 정규화."""
+    if not isinstance(topics, list):
+        return []
+    clean = []
+    for t in topics:
+        if not isinstance(t, dict):
+            continue
+        title = str(t.get("title", "")).strip()
         if not title:
             continue
-        imp = tp.get("importance", "")
-        fact = html.escape(str(tp.get("fact", "")).strip())
-        mv = tp.get("market_view") or {}
-        cons = html.escape(str(mv.get("consensus", "")).strip())
-        diss = html.escape(str(mv.get("dissent", "")).strip())
-        metrics = html.escape(str(tp.get("metrics", "")).strip())
-        impl = html.escape(str(tp.get("implication", "")).strip())
-        stocks = [str(s).strip() for s in (tp.get("stocks") or []) if str(s).strip()]
-
-        imp_html = f'<span class="tp-imp">중요도 {imp}</span>' if str(imp) else ""
-        fact_html = f'<div class="tp-fact">{fact}</div>' if fact else ""
-
-        mv_cols = ""
-        if cons:
-            mv_cols += (f'<div class="tp-mv-col tp-mv-con">'
-                        f'<span class="tp-mv-lab">합의</span>'
-                        f'<span class="tp-mv-tx">{cons}</span></div>')
-        if diss:
-            mv_cols += (f'<div class="tp-mv-col tp-mv-dis">'
-                        f'<span class="tp-mv-lab">이견</span>'
-                        f'<span class="tp-mv-tx">{diss}</span></div>')
-        mv_html = f'<div class="tp-mv">{mv_cols}</div>' if mv_cols else ""
-
-        metrics_html = f'<div class="tp-metrics">📊 {metrics}</div>' if metrics else ""
-        impl_html = f'<div class="tp-impl"><b>시사점</b> · {impl}</div>' if impl else ""
-
-        stocks_html = ""
-        if stocks:
-            chips = "".join(
-                f'<a class="tp-stk" href="{naver_stock_url(s)}" target="_blank" '
-                f'rel="noopener">{html.escape(s)}</a>' for s in stocks)
-            stocks_html = f'<div class="tp-stocks">{chips}</div>'
-
-        cards.append(
-            f'<div class="tp">'
-            f'<div class="tp-head"><span class="tp-rank">{i}</span>'
-            f'<span class="tp-title">{title}</span>{imp_html}</div>'
-            f'{fact_html}{mv_html}{metrics_html}{impl_html}{stocks_html}'
-            f'</div>'
-        )
-    if not cards:
-        return ""
-    return f'<div class="tp-list">{"".join(cards)}</div>'
+        mv = t.get("market_view") or {}
+        if not isinstance(mv, dict):
+            mv = {}
+        clean.append({
+            "title": title,
+            "importance": int(t["importance"]) if str(t.get("importance", "")).isdigit() else 5,
+            "fact": str(t.get("fact", "")).strip(),
+            "market_view": {
+                "consensus": str(mv.get("consensus", "")).strip(),
+                "dissent": str(mv.get("dissent", "")).strip(),
+            },
+            "metrics": str(t.get("metrics", "")).strip(),
+            "implication": str(t.get("implication", "")).strip(),
+            "stocks": [str(s).strip() for s in (t.get("stocks") or []) if str(s).strip()],
+        })
+    clean.sort(key=lambda x: x["importance"], reverse=True)
+    return clean[:max_n]
 
 
-def _outlook_html(data: dict, kind: str) -> str:
-    ol = data.get("outlook") or {}
-    if kind == "pre":
-        items = ol.get("pre") or []
-        items = [html.escape(str(x).strip()) for x in items if str(x).strip()]
-        if not items:
-            return ""
-        lis = "".join(f'<li>{x}</li>' for x in items)
-        return (f'<div class="ol"><div class="ol-lab">🔭 오늘 볼 것</div>'
-                f'<ul class="ol-list">{lis}</ul></div>')
-    else:
-        post = ol.get("post") or {}
-        rev = html.escape(str(post.get("review", "")).strip())
-        tom = html.escape(str(post.get("tomorrow", "")).strip())
-        if not (rev or tom):
-            return ""
-        rev_html = f'<div class="ol-rev"><b>장전 점검</b> · {rev}</div>' if rev else ""
-        tom_html = f'<div class="ol-tom"><b>내일 가설</b> · {tom}</div>' if tom else ""
-        return (f'<div class="ol"><div class="ol-lab">🔭 결산 · 내일</div>'
-                f'{rev_html}{tom_html}</div>')
+# ── 메인 분석 함수 ─────────────────────────────────────────────
 
+def analyze_messages(messages, kind: str = "pre", channel_name: str = "",
+                     snapshot_text: str = "", news_titles=None, watchlist=None,
+                     prev_report=None):
+    """→ (report_dict, usage_dict)
 
-def _change_html(data: dict) -> str:
-    ch = data.get("change_tracking") or {}
-    new = [html.escape(str(x).strip()) for x in (ch.get("new") or []) if str(x).strip()]
-    cont = [html.escape(str(x).strip()) for x in (ch.get("continuing") or []) if str(x).strip()]
-    if not (new or cont):
-        return ""
-    cols = ""
-    if new:
-        items = "".join(f'<div class="ch-item">{x}</div>' for x in new)
-        cols += (f'<div class="ch-col ch-new"><div class="ch-lab">오늘 새로 등장</div>'
-                 f'{items}</div>')
-    if cont:
-        items = "".join(f'<div class="ch-item">{x}</div>' for x in cont)
-        cols += (f'<div class="ch-col ch-cont"><div class="ch-lab">어제에 이어 지속</div>'
-                 f'{items}</div>')
-    return f'<div class="ch">{cols}</div>'
-
-
-# ── 렌더링: 취합된 텔레그램 원문 (검증용) ────────────────────
-# ⑥ 변경: _render_report_card 안에서 호출하지 않고, render_reports 맨 아래에서
-#         pre/post를 한데 모아 호출한다. (검증용 메타로 강등)
-
-def _render_source_messages(data: dict, kind: str, path: Path):
-    msgs = data.get("source_messages") or []
-    if not msgs:
-        return
-    from collections import Counter
-    chan_counts = Counter(str(m.get("channel", "")).strip() or "(미상)" for m in msgs)
-    n_chan = len(chan_counts)
-    kind_ko = "장전" if kind == "pre" else "장마감 후"
-    with st.expander(f"📨 [{kind_ko}] 취합된 텔레그램 원문 {len(msgs)}건 · 채널 {n_chan}곳 — 검증용"):
-        st.markdown(
-            '<div class="srcmsg-cap">이 보고서 생성에 실제로 들어간 메시지 전문입니다. '
-            '원문과 직접 대조해 검증하세요. (작성시각 오름차순)</div>', unsafe_allow_html=True)
-        rows = ""
-        for m in msgs:
-            ch = html.escape(str(m.get("channel", "")).strip() or "(미상)")
-            dt = html.escape(str(m.get("date", "")).strip()[:16])
-            tx = html.escape(str(m.get("text", "")).strip())
-            rows += (
-                '<div class="srcmsg">'
-                f'<div class="srcmsg-head"><span class="srcmsg-ch">{ch}</span>'
-                f'<span class="srcmsg-dt">{dt}</span></div>'
-                f'<div class="srcmsg-tx">{tx}</div>'
-                '</div>')
-        st.markdown(f'<div class="srcmsg-wrap">{rows}</div>', unsafe_allow_html=True)
-
-
-def _render_source_section(pre, post):
-    """⑥ 하단 검증용 원문 섹션 — pre/post 둘 다 있으면 각각 expander로."""
-    (pre_path, pre_data) = pre
-    (post_path, post_data) = post
-    has_pre = bool(pre_data and (pre_data.get("source_messages")))
-    has_post = bool(post_data and (post_data.get("source_messages")))
-    if not (has_pre or has_post):
-        return
-    st.markdown('<div class="rpt2-grp">🔎 검증용 원문</div>', unsafe_allow_html=True)
-    # 최신(장후)을 먼저, 장전을 뒤에.
-    if has_post:
-        _render_source_messages(post_data, "post", post_path)
-    if has_pre:
-        _render_source_messages(pre_data, "pre", pre_path)
-
-
-# ── 렌더링: 장전/장후 카드 ───────────────────────────────────
-# ⑥ 변경: 이 함수 안에서 _render_source_messages 호출을 제거.
-#         원문은 render_reports 맨 아래 _render_source_section이 담당.
-
-def _render_report_card(data: dict, kind: str, path: Path):
-    icon = "🌅" if kind == "pre" else "🌆"
-    kind_ko = "장전 보고서" if kind == "pre" else "장마감 후 보고서"
-
-    mood = data.get("mood", "neutral")
-    mood_ko = MOOD_KO.get(mood, mood)
-    mood_cls = MOOD_CLS.get(mood, "mood-neu")
-
-    since = data.get("analysis_since", "")
-    until = data.get("analysis_until", "")
-    gen = data.get("generated_at", "")
-    n = data.get("messages_count", 0)
-    headline = data.get("headline", "")
-
-    if since and until:
-        win = f'분석 <b>{since} ~ {until}</b>' + (f' · 생성 {gen}' if gen else "")
-    else:
-        win = (f'생성 {gen}' if gen else "")
-
-    # 출처 칩
-    src_bits = []
-    if n:
-        src_bits.append(f"{n}개 메시지")
-    if data.get("data_enriched"):
-        src_bits.append("정량 스냅샷")
-    sc = data.get("source_channels") or []
-    if sc:
-        src_bits.append(f"채널 {len(sc)}곳")
-    src_html = "".join(f'<span class="src-pill">{html.escape(str(b))}</span>' for b in src_bits)
-
-    # ── 새 스키마(topics) vs 구형 분기 ──
-    topics = data.get("topics") or []
-    if topics:
-        # 새 양식: 주제 카드 + 목적별 꼬리 + 변화 추적
-        body_html = _topics_html(topics)
-        outlook_html = _outlook_html(data, kind)
-        change_html = _change_html(data)
-        st.markdown(
-            f'<div class="rc">'
-            f'<div class="rc-head"><span class="rc-kind">{icon} {kind_ko}</span>'
-            f'<span class="mood-badge {mood_cls}">{mood_ko.upper()}</span></div>'
-            f'<div class="rc-win">{win}</div>'
-            f'<div class="rc-headline">{html.escape(headline)}</div>'
-            f'{body_html}{outlook_html}{change_html}'
-            f'<div class="rc-src">{src_html}</div>'
-            f'</div>', unsafe_allow_html=True)
-    else:
-        # 구형 양식: key_takeaway + sections + cross_check
-        kt_lab = "오늘의 관전" if kind == "pre" else "오늘의 결산"
-        kt = data.get("key_takeaway", "")
-        secs_html = ""
-        for sec in data.get("sections", []):
-            t = sec.get("title", "")
-            b = sec.get("body", "")
-            if not t and not b:
-                continue
-            secs_html += f'<div class="rc-sectitle">{t}</div><div class="rc-secbody">{b}</div>'
-        kt_html = (f'<div class="rc-ktlab">{kt_lab}</div><div class="rc-ktbox">{kt}</div>'
-                   if kt else "")
-        cc_html = _cross_check_html(data)
-        st.markdown(
-            f'<div class="rc">'
-            f'<div class="rc-head"><span class="rc-kind">{icon} {kind_ko}</span>'
-            f'<span class="mood-badge {mood_cls}">{mood_ko.upper()}</span></div>'
-            f'<div class="rc-win">{win}</div>'
-            f'<div class="rc-headline">{headline}</div>'
-            f'{kt_html}{secs_html}{cc_html}'
-            f'<div class="rc-src">{src_html}</div>'
-            f'</div>', unsafe_allow_html=True)
-
-    # ⑥ 제거됨: 취합된 텔레그램 원문은 더 이상 카드 안에서 렌더하지 않는다.
-    #           (render_reports 맨 아래 _render_source_section이 담당)
-
-    # PDF · JSON 다운로드
-    b1, b2 = st.columns(2)
-    with b1:
-        try:
-            from modules.report_pdf import build_pdf
-            st.download_button("📄 PDF", data=build_pdf(data),
-                               file_name=f"{path.stem}.pdf", mime="application/pdf",
-                               key=f"pdf_{kind}_{path.stem}", use_container_width=True)
-        except Exception:
-            st.caption("PDF 생성 불가")
-    with b2:
-        st.download_button(
-            "💾 JSON 저장", data=json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8"),
-            file_name=path.name, mime="application/json",
-            key=f"json_{kind}_{path.stem}", use_container_width=True)
-    st.caption("💾 이 보고서는 생성과 동시에 DB에 저장돼요. 재시작에도 보존되며, JSON은 백업·공유용입니다.")
-
-
-def _render_placeholder(kind: str):
-    if kind == "pre":
-        icon, msg = "🌅", "장전 보고서 생성 전"
-        hint, eta = "장 시작 전 아침에 생성됩니다.", "오전 7:50 예정 · 전일 15:30 ~ 07:50"
-    else:
-        icon, msg = "🌆", "장마감 후 보고서 생성 전"
-        hint, eta = "장 마감 후 생성됩니다.", "오후 5:00 예정 · 07:50 ~ 17:00"
-    st.markdown(
-        f'<div class="rc-empty"><div class="ico">{icon}</div>'
-        f'<div class="msg">{msg}</div><div class="hint">{hint}</div>'
-        f'<div class="eta">{eta}</div></div>', unsafe_allow_html=True)
-
-
-def _render_report_pair(pre, post):
-    """장전·장마감 후 표시 — 둘 다 있으면 '탭'으로 묶는다.
-
-    - 둘 다 있음: st.tabs로 묶고 '🌆 장마감 후'를 기본(먼저) 노출, '🌅 장전'은 탭 뒤로 숨김.
-      (그날의 결과지인 장마감 후를 우선 보여주고, 글이 길어 스크롤이 과해지는 문제 완화.
-       원하면 장전 탭을 눌러 다시 펼쳐볼 수 있음.)
-    - 장마감 후만 있음: 그 카드만 표시.
-    - 장전만 있음(보통 장중 이전): 장전 카드 + '장마감 후 생성 전' 안내.
-    - 둘 다 없음: 양쪽 안내(placeholder).
+    prev_report: 직전 보고서 dict (변화 추적용, 없으면 None)
     """
-    pre_path, pre_data = pre
-    post_path, post_data = post
+    info = _KIND_INFO.get(kind, _KIND_INFO["pre"])
 
-    if pre_data and post_data:
-        tab_post, tab_pre = st.tabs(["🌆 장마감 후", "🌅 장전"])
-        with tab_post:
-            _render_report_card(post_data, "post", post_path)
-        with tab_pre:
-            _render_report_card(pre_data, "pre", pre_path)
-    elif post_data:
-        _render_report_card(post_data, "post", post_path)
-    elif pre_data:
-        _render_report_card(pre_data, "pre", pre_path)
-        _render_placeholder("post")
+    lines = []
+    for m in messages:
+        ch = m.get("channel", channel_name)
+        ds = str(m.get("date", ""))[:16]
+        txt = (m.get("text") or "").strip()
+        if txt:
+            lines.append(f"[{ch}] ({ds}) {txt}")
+    corpus = "\n".join(lines)
+    if len(corpus) > 150000:   # 누락 완화: 클러스터링 입력 한도 상향(100k→150k)
+        corpus = corpus[:150000] + "\n…(이하 생략)"
+
+    client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+    calls = []
+
+    # 1차: 클러스터링 (메시지 많을 때만)
+    clusters = []
+    if len(lines) >= CLUSTER_THRESHOLD:
+        clusters, _raw, u1 = _stage1_cluster(client, corpus, info)
+        calls.append(u1)
+        cl_block = _clusters_to_block(clusters)
+        if cl_block:
+            msg_block = ("=== 주제 클러스터 (1차 구조화: 언급량·합의·이견·사실) ===\n"
+                         + cl_block + "\n=== 끝 ===")
+        else:
+            # 클러스터링 실패 시 원문으로 폴백
+            msg_block = f"=== 채널 메시지 원문 ===\n{corpus}\n=== 끝 ==="
     else:
-        _render_placeholder("pre")
-        _render_placeholder("post")
+        msg_block = f"=== 채널 메시지 원문 ===\n{corpus}\n=== 끝 ==="
 
+    # 정량·뉴스·일정·어제비교 블록
+    quant_block = (f"\n\n=== 실제 시장 정량 데이터 (검증된 사실) ===\n{snapshot_text}\n=== 끝 ==="
+                   if snapshot_text else "")
+    news_block = ""
+    if news_titles:
+        nl = "\n".join(f"- {t}" for t in news_titles[:25])
+        news_block = f"\n\n=== 오늘의 뉴스 헤드라인 (언론 보도) ===\n{nl}\n=== 끝 ==="
+    cal_block = _build_calendar_block()
+    prev_block, _prev_titles = _prev_topics_block(prev_report)
 
-# ── 렌더링: 주목 테마 (전체 폭) ──────────────────────────────
+    # 워치리스트
+    watch_block, watch_schema = "", ""
+    if watchlist:
+        wl = ", ".join(watchlist)
+        watch_block = f"\n\n=== 사용자 워치리스트 종목 ===\n{wl}\n=== 끝 ==="
+        watch_schema = (
+            ',"watchlist_mentions":[{"stock":"워치리스트 종목명","summary":"관련 언급·이슈 '
+            '1문장. 언급 없으면 배열에서 제외"}]'
+        )
 
-def _render_themes(data: dict):
-    themes = data.get("themes", []) if data else []
-    st.markdown('<div class="rpt2-grp">🎯 주목 테마</div>', unsafe_allow_html=True)
-    if not themes:
-        st.markdown('<div class="rpt-side-empty">이 보고서에는 테마 정보가 없어요.</div>',
-                    unsafe_allow_html=True)
-        return
-    cards = ""
-    for th in themes:
-        name = th.get("name", "")
-        detail = th.get("detail", "")
-        tickers = [t.strip() for t in (th.get("tickers") or "").split(",") if t.strip()]
-        tk_html = "".join(
-            f'<a href="{naver_stock_url(t)}" target="_blank">{html.escape(t)}</a>'
-            for t in tickers)
-        cards += (
-            f'<div class="theme-card">'
-            f'<div class="theme-name">{name}</div>'
-            f'<div class="theme-detail">{detail}</div>'
-            + (f'<div class="theme-tickers">관련: {tk_html}</div>' if tk_html else "")
-            + '</div>')
-    st.markdown(f'<div class="rpt-theme-grid">{cards}</div>', unsafe_allow_html=True)
+    # 목적별 꼬리 스키마
+    if kind == "pre":
+        outlook_schema = ('"outlook":{"pre":["오늘 장에서 주목할 것 1(이벤트·체크포인트)",'
+                          '"주목할 것 2","주목할 것 3"]}')
+        outlook_rule = ("- outlook.pre: 오늘 한국 장에서 주목할 이벤트·종목·시나리오를 "
+                        "3~5개 행동 지침으로. '오늘 무엇을 볼까'에 답하세요.")
+    else:
+        outlook_schema = ('"outlook":{"post":{"review":"오늘 아침 장전에 예상한 시나리오가 '
+                          '맞았는지 점검 2~3문장","tomorrow":"오늘 밤 미국장·내일 한국 장에서 '
+                          '주목할 가설 2~3문장"}}')
+        outlook_rule = ("- outlook.post: review에 '장전 예상 대비 실제' 점검을, "
+                        "tomorrow에 내일 가설을 쓰세요. '오늘을 정리하고 내일 가설'에 답하세요.")
 
+    today = _today_kst_str()
+    prompt = (
+        "당신은 한국 주식시장을 깊이 이해하는 베테랑 애널리스트입니다.\n"
+        f"지금 작성하는 것은 ★{info['ko']}★ 입니다. 작성일(오늘)은 {today}이고, "
+        "모든 '오늘·전일·간밤' 표현은 이 날짜 기준입니다.\n"
+        f"이 보고서의 목표: {info['goal']}.\n"
+        f"수집 구간: {info['window']}.\n"
+        f"독자: {info['reader']}.\n\n"
+        f"{msg_block}{quant_block}{news_block}{cal_block}{prev_block}{watch_block}\n\n"
+        "작성 철학:\n"
+        "- ★주제 중심: 보고서 본문은 '주제 카드(topics)' 묶음입니다. 입력 클러스터를 바탕으로 "
+        f"가장 중요한 주제 {MAX_TOPICS}개 이내를 골라, 각 주제를 사실→시장시각→정량→시사점 "
+        "순으로 구성하세요. 언급량이 많고 시장 영향이 큰 주제를 importance 높게.\n"
+        "- ★주제 다양성(중요): 한 거대 테마(예: AI 인프라, 전쟁·지정학)가 topics를 독식하지 "
+        "않게 하세요. 같은 메가테마는 최대 2~3개 슬롯까지만 쓰고, 거시·섹터·개별 종목·정책·"
+        "수급·환율/금리·IPO·실적 등 서로 다른 결의 주제를 고르게 배분하세요. 입력 클러스터에 "
+        "작지만 뚜렷한 주제(특정 업종·정책·개별 종목 등)가 있으면 큰 테마에 묻지 말고 별도 "
+        "주제로 살려, 그날 시황의 폭을 충분히 보여주세요.\n"
+        "- ★합의/이견 분리(핵심): 각 주제의 market_view에 채널 다수의 consensus와 갈리는 "
+        "dissent를 나눠 쓰세요. 이게 단순 요약을 넘는 분석의 핵심입니다. 이견이 없으면 dissent는 빈 문자열.\n"
+        "- ★정량 결합: 각 주제의 metrics에 그 주제와 직접 관련된 수치를 정량 데이터에서 찾아 넣으세요 "
+        "(예: 반도체 주제 → '삼성전자 +X%, 외국인 순매수 Y억'). 관련 수치 없으면 빈 문자열.\n"
+        "- ★인과 사슬: fact는 '원인 → 결과 → 국내 파급'으로. 표면 서술 금지. "
+        "입력에 원인이 없으면 지어내지 말고 그 사실만 쓰세요.\n"
+        "- ★날짜 구분: '오늘·전일·간밤'을 처음 언급할 때 날짜 병기(예: 간밤(06/11 미국장)).\n"
+        + (outlook_rule + "\n")
+        + "- ★변화 추적: 직전 보고서 주제와 비교해, change_tracking.new(오늘 새로 등장)와 "
+        "continuing(어제에 이어 지속)을 채우세요. 매일 같은 말 반복을 피하는 장치입니다. "
+        "직전 보고서가 없으면 new에 오늘 주제들을 넣고 continuing은 빈 배열.\n"
+        "- ★분량(중요): 각 필드는 지정한 문장 수 범위를 충분히 채워 깊이 있게 쓰세요. "
+        "표면 요약이 아니라 배경·근거·수치·파급까지 풀어 설명합니다(예전 대비 약 2배 두껍게). "
+        "단, 같은 말 반복·물타기 금지 — 새 정보로 채우세요. 주제 수는 ★최대 "
+        f"{MAX_TOPICS}개★이며, 화제가 적은 날은 그보다 적어도 됩니다(억지로 늘리지 말 것).\n"
+        "- 과장·창작 금지. 투자 조언(매수/매도 단정) 아니라 판단을 돕는 시장 이해의 관점으로.\n"
+        "- ★JSON 안전: 문자열 값 안에 큰따옴표(\") 금지. 강조는 작은따옴표(')나 「」.\n\n"
+        "다음 JSON만 반환 (다른 텍스트 없이):\n"
+        '{"headline":"오늘의 핵심 한 줄(35자 이내, 날짜 제외)",'
+        '"mood":"positive 또는 neutral 또는 cautious",'
+        '"snapshot_line":"정량 데이터에서 뽑은 핵심 수치 한 줄'
+        '(예: 코스피 8,123(+4.6%) · 원/달러 1,517(-0.5%) · VIX 17.7). 데이터 없으면 빈 문자열",'
+        '"topics":[{'
+        '"title":"주제명(짧고 구체적으로)",'
+        '"importance":1~10 정수(중요도),'
+        '"fact":"무슨 일이 있었나. 원인→결과→국내 파급까지 구체적으로. 4~6문장",'
+        '"market_view":{"consensus":"채널 다수가 보는 시각과 근거. 2~3문장",'
+        '"dissent":"갈리는·반대 시각과 그 논리. 2~3문장(없으면 빈 문자열)"},'
+        '"metrics":"이 주제 관련 실제 수치를 가능한 한 여러 개(없으면 빈 문자열)",'
+        '"implication":"그래서 무엇을 의미하고 무엇을 봐야 하나. 3~4문장",'
+        '"stocks":["관련 종목명"]}'
+        '],'
+        f'{outlook_schema},'
+        '"change_tracking":{"new":["오늘 새로 등장한 주제"],'
+        '"continuing":["어제에 이어 지속되는 주제"]},'
+        '"themes":[{"name":"테마명","detail":"이 테마가 왜 지금 부각되는지 2문장",'
+        '"tickers":"관련종목(쉼표구분)"}],'
+        '"keywords":[{"keyword":"핵심 키워드","desc":"배경 한 줄(45자 이내)",'
+        '"news_headline":"근본 원인 뉴스 헤드라인(주가 등락 표현 금지)","weight":10,'
+        '"related":"관련종목"}]'
+        f'{watch_schema}}}\n\n'
+        f"topics는 ★최대 {MAX_TOPICS}개★ (중요도 순, 서로 다른 결의 주제로 다양하게). "
+        "keywords 정확히 10개(중요 순). themes 3~6개. "
+        + ("정량 데이터·뉴스가 제공되었으니 metrics·snapshot_line을 적극 채우세요."
+           if (snapshot_text or news_titles)
+           else "정량 데이터가 없으면 metrics·snapshot_line은 빈 문자열로 두고 시장 시각 위주로 쓰세요.")
+    )
 
-# ── 삭제 UI ─────────────────────────────────────────────────
+    text, opus_calls, truncated = _create_with_continuation(
+        client, MODEL, prompt, MAX_TOKENS)
+    calls.extend(opus_calls)
 
-def _render_delete_ui(files):
-    with st.expander("🗑️ 리포트 삭제"):
-        labels = {str(f): _label_with_headline(f) for f in files}
-        to_delete = st.multiselect(
-            "삭제할 리포트 선택",
-            options=[str(f) for f in files],
-            format_func=lambda s: labels[s],
-            key="rpt_del_sel")
-        if to_delete:
-            st.warning(f"{len(to_delete)}개 리포트를 삭제합니다. 되돌릴 수 없어요.")
-            confirm = st.checkbox("삭제를 확인합니다", key="rpt_del_confirm")
-            if st.button("선택한 리포트 삭제", type="primary", disabled=not confirm):
-                removed = 0
-                for s in to_delete:
-                    try:
-                        db.delete_by_slug(Path(s).stem)  # 파일 삭제 → DB 삭제
-                        removed += 1
-                    except Exception as e:
-                        st.error(f"삭제 실패: {Path(s).name} ({e})")
-                st.success(f"{removed}개 삭제 완료")
-                st.rerun()
+    result = _safe_json_parse(_strip_fence(text))
+    if result is None:
+        raise ValueError(
+            "JSON 파싱 실패. 응답이 잘렸을 수 있어요. 다시 시도하거나 "
+            "REPORT_MAX_TOKENS 를 더 늘려보세요."
+            if truncated else "JSON 파싱 실패. 다시 시도해주세요.")
 
+    if not result.get("topics"):
+        raise ValueError(
+            "보고서 본문(topics)이 비어 있습니다. 응답이 출력 한도에서 잘린 것으로 보여요. "
+            "다시 생성하거나 REPORT_MAX_TOKENS 를 늘려주세요."
+            if truncated else
+            "보고서 본문(topics)이 비어 있습니다. 다시 생성해주세요.")
 
-# ── 메인: 리포트 표시 (탭 상단) ──────────────────────────────
+    # 기본값·정규화
+    result.setdefault("headline", "전략·시황 보고서")
+    result.setdefault("mood", "neutral")
+    result.setdefault("snapshot_line", "")
+    result.setdefault("outlook", {})
+    result.setdefault("change_tracking", {"new": [], "continuing": []})
+    result.setdefault("themes", [])
+    result.setdefault("keywords", [])
+    result.setdefault("report_kind", kind)
+    result["topics"] = _cap_topics(result.get("topics"))
 
-def render_reports():
-    st.markdown(_RPT_CSS, unsafe_allow_html=True)
-    files = list_reports()
+    # ★잘림 안전장치: themes·keywords는 JSON 끝쪽이라 출력이 잘리면 가장 먼저 빈다.
+    #   topics만 통과시키면 '주목 테마 없음' 불완전 보고서가 조용히 DB에 저장된다.
+    #   잘렸는데(이어받기 후에도) themes 또는 keywords가 비면 → 저장하지 말고 크게 실패.
+    #   (정상 종료인데 themes가 빈 경우는 모델이 실제로 안 채운 드문 케이스라 통과시킴)
+    if truncated and (not result.get("themes") or not result.get("keywords")):
+        missing = []
+        if not result.get("themes"):
+            missing.append("주목 테마(themes)")
+        if not result.get("keywords"):
+            missing.append("키워드(keywords)")
+        raise ValueError(
+            "보고서가 출력 한도에서 잘려 " + "·".join(missing) + "가 누락됐습니다. "
+            "불완전 보고서를 저장하지 않으려고 실패 처리합니다. "
+            "다시 생성하거나 REPORT_MAX_TOKENS 를 늘려주세요.")
 
-    sel_date = _selected_date(files)
-    st.markdown('<div class="rpt2-bar"></div>', unsafe_allow_html=True)
+    # 클러스터 메타(언급량 등)를 보고서에 동봉 — 검증·디버깅용
+    if clusters:
+        result["_clusters_meta"] = [
+            {"topic": c.get("topic", ""), "mention_count": c.get("mention_count", 0)}
+            for c in clusters if isinstance(c, dict)
+        ]
 
-    # ★변경: 제목 우측에 ⓘ 보고서 보는 법 팝오버 배치
-    title_col, help_col = st.columns([0.82, 0.18])
-    with title_col:
-        st.markdown(f'<div class="rpt2-date">{_fmt_date_ko(sel_date)}</div>'
-                    f'<div class="rpt2-title">전략·시황 보고서</div>',
-                    unsafe_allow_html=True)
-    with help_col:
-        _render_report_help_popover()
-
-    if not files:
-        st.markdown(
-            '<div class="rc-empty"><div class="ico">📰</div>'
-            '<div class="msg">아직 생성된 리포트가 없어요</div>'
-            '<div class="hint">아래 🌅 장전 / 🌆 장마감 후 버튼으로 첫 리포트를 만들어보세요</div></div>',
-            unsafe_allow_html=True)
-        return
-
-    (pre_path, pre_data), (post_path, post_data) = _find_for_date(files, sel_date)
-    latest = post_data or pre_data
-    latest_kind = "post" if post_data else "pre"
-
-    # ⓪ 오늘의 한 줄 TL;DR
-    _render_tldr(pre_data, post_data, latest, latest_kind)
-
-    # ① 시장 동력 매트릭스 (구형 보고서에만 — 새 보고서는 topics가 대체)
-    if latest and not (latest.get("topics")):
-        _render_matrix(latest, latest_kind)
-
-    # ⑧ 주목 테마 (전체 폭) — 좌우 카드 '위'로 이동
-    _render_themes(latest)
-
-    # ② 장전·장마감 후 — 탭(장마감 후 기본, 장전은 탭 뒤). 둘 다 있을 때만 탭.
-    st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
-    _render_report_pair((pre_path, pre_data), (post_path, post_data))
-
-    # ⑥ 취합된 텔레그램 원문 — 맨 아래 검증용 메타로 강등
-    _render_source_section((pre_path, pre_data), (post_path, post_data))
-
-
-# ── 메인: 리포트 관리 (탭 하단) ──────────────────────────────
-
-def render_reports_manage():
-    files = list_reports()
-    if not files:
-        return
-    dates = sorted({_report_date(f) for f in files}, reverse=True)
-    latest = _latest_date(files)   # ★기준: 서버 오늘이 아니라 '가장 최근 보고서 일자'
-    sel = _selected_date(files)
-    # 기본(최신)을 보고 있으면 접어두고, 과거 보고서를 보고 있을 때만 펼침
-    with st.expander(f"🗂 지난 보고서 보기 ({len(dates)}일치)", expanded=(sel != latest)):
-        idx = dates.index(sel) if sel in dates else 0
-        chosen_i = st.selectbox(
-            "날짜 선택", options=range(len(dates)), index=idx,
-            format_func=lambda i: _fmt_date_ko(dates[i]),
-            key="rpt_date_pick")
-        chosen_date = dates[chosen_i]
-        if chosen_date != sel:
-            (pre_p, _), (post_p, _) = _find_for_date(files, chosen_date)
-            anchor = post_p or pre_p
-            if anchor is not None:
-                st.session_state["rpt_picked_path"] = str(anchor)
-                st.rerun()
-        if sel != latest and st.button("↩ 오늘로", key="rpt_to_today"):
-            st.session_state["rpt_picked_path"] = None
-            st.rerun()
-    _render_delete_ui(files)
+    usage = {
+        "model": MODEL + (" + haiku 클러스터링" if clusters else "")
+                 + (" + 이어받기" if len(opus_calls) > 1 else ""),
+        "calls": calls,
+        "input_tokens": sum(c["input_tokens"] for c in calls),
+        "output_tokens": sum(c["output_tokens"] for c in calls),
+    }
+    return result, usage
