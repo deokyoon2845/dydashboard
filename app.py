@@ -810,9 +810,6 @@ def render_report_tab():
         else:
             st.warning(f"{kind_ko} 생성 실패 · {res.get('reason')}")
 
-    from modules.watchlist import render_watchlist_editor
-    render_watchlist_editor()
-
     render_reports_manage()
     st.divider()
     render_usage_section()
