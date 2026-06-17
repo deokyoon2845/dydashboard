@@ -11,6 +11,13 @@
 2026-06 레이아웃 개선(⑥⑧): 생성 로직 무변경, 뷰어 순서/위치만 조정.
   - ⑧ 주목 테마를 장전·장후 카드 '위'로 이동 (TL;DR → 테마 → 좌우 카드).
   - ⑥ 취합된 텔레그램 원문을 카드 밖 '맨 아래'로 강등(검증용 메타).
+
+2026-06 추가(기본값·탭):
+  - 기본 표시 날짜를 '오늘(date.today)'이 아니라 '가장 최근 보고서 일자'로 변경.
+    (Streamlit Cloud 서버가 UTC라 KST 아침엔 date.today()가 하루 뒤처져 '어제'를
+     띄우던 문제를 근본 차단.)
+  - 장전·장마감 후가 둘 다 있으면 좌우 2단 대신 '탭'으로 묶고 장마감 후를 기본 노출,
+    장전은 탭 뒤로 숨긴다(모바일 스크롤 과다 완화 + 원하면 장전 탭으로 펼침).
 """
 
 import html
@@ -284,16 +291,22 @@ def _fmt_date_ko(d: date) -> str:
     return f"{d.strftime('%Y.%m.%d')}({_WD[d.weekday()]})"
 
 
+def _latest_date(files) -> date:
+    """보고서가 존재하는 날짜 중 가장 최근 날짜. 없으면 (서버) 오늘.
+    기본 표시 날짜의 기준점 — date.today()(서버 UTC)에 의존하지 않는다."""
+    dates = {_report_date(f) for f in files}
+    return max(dates) if dates else date.today()
+
+
 def _selected_date(files) -> date:
     pk = st.session_state.get("rpt_picked_path")
     # 가상 경로는 디스크에 없으므로 .exists() 대신 '목록에 있는지'로 확인.
     if pk and Path(pk).stem in {f.stem for f in files}:
         return _report_date(Path(pk))
-    today = date.today()
-    dates = {_report_date(f) for f in files}
-    if today in dates:
-        return today
-    return max(dates) if dates else today
+    # ★기본값: 항상 '가장 최근 일자' 보고서.
+    #   (Streamlit Cloud 서버가 UTC라 KST 아침엔 date.today()가 하루 뒤처져
+    #    '어제'를 띄우던 문제를 근본 차단)
+    return _latest_date(files)
 
 
 def _find_for_date(files, d: date):
@@ -362,7 +375,9 @@ def _render_report_help_popover():
             '장전·장후 분위기 뱃지와 핵심 수치가 함께 붙어 있어요.</div>'
             '<div class="rpt-help-li">바로 아래 <b>주목 테마</b>에서 그날 자금이 쏠린 섹터를 먼저 훑으면 '
             '큰 그림이 잡혀요. 세부 근거는 그 아래 카드에서 확인합니다.</div>'
-            '<div class="rpt-help-li"><b>장전 / 장마감 후 카드</b>는 주제별로 나뉘어요. '
+            '<div class="rpt-help-li"><b>장마감 후 / 장전 탭</b>으로 보고서가 나뉘어요. '
+            '둘 다 있으면 그날의 결과를 담은 <b>장마감 후</b>가 먼저 보이고, '
+            '아침 시나리오인 <b>장전</b>은 탭을 눌러 펼쳐볼 수 있어요. '
             '각 주제의 <b>합의 / 이견</b> 박스는 시장 컨센서스와 반대 시각을 함께 보여주니 '
             '한쪽만 믿지 말고 양쪽을 견주는 용도로 보세요. <b>중요도</b>가 높은 주제부터 보면 '
             '시간이 부족할 때 효율적이에요.</div>'
@@ -754,6 +769,35 @@ def _render_placeholder(kind: str):
         f'<div class="eta">{eta}</div></div>', unsafe_allow_html=True)
 
 
+def _render_report_pair(pre, post):
+    """장전·장마감 후 표시 — 둘 다 있으면 '탭'으로 묶는다.
+
+    - 둘 다 있음: st.tabs로 묶고 '🌆 장마감 후'를 기본(먼저) 노출, '🌅 장전'은 탭 뒤로 숨김.
+      (그날의 결과지인 장마감 후를 우선 보여주고, 글이 길어 스크롤이 과해지는 문제 완화.
+       원하면 장전 탭을 눌러 다시 펼쳐볼 수 있음.)
+    - 장마감 후만 있음: 그 카드만 표시.
+    - 장전만 있음(보통 장중 이전): 장전 카드 + '장마감 후 생성 전' 안내.
+    - 둘 다 없음: 양쪽 안내(placeholder).
+    """
+    pre_path, pre_data = pre
+    post_path, post_data = post
+
+    if pre_data and post_data:
+        tab_post, tab_pre = st.tabs(["🌆 장마감 후", "🌅 장전"])
+        with tab_post:
+            _render_report_card(post_data, "post", post_path)
+        with tab_pre:
+            _render_report_card(pre_data, "pre", pre_path)
+    elif post_data:
+        _render_report_card(post_data, "post", post_path)
+    elif pre_data:
+        _render_report_card(pre_data, "pre", pre_path)
+        _render_placeholder("post")
+    else:
+        _render_placeholder("pre")
+        _render_placeholder("post")
+
+
 # ── 렌더링: 주목 테마 (전체 폭) ──────────────────────────────
 
 def _render_themes(data: dict):
@@ -845,19 +889,9 @@ def render_reports():
     # ⑧ 주목 테마 (전체 폭) — 좌우 카드 '위'로 이동
     _render_themes(latest)
 
-    # ② 좌 장전 / 우 장마감 후
+    # ② 장전·장마감 후 — 탭(장마감 후 기본, 장전은 탭 뒤). 둘 다 있을 때만 탭.
     st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
-    left, right = st.columns(2, gap="large")
-    with left:
-        if pre_data:
-            _render_report_card(pre_data, "pre", pre_path)
-        else:
-            _render_placeholder("pre")
-    with right:
-        if post_data:
-            _render_report_card(post_data, "post", post_path)
-        else:
-            _render_placeholder("post")
+    _render_report_pair((pre_path, pre_data), (post_path, post_data))
 
     # ⑥ 취합된 텔레그램 원문 — 맨 아래 검증용 메타로 강등
     _render_source_section((pre_path, pre_data), (post_path, post_data))
@@ -870,9 +904,10 @@ def render_reports_manage():
     if not files:
         return
     dates = sorted({_report_date(f) for f in files}, reverse=True)
-    today = date.today()
+    latest = _latest_date(files)   # ★기준: 서버 오늘이 아니라 '가장 최근 보고서 일자'
     sel = _selected_date(files)
-    with st.expander(f"🗂 지난 보고서 보기 ({len(dates)}일치)", expanded=(sel != today)):
+    # 기본(최신)을 보고 있으면 접어두고, 과거 보고서를 보고 있을 때만 펼침
+    with st.expander(f"🗂 지난 보고서 보기 ({len(dates)}일치)", expanded=(sel != latest)):
         idx = dates.index(sel) if sel in dates else 0
         chosen_i = st.selectbox(
             "날짜 선택", options=range(len(dates)), index=idx,
@@ -885,7 +920,7 @@ def render_reports_manage():
             if anchor is not None:
                 st.session_state["rpt_picked_path"] = str(anchor)
                 st.rerun()
-        if sel != today and st.button("↩ 오늘로", key="rpt_to_today"):
+        if sel != latest and st.button("↩ 오늘로", key="rpt_to_today"):
             st.session_state["rpt_picked_path"] = None
             st.rerun()
     _render_delete_ui(files)
