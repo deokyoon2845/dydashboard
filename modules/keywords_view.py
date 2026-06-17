@@ -2,7 +2,6 @@
 
 데스크톱: 2열 그리드 카드 (TOP15) / 모바일: 1열로 자동 전환.
 뉴스 제목은 카드 높이 균일화를 위해 1줄로 표시(말줄임).
-상단에는 키워드 네트워크 그래프 대신 '종목 무게중심 랭킹'을 표시(modules.keyword_stocks).
 """
 
 import html
@@ -251,16 +250,8 @@ def render_keywords():
 
     watch_set = _watch_set()
 
-    # 1) 키워드 카드 (TOP15) — 위
+    # 키워드 카드 (TOP15)
     _render_items(data["items"], watch_set)
     st.caption("※ 키워드·종목·카테고리·중요도는 AI 추출, 링크는 네이버 뉴스 실제 기사. "
                "🔥 = 연속 등장 일수, NEW = 오늘 첫 등장, ⭐ = 내 워치리스트 종목 포함, "
                "막대 = 중요도. 뉴스는 카드당 2건 표시.")
-
-    # 2) 종목 언급 랭킹 (TOP15 키워드 → 종목 무게중심) — 카드 아래
-    st.divider()
-    try:
-        from modules.keyword_stocks import render_stock_ranking
-        render_stock_ranking(data["items"], watch_set)
-    except Exception as e:
-        st.caption(f"종목 랭킹을 표시할 수 없어요 · {e}")
