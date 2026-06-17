@@ -21,8 +21,6 @@ from modules.indicators import render_indicators
 from modules.reports import render_reports, render_reports_manage
 from modules.keywords_view import render_keywords
 from modules.watchlist_brief import render_watchlist_tab
-from modules.trends import render_trends
-from modules.verify import render_verify
 from modules.usage import total_cost_usd
 from modules.ticker_tape import render_ticker_tape
 
@@ -773,6 +771,11 @@ def render_report_tab():
                 "오늘로 돌아가려면 아래 '지난 보고서 보기'에서 '↩ 오늘로'를 누르세요.")
 
     render_reports()
+
+    # ── 타임라인 (최근 5거래일 보고서 흐름) ──
+    # 'DB에 저장돼요…' 안내 문구(=render_reports의 마지막 캡션) 바로 아래에 표시.
+    render_timeline()
+
     st.divider()
 
     flash = st.session_state.pop("gen_flash", None)
@@ -863,8 +866,8 @@ def _inject_countup():
 
 # ── 탭 ──
 _inject_countup()
-tab_idx, tab_rep, tab_wl, tab_kw, tab_tr = st.tabs(
-    ["지수", "시황", "관심종목", "키워드", "타임라인"]
+tab_idx, tab_rep, tab_wl, tab_kw = st.tabs(
+    ["지수", "시황", "관심종목", "키워드"]
 )
 with tab_idx:
     render_indices()
@@ -874,7 +877,3 @@ with tab_wl:
     render_watchlist_tab()
 with tab_kw:
     render_keywords()
-with tab_tr:
-    render_timeline()
-    render_trends()
-    render_verify()
