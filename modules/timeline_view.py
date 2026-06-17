@@ -12,6 +12,7 @@
 2026-06 보강: 카드 지수 줄(코스피·코스닥)이 외부 데이터(yfinance/pykrx) 공백으로
   비는 문제를 막기 위해, 그날 보고서가 들고 있는 종가(snapshot_line)를 폴백으로 쓴다.
   → _index_daily_map()에 그 날짜가 없으면 보고서 숫자(idx_self)로 채운다.
+모바일은 최신 날짜가 위로 오도록 역순(reversed)으로 렌더 (데스크톱 지그재그는 오름차순 유지).
 """
 
 import glob
@@ -427,9 +428,14 @@ def render_timeline():
                f'{_svg_html(entries)}'
                f'<div class="tl-row tl-bottom" style="{grid}">{"".join(bottom_cells)}</div>')
 
+    # ★모바일은 최신 날짜가 위로 오도록 역순(reversed)으로 렌더.
+    #   데스크톱 지그재그(desktop)는 그대로 오름차순(과거→현재) 유지.
+    #   '최신' 배지·테두리는 날짜로 판별하므로 역순이어도 정확히 따라간다.
+    latest_date = entries[last_i]["date"]
     mobile_cards = "".join(
-        _card_html(e, idx_map.get(e["date"]) or e.get("idx_self"), i == last_i, mobile=True, order=i)
-        for i, e in enumerate(entries))
+        _card_html(e, idx_map.get(e["date"]) or e.get("idx_self"),
+                   e["date"] == latest_date, mobile=True, order=i)
+        for i, e in enumerate(reversed(entries)))
     mobile = f'<div class="tl-mobile">{mobile_cards}</div>'
 
     st.markdown(desktop + mobile, unsafe_allow_html=True)
