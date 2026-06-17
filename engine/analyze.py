@@ -20,6 +20,12 @@
   보고서를 조용히 저장하지 않고 크게 실패시킨다. (themes·keywords는 JSON 끝쪽이라
   출력이 잘리면 가장 먼저 비는 필드 → '주목 테마 없음'의 근본 원인)
 
+2026-06 themes 폴백(정상 종료 누락 대응):
+  - 잘리지 않았는데도 모델이 themes를 빈 채로 보내는 경우가 잦다(새 topics 스키마에선
+    themes 내용이 topics와 겹쳐 모델이 자주 생략). 이때는 '실패'가 아니라 topics 상위에서
+    주목 테마 카드를 만들어 채운다 → 뷰어·PDF가 '테마 없음'으로 뜨지 않도록 DB에 저장.
+  - (truncated인데 themes가 빈 경우는 위 안전장치에서 그대로 '실패' 유지 — 폴백은 그 뒤에서만.)
+
 2026-06 보강(시황 이해도 향상):
   - 주제 카드 상한 6 → 8 (말 그대로 '최대', 화제 적으면 더 적게).
   - 개별 섹션 분량 약 2배(fact 4~6문장, consensus/dissent 2~3문장, implication 3~4문장).
@@ -318,6 +324,33 @@ def _cap_topics(topics, max_n=MAX_TOPICS):
     return clean[:max_n]
 
 
+def _themes_from_topics(topics, max_n=6):
+    """모델이 themes를 비워 보낼 때(새 topics 스키마에서 잦음) topics에서 주목 테마를 만든다.
+
+    - name: 주제 제목
+    - detail: fact의 앞 1~2문장으로 축약
+    - tickers: 주제의 stocks를 쉼표로 연결
+    뷰어·PDF가 '주목 테마 없음'으로 뜨지 않도록 저장 단계에서 채우는 폴백.
+    """
+    out = []
+    for t in (topics or []):
+        if not isinstance(t, dict):
+            continue
+        name = str(t.get("title", "")).strip()
+        if not name:
+            continue
+        detail = str(t.get("fact", "")).strip()
+        sents = re.split(r'(?<=[.!?。])\s+', detail)
+        detail = " ".join(s for s in sents[:2] if s).strip()
+        if len(detail) > 140:
+            detail = detail[:138].rstrip() + "…"
+        stocks = [str(s).strip() for s in (t.get("stocks") or []) if str(s).strip()]
+        out.append({"name": name, "detail": detail, "tickers": ", ".join(stocks)})
+        if len(out) >= max_n:
+            break
+    return out
+
+
 # ── 메인 분석 함수 ─────────────────────────────────────────────
 
 def analyze_messages(messages, kind: str = "pre", channel_name: str = "",
@@ -424,6 +457,8 @@ def analyze_messages(messages, kind: str = "pre", channel_name: str = "",
         "표면 요약이 아니라 배경·근거·수치·파급까지 풀어 설명합니다(예전 대비 약 2배 두껍게). "
         "단, 같은 말 반복·물타기 금지 — 새 정보로 채우세요. 주제 수는 ★최대 "
         f"{MAX_TOPICS}개★이며, 화제가 적은 날은 그보다 적어도 됩니다(억지로 늘리지 말 것).\n"
+        "- ★주목 테마(themes)는 반드시 3~6개를 채우세요(빈 배열 금지). topics와 겹쳐도 좋으니, "
+        "그날 자금이 쏠린 섹터·테마를 한눈에 보이도록 name·detail·tickers를 채워 넣으세요.\n"
         "- 과장·창작 금지. 투자 조언(매수/매도 단정) 아니라 판단을 돕는 시장 이해의 관점으로.\n"
         "- ★JSON 안전: 문자열 값 안에 큰따옴표(\") 금지. 강조는 작은따옴표(')나 「」.\n\n"
         "다음 JSON만 반환 (다른 텍스트 없이):\n"
@@ -451,7 +486,7 @@ def analyze_messages(messages, kind: str = "pre", channel_name: str = "",
         '"related":"관련종목"}]'
         f'{watch_schema}}}\n\n'
         f"topics는 ★최대 {MAX_TOPICS}개★ (중요도 순, 서로 다른 결의 주제로 다양하게). "
-        "keywords 정확히 10개(중요 순). themes 3~6개. "
+        "keywords 정확히 10개(중요 순). themes 3~6개(반드시 채울 것). "
         + ("정량 데이터·뉴스가 제공되었으니 metrics·snapshot_line을 적극 채우세요."
            if (snapshot_text or news_titles)
            else "정량 데이터가 없으면 metrics·snapshot_line은 빈 문자열로 두고 시장 시각 위주로 쓰세요.")
@@ -489,7 +524,7 @@ def analyze_messages(messages, kind: str = "pre", channel_name: str = "",
     # ★잘림 안전장치: themes·keywords는 JSON 끝쪽이라 출력이 잘리면 가장 먼저 빈다.
     #   topics만 통과시키면 '주목 테마 없음' 불완전 보고서가 조용히 DB에 저장된다.
     #   잘렸는데(이어받기 후에도) themes 또는 keywords가 비면 → 저장하지 말고 크게 실패.
-    #   (정상 종료인데 themes가 빈 경우는 모델이 실제로 안 채운 드문 케이스라 통과시킴)
+    #   (정상 종료인데 themes가 빈 경우는 아래 폴백에서 topics로 채운다.)
     if truncated and (not result.get("themes") or not result.get("keywords")):
         missing = []
         if not result.get("themes"):
@@ -500,6 +535,14 @@ def analyze_messages(messages, kind: str = "pre", channel_name: str = "",
             "보고서가 출력 한도에서 잘려 " + "·".join(missing) + "가 누락됐습니다. "
             "불완전 보고서를 저장하지 않으려고 실패 처리합니다. "
             "다시 생성하거나 REPORT_MAX_TOKENS 를 늘려주세요.")
+
+    # ★주목 테마 폴백(정상 종료인데 themes가 빈 경우):
+    #   새 topics 스키마에선 themes 내용이 topics와 겹쳐 모델이 자주 비워 보낸다.
+    #   이때는 '실패'가 아니라 topics 상위에서 테마 카드를 만들어 채운다 →
+    #   뷰어·PDF가 '주목 테마 없음'으로 뜨지 않게 DB에 저장.
+    #   (위 안전장치가 truncated+빈 themes는 이미 걸러냈으므로, 여기 도달 시 정상 종료다.)
+    if not result.get("themes"):
+        result["themes"] = _themes_from_topics(result.get("topics"))
 
     # 클러스터 메타(언급량 등)를 보고서에 동봉 — 검증·디버깅용
     if clusters:
