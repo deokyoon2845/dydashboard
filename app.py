@@ -867,7 +867,7 @@ def _inject_countup():
 # ── 탭 ──
 _inject_countup()
 tab_idx, tab_rep, tab_wl, tab_kw, tab_tr = st.tabs(
-    ["지수 현황", "시황", "관심 종목", "오늘의 키워드", "타임라인"]
+    ["지수", "시황", "관심종목", "키워드", "타임라인"]
 )
 with tab_idx:
     render_indices()
