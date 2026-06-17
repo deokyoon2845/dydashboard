@@ -8,7 +8,8 @@
 새 스키마(topics 중심):
 - headline / mood / snapshot_line
 - topics[]: {title, importance, fact, market_view{consensus,dissent}, metrics, implication, stocks[]}
-  · 상위 5~6개만, 각 필드 문장 수 제한 → 길이 자동 통제
+  · 상위 8개 이내(최대), 각 필드 문장 수 '범위' 지정 → 깊이 있게 쓰되 길이 통제
+    (주제가 적은 날은 8개보다 적어도 됨 — 억지로 늘리지 않음)
   · 기존 market_drivers(매트릭스)·cross_check(교차검증)를 topics로 흡수 (중복 제거)
 - outlook: 장전=오늘 볼 것 / 장마감=장전 점검+내일 가설  (목적별 분기 = 중복 방지)
 - change_tracking: 어제 대비 새 주제 / 지속 주제  (매일 반복 방지)
@@ -18,6 +19,13 @@
 잘림 안전장치(2026-06): 이어받기 후에도 잘려서 themes(또는 keywords)가 비면, 불완전
   보고서를 조용히 저장하지 않고 크게 실패시킨다. (themes·keywords는 JSON 끝쪽이라
   출력이 잘리면 가장 먼저 비는 필드 → '주목 테마 없음'의 근본 원인)
+
+2026-06 보강(시황 이해도 향상):
+  - 주제 카드 상한 6 → 8 (말 그대로 '최대', 화제 적으면 더 적게).
+  - 개별 섹션 분량 약 2배(fact 4~6문장, consensus/dissent 2~3문장, implication 3~4문장).
+  - 다양성 가드레일: 한 메가테마(AI·지정학)가 슬롯을 독식하지 않게 배분.
+  - 1차 클러스터링을 더 잘게(12~18개, 작은 화제도 따로) → 묻히는 메시지 감소.
+  - 분량↑로 출력이 길어지므로 max_tokens 기본값 상향(잘림 하드페일 방지).
 """
 
 import json
@@ -31,10 +39,11 @@ from anthropic import Anthropic
 MODEL = os.environ.get("REPORT_MODEL", "claude-opus-4-8")
 HAIKU = "claude-haiku-4-5"
 CLUSTER_THRESHOLD = int(os.environ.get("CLUSTER_THRESHOLD", "12"))  # 이 수↑면 1차 클러스터링
-MAX_TOKENS = int(os.environ.get("REPORT_MAX_TOKENS", "16000"))
+CLUSTER_MAX_TOKENS = int(os.environ.get("CLUSTER_MAX_TOKENS", "10000"))  # Haiku 클러스터 출력 한도
+MAX_TOKENS = int(os.environ.get("REPORT_MAX_TOKENS", "24000"))  # 분량 2배·8섹션 대응 상향
 MAX_CONTINUE = 2
 
-MAX_TOPICS = int(os.environ.get("REPORT_MAX_TOPICS", "6"))  # 주제 카드 상한
+MAX_TOPICS = int(os.environ.get("REPORT_MAX_TOPICS", "8"))  # 주제 카드 상한(최대)
 
 _WD = "월화수목금토일"
 
@@ -173,16 +182,25 @@ def _stage1_cluster(client, corpus, info):
     - mention_count: 이 주제를 다룬 메시지 수 (= 시장의 관심도 신호)
     - facts: 사실 위주 핵심 (수치·원인 보존)
     - consensus: 채널 다수가 동의하는 시각 / dissent: 갈리는 시각(없으면 빈 문자열)
+
+    ★다양성: 큰 주제는 하위 화제로 쪼개고, 작지만 뚜렷한 화제는 별도 클러스터로 살린다.
+      (AI·전쟁 같은 메가테마로 과하게 합쳐 작은 화제가 묻히는 것을 방지)
     """
     today = _today_kst_str()
     prompt = (
         f"다음은 텔레그램 시황 채널 메시지 원문입니다({info['ko']} 작성용). "
-        "이를 '주제 클러스터'로 구조화하세요. 100여 개 메시지라도 실제 화제는 10개 안팎입니다.\n\n"
+        "이를 '주제 클러스터'로 구조화하세요. 100여 개 메시지라도 핵심 화제는 보통 "
+        "12~18개 정도입니다. 작은 화제도 묻지 말고 따로 살리세요.\n\n"
         f"기준: 오늘은 {today}. 각 메시지 머리에 [채널] (작성시각)이 붙어 있고, "
         f"{info['window']} 동안 수집됐습니다.\n\n"
         f"=== 원문 ===\n{corpus}\n=== 끝 ===\n\n"
         "규칙:\n"
         "- 비슷한 주제의 메시지를 하나의 클러스터로 묶으세요. 같은 화제면 채널이 달라도 한 묶음.\n"
+        "- ★과합치기 금지: 'AI'·'반도체'·'전쟁/지정학'처럼 큰 주제는 하위 화제로 쪼개세요 "
+        "(예: AI → 'HBM·메모리 수급', '전력·소부장 병목', 'AI 정책/규제'; "
+        "전쟁 → '종전 협상', '유가·에너지', '재건 수주'). 한 메가테마에 모든 걸 몰아넣지 마세요.\n"
+        "- ★작은 화제 보존: 언급은 적어도 뚜렷한 화제(개별 종목·특정 업종·정책·IPO·실적·환율/금리 등)는 "
+        "큰 주제에 흡수하지 말고 독립 클러스터로 유지하세요. 이런 게 묻히면 시황의 폭이 좁아집니다.\n"
         "- ★언급량(mention_count): 그 주제를 다룬 메시지 수를 세세요. 시장 관심도 신호입니다.\n"
         "- ★합의/이견: 같은 주제 안에서 채널 다수가 동의하는 시각은 consensus에, "
         "소수·반대 시각이 있으면 dissent에 적으세요. 이견이 없으면 dissent는 빈 문자열.\n"
@@ -202,7 +220,7 @@ def _stage1_cluster(client, corpus, info):
         ']}'
     )
     resp = client.messages.create(
-        model=HAIKU, max_tokens=8000,
+        model=HAIKU, max_tokens=CLUSTER_MAX_TOKENS,
         messages=[{"role": "user", "content": prompt}],
     )
     usage = {"model": HAIKU,
@@ -313,8 +331,8 @@ def analyze_messages(messages, kind: str = "pre", channel_name: str = "",
         if txt:
             lines.append(f"[{ch}] ({ds}) {txt}")
     corpus = "\n".join(lines)
-    if len(corpus) > 100000:
-        corpus = corpus[:100000] + "\n…(이하 생략)"
+    if len(corpus) > 150000:   # 누락 완화: 클러스터링 입력 한도 상향(100k→150k)
+        corpus = corpus[:150000] + "\n…(이하 생략)"
 
     client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
     calls = []
@@ -359,11 +377,11 @@ def analyze_messages(messages, kind: str = "pre", channel_name: str = "",
         outlook_schema = ('"outlook":{"pre":["오늘 장에서 주목할 것 1(이벤트·체크포인트)",'
                           '"주목할 것 2","주목할 것 3"]}')
         outlook_rule = ("- outlook.pre: 오늘 한국 장에서 주목할 이벤트·종목·시나리오를 "
-                        "3~4개 행동 지침으로. '오늘 무엇을 볼까'에 답하세요.")
+                        "3~5개 행동 지침으로. '오늘 무엇을 볼까'에 답하세요.")
     else:
         outlook_schema = ('"outlook":{"post":{"review":"오늘 아침 장전에 예상한 시나리오가 '
-                          '맞았는지 점검 1~2문장","tomorrow":"오늘 밤 미국장·내일 한국 장에서 '
-                          '주목할 가설 1~2문장"}}')
+                          '맞았는지 점검 2~3문장","tomorrow":"오늘 밤 미국장·내일 한국 장에서 '
+                          '주목할 가설 2~3문장"}}')
         outlook_rule = ("- outlook.post: review에 '장전 예상 대비 실제' 점검을, "
                         "tomorrow에 내일 가설을 쓰세요. '오늘을 정리하고 내일 가설'에 답하세요.")
 
@@ -380,6 +398,11 @@ def analyze_messages(messages, kind: str = "pre", channel_name: str = "",
         "- ★주제 중심: 보고서 본문은 '주제 카드(topics)' 묶음입니다. 입력 클러스터를 바탕으로 "
         f"가장 중요한 주제 {MAX_TOPICS}개 이내를 골라, 각 주제를 사실→시장시각→정량→시사점 "
         "순으로 구성하세요. 언급량이 많고 시장 영향이 큰 주제를 importance 높게.\n"
+        "- ★주제 다양성(중요): 한 거대 테마(예: AI 인프라, 전쟁·지정학)가 topics를 독식하지 "
+        "않게 하세요. 같은 메가테마는 최대 2~3개 슬롯까지만 쓰고, 거시·섹터·개별 종목·정책·"
+        "수급·환율/금리·IPO·실적 등 서로 다른 결의 주제를 고르게 배분하세요. 입력 클러스터에 "
+        "작지만 뚜렷한 주제(특정 업종·정책·개별 종목 등)가 있으면 큰 테마에 묻지 말고 별도 "
+        "주제로 살려, 그날 시황의 폭을 충분히 보여주세요.\n"
         "- ★합의/이견 분리(핵심): 각 주제의 market_view에 채널 다수의 consensus와 갈리는 "
         "dissent를 나눠 쓰세요. 이게 단순 요약을 넘는 분석의 핵심입니다. 이견이 없으면 dissent는 빈 문자열.\n"
         "- ★정량 결합: 각 주제의 metrics에 그 주제와 직접 관련된 수치를 정량 데이터에서 찾아 넣으세요 "
@@ -391,8 +414,10 @@ def analyze_messages(messages, kind: str = "pre", channel_name: str = "",
         + "- ★변화 추적: 직전 보고서 주제와 비교해, change_tracking.new(오늘 새로 등장)와 "
         "continuing(어제에 이어 지속)을 채우세요. 매일 같은 말 반복을 피하는 장치입니다. "
         "직전 보고서가 없으면 new에 오늘 주제들을 넣고 continuing은 빈 배열.\n"
-        "- ★길이 통제: 각 필드는 지정 문장 수를 넘기지 마세요. 주제는 최대 "
-        f"{MAX_TOPICS}개. 화제가 적은 날은 3~4개여도 됩니다(억지로 늘리지 말 것).\n"
+        "- ★분량(중요): 각 필드는 지정한 문장 수 범위를 충분히 채워 깊이 있게 쓰세요. "
+        "표면 요약이 아니라 배경·근거·수치·파급까지 풀어 설명합니다(예전 대비 약 2배 두껍게). "
+        "단, 같은 말 반복·물타기 금지 — 새 정보로 채우세요. 주제 수는 ★최대 "
+        f"{MAX_TOPICS}개★이며, 화제가 적은 날은 그보다 적어도 됩니다(억지로 늘리지 말 것).\n"
         "- 과장·창작 금지. 투자 조언(매수/매도 단정) 아니라 판단을 돕는 시장 이해의 관점으로.\n"
         "- ★JSON 안전: 문자열 값 안에 큰따옴표(\") 금지. 강조는 작은따옴표(')나 「」.\n\n"
         "다음 JSON만 반환 (다른 텍스트 없이):\n"
@@ -403,11 +428,11 @@ def analyze_messages(messages, kind: str = "pre", channel_name: str = "",
         '"topics":[{'
         '"title":"주제명(짧고 구체적으로)",'
         '"importance":1~10 정수(중요도),'
-        '"fact":"무슨 일이 있었나. 원인→결과→파급. 2~3문장",'
-        '"market_view":{"consensus":"채널 다수 시각 1문장",'
-        '"dissent":"갈리는 시각 1문장(없으면 빈 문자열)"},'
-        '"metrics":"이 주제 관련 실제 수치(없으면 빈 문자열)",'
-        '"implication":"그래서 무엇을 의미하나. 1~2문장",'
+        '"fact":"무슨 일이 있었나. 원인→결과→국내 파급까지 구체적으로. 4~6문장",'
+        '"market_view":{"consensus":"채널 다수가 보는 시각과 근거. 2~3문장",'
+        '"dissent":"갈리는·반대 시각과 그 논리. 2~3문장(없으면 빈 문자열)"},'
+        '"metrics":"이 주제 관련 실제 수치를 가능한 한 여러 개(없으면 빈 문자열)",'
+        '"implication":"그래서 무엇을 의미하고 무엇을 봐야 하나. 3~4문장",'
         '"stocks":["관련 종목명"]}'
         '],'
         f'{outlook_schema},'
@@ -419,8 +444,8 @@ def analyze_messages(messages, kind: str = "pre", channel_name: str = "",
         '"news_headline":"근본 원인 뉴스 헤드라인(주가 등락 표현 금지)","weight":10,'
         '"related":"관련종목"}]'
         f'{watch_schema}}}\n\n'
-        f"topics는 ★최대 {MAX_TOPICS}개★ (중요도 순). keywords 정확히 10개(중요 순). "
-        "themes 3~6개. "
+        f"topics는 ★최대 {MAX_TOPICS}개★ (중요도 순, 서로 다른 결의 주제로 다양하게). "
+        "keywords 정확히 10개(중요 순). themes 3~6개. "
         + ("정량 데이터·뉴스가 제공되었으니 metrics·snapshot_line을 적극 채우세요."
            if (snapshot_text or news_titles)
            else "정량 데이터가 없으면 metrics·snapshot_line은 빈 문자열로 두고 시장 시각 위주로 쓰세요.")
