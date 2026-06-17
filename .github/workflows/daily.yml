@@ -14,6 +14,11 @@ on:
 permissions:
   contents: write
 
+# 같은 워크플로가 겹쳐 돌면(수동+예약 동시 등) 뒤엣것만 살리고 앞엣것 취소 → 중복 보고서 방지.
+concurrency:
+  group: daily-report
+  cancel-in-progress: false
+
 jobs:
   generate:
     runs-on: ubuntu-latest
@@ -76,10 +81,26 @@ jobs:
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
         run: python -m engine.run_all
 
-      - name: 결과 커밋 & 푸시 (키워드·data 백업용 — 보고서는 DB에 저장됨)
+      - name: 결과 커밋 & 푸시 (키워드·data 백업 + 하트비트)
+        shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # ── 하트비트(중요) ──────────────────────────────────────────────
+          #  GitHub은 '60일간 저장소에 아무 활동(커밋)도 없으면' 예약(cron) 워크플로를
+          #  자동으로 비활성화한다. 보고서는 이제 DB에 저장되고 reports/ 커밋이 .gitignore
+          #  등으로 건너뛰어지면, 매 실행이 '커밋할 변경 없음'으로 끝나 활동이 0이 되고
+          #  결국 예약이 꺼질 수 있다. → 매 실행마다 마지막 실행 시각을 기록해 강제로
+          #  '활동'을 만들어 예약 워크플로가 자동 비활성화되지 않게 한다.
+          mkdir -p data
+          {
+            echo "last_run_utc: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "last_run_kst: $(TZ=Asia/Seoul date +'%Y-%m-%d %H:%M:%S')"
+            echo "trigger: ${{ github.event_name }}"
+          } > data/last_run.txt
+          git add -f data/last_run.txt          # .gitignore에 막혀도 강제로 추적
+
           git add reports/ data/ || true
           if git diff --staged --quiet; then
             echo "커밋할 변경 없음 — 건너뜀"
