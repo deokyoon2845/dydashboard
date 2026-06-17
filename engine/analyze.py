@@ -139,7 +139,13 @@ def _create_with_continuation(client, model, prompt, max_tokens):
     msgs = [{"role": "user", "content": prompt}]
     full, calls, truncated = "", [], False
     for _ in range(MAX_CONTINUE + 1):
-        resp = client.messages.create(model=model, max_tokens=max_tokens, messages=msgs)
+        # ★스트리밍 사용: max_tokens가 커서 비(非)스트리밍 요청이 10분을 넘길 수 있다는
+        #   SDK 제한("Streaming is required ...")을 회피한다. (분량은 그대로 유지)
+        with client.messages.stream(model=model, max_tokens=max_tokens,
+                                     messages=msgs) as stream:
+            for _chunk in stream.text_stream:
+                pass  # 스트림을 끝까지 소비해야 최종 메시지가 완성됨
+            resp = stream.get_final_message()
         calls.append({"model": model,
                       "input_tokens": resp.usage.input_tokens,
                       "output_tokens": resp.usage.output_tokens})
