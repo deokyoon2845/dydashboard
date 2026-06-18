@@ -13,3 +13,4 @@ reportlab
 requests
 supabase
 lxml
+PublicDataReader
