@@ -41,8 +41,8 @@ _BORDER = r"""M318.3 516.5L306.0 503.3L310.1 486.5L307.5 455.6L258.9 447.9L255.6
 
 # ── 데이터 훅 (실제 수집 붙기 전까지 None → 내장 샘플 폴백) ───────
 def fetch_region_metrics():
-    """지역명 -> {'mm','js','v','vc','jr'}. 미구현이면 None(샘플 사용)."""
-    return None
+    """지역명 -> {'mm','js','v','vc','jr'}. '실거래 갱신' 후 세션 저장값 사용, 없으면 None(샘플)."""
+    return st.session_state.get("re_metrics")
 
 
 def _merged_regions():
@@ -77,16 +77,20 @@ def fetch_indicators():
     ]
 
 
+# (유형, 배경, 글자색, 단지, 지역, 면적, 가격, 변동, 거래유형, 제외여부)
+_SAMPLE_ANOMALIES = [
+    ("신고가", "#FCEBEB", "#A32D2D", "래미안원베일리", "서초구", "84㎡", "58.0억", "+3.2%", "중개", False),
+    ("신고가", "#FCEBEB", "#A32D2D", "힐스테이트판교엘포레", "성남시", "84㎡", "24.5억", "+2.6%", "중개", False),
+    ("거래량 급증", "#FAEEDA", "#854F0B", "파크리오", "송파구", "전체", "31건/주", "+148%", "-", False),
+    ("급등", "#FCEBEB", "#A32D2D", "광교중흥S클래스", "수원시", "84㎡", "17.8억", "+8.1%", "중개", False),
+    ("신저가", "#E6F1FB", "#0C447C", "상계주공7", "노원구", "59㎡", "6.1억", "-4.0%", "중개", False),
+    ("급락", "#E6F1FB", "#0C447C", "은마", "강남구", "84㎡", "26.0억", "-7.5%", "직거래", True),
+]
+
+
 def fetch_anomalies():
-    # (유형, 배경, 글자색, 단지, 지역, 면적, 가격, 변동, 거래유형, 제외여부)
-    return [
-        ("신고가", "#FCEBEB", "#A32D2D", "래미안원베일리", "서초구", "84㎡", "58.0억", "+3.2%", "중개", False),
-        ("신고가", "#FCEBEB", "#A32D2D", "힐스테이트판교엘포레", "성남시", "84㎡", "24.5억", "+2.6%", "중개", False),
-        ("거래량 급증", "#FAEEDA", "#854F0B", "파크리오", "송파구", "전체", "31건/주", "+148%", "-", False),
-        ("급등", "#FCEBEB", "#A32D2D", "광교중흥S클래스", "수원시", "84㎡", "17.8억", "+8.1%", "중개", False),
-        ("신저가", "#E6F1FB", "#0C447C", "상계주공7", "노원구", "59㎡", "6.1억", "-4.0%", "중개", False),
-        ("급락", "#E6F1FB", "#0C447C", "은마", "강남구", "84㎡", "26.0억", "-7.5%", "직거래", True),
-    ]
+    """특이거래 리스트. '실거래 갱신' 후 세션값 사용, 없으면 샘플."""
+    return st.session_state.get("re_anoms") or _SAMPLE_ANOMALIES
 
 
 # ── 지표·거래 카드 CSS (부모 문서 · 전역 변수 사용) ──────────────
@@ -295,10 +299,38 @@ def _render_anomalies():
 
 
 # ── 메인 ────────────────────────────────────────────────────────
+def _run_collection():
+    """국토부 실거래 수집 → 세션 저장(지역지표 + 특이거래)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from engine.realestate_collect import collect_region_metrics, collect_anomalies
+    st.session_state["re_metrics"] = collect_region_metrics()
+    st.session_state["re_anoms"] = collect_anomalies()
+    st.session_state["re_asof"] = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")
+
+
 def render_realestate():
     """부동산 탭 본문 — 지도 / 지표 / 거래 서브탭."""
     st.markdown(_RE_CSS, unsafe_allow_html=True)
-    st.caption("수도권 아파트 · 한국부동산원 주간동향 + 국토부 실거래 기반 (현재 샘플 데이터)")
+
+    asof = st.session_state.get("re_asof")
+    if asof:
+        st.caption(f"수도권 아파트 · 국토부 실거래 기준 {asof} KST · "
+                   "가격지표·인구·공급은 샘플(연결 예정)")
+    else:
+        st.caption("수도권 아파트 · 현재 샘플 데이터 — "
+                   "'실거래 갱신'을 누르면 국토부 실거래로 지도·거래가 채워집니다.")
+
+    if st.button("🔄 실거래 데이터 갱신",
+                 help="국토부 실거래가 API 수집 (수십 초 소요·API 호출이 많아요)"):
+        with st.spinner("국토부 실거래 수집 중... (지역 지표 + 특이거래)"):
+            try:
+                _run_collection()
+                st.success("실거래 데이터로 갱신했어요.")
+                st.rerun()
+            except Exception as e:
+                st.warning(f"수집 실패 · {e} — 샘플 데이터로 표시합니다.")
+
     t_map, t_ind, t_anom = st.tabs(["지도", "지표", "거래"])
     with t_map:
         _render_map()
