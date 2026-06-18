@@ -866,14 +866,19 @@ def _inject_countup():
 
 # ── 탭 ──
 _inject_countup()
-tab_idx, tab_rep, tab_kw = st.tabs(
-    ["지수", "시황", "키워드"]
-)
-with tab_idx:
-    render_indices()
-with tab_rep:
-    render_report_tab()
-with tab_kw:
-    render_keywords()
-    st.divider()
-    render_watchlist_tab()
+top_stock, top_re = st.tabs(["증시", "부동산"])
+
+with top_stock:
+    tab_idx, tab_rep, tab_kw = st.tabs(["지수", "시황", "키워드"])
+    with tab_idx:
+        render_indices()
+    with tab_rep:
+        render_report_tab()
+    with tab_kw:
+        render_keywords()
+        st.divider()
+        render_watchlist_tab()
+
+with top_re:
+    from modules.realestate import render_realestate
+    render_realestate()
