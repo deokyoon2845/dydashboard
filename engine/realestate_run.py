@@ -14,6 +14,7 @@ from modules.db import save_realestate
 def main():
     metrics = None
     anomalies = None
+    subscriptions = None
 
     try:
         metrics = collect_region_metrics()
@@ -27,10 +28,18 @@ def main():
     except Exception as e:
         print(f"[realestate] 특이거래 수집 실패: {e}")
 
-    if not metrics and not anomalies:
+    try:
+        from engine.realestate_subscriptions import collect_subscriptions
+        subscriptions = collect_subscriptions()
+        print(f"[realestate] 분양 {len(subscriptions)}건 수집")
+    except Exception as e:
+        print(f"[realestate] 분양 수집 실패: {e}")
+
+    if not metrics and not anomalies and not subscriptions:
         raise SystemExit("[realestate] 수집 결과가 비어 저장하지 않습니다 (키/네트워크 확인).")
 
-    asof_date = save_realestate(metrics=metrics, anomalies=anomalies)
+    asof_date = save_realestate(metrics=metrics, anomalies=anomalies,
+                                subscriptions=subscriptions)
     print(f"[realestate] Supabase 저장 완료: asof_date={asof_date}")
 
 
