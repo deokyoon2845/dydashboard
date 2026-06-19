@@ -328,7 +328,7 @@ def _themes_from_topics(topics, max_n=6):
     """모델이 themes를 비워 보낼 때(새 topics 스키마에서 잦음) topics에서 주목 테마를 만든다.
 
     - name: 주제 제목
-    - detail: fact의 앞 1~2문장으로 축약
+    - detail: fact의 앞 1~2문장을 '완전하게'(문장 단위로) — 글자수 컷/'…' 없음(짤림 방지)
     - tickers: 주제의 stocks를 쉼표로 연결
     뷰어·PDF가 '주목 테마 없음'으로 뜨지 않도록 저장 단계에서 채우는 폴백.
     """
@@ -340,10 +340,8 @@ def _themes_from_topics(topics, max_n=6):
         if not name:
             continue
         detail = str(t.get("fact", "")).strip()
-        sents = re.split(r'(?<=[.!?。])\s+', detail)
-        detail = " ".join(s for s in sents[:2] if s).strip()
-        if len(detail) > 140:
-            detail = detail[:138].rstrip() + "…"
+        sents = [s for s in re.split(r'(?<=[.!?。])\s+', detail) if s.strip()]
+        detail = " ".join(sents[:2]).strip() if sents else detail
         stocks = [str(s).strip() for s in (t.get("stocks") or []) if str(s).strip()]
         out.append({"name": name, "detail": detail, "tickers": ", ".join(stocks)})
         if len(out) >= max_n:
