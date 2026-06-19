@@ -849,17 +849,33 @@ def _re_can_collect():
 
 
 def render_realestate():
+    """부동산 탭 본문 — 지도 / 지표 / 거래 / 분양 서브탭."""
+    st.markdown(_RE_CSS, unsafe_allow_html=True)
+
+    asof = st.session_state.get("re_asof")
+    if not asof:
+        snap = _load_re_snapshot()
+        asof = (snap or {}).get("asof") if snap else None
+    if asof:
+        st.caption(f"수도권 아파트 · 국토부 실거래 기준 {asof} KST · "
+                   "가격지표·인구·공급은 샘플(연결 예정)")
+    else:
+        st.caption("수도권 아파트 · 현재 샘플 데이터 — "
+                   "'실거래 갱신'을 누르면 국토부 실거래로 지도·거래가 채워집니다.")
+
     authed = _re_can_collect()
     col_a, col_b = st.columns([3, 1])
     with col_a:
-        do_collect = st.button("🔄 실거래 데이터 갱신", disabled=not authed,
-                               help="국토부 실거래가 API 수집 (수십 초 소요·API 호출이 많아요)",
-                               use_container_width=True)
+        do_collect = st.button(
+            "🔄 실거래 데이터 갱신", disabled=not authed,
+            help="국토부 실거래가 API 수집 (수십 초 소요·API 호출이 많아요)",
+            use_container_width=True)
     with col_b:
-        do_diag = st.button("🔍 연결 진단",
-                            help="단 1회 시험 호출로 키·네트워크 상태만 점검",
-                            use_container_width=True)
+        do_diag = st.button(
+            "🔍 연결 진단", help="단 1회 시험 호출로 키·네트워크 상태만 점검",
+            use_container_width=True)
 
+    # 연결 진단: 600콜 안 돌리고 강남구 1콜만 던져 원인을 바로 표시
     if do_diag:
         from engine.realestate_collect import diagnose
         with st.spinner("data.go.kr 연결 점검 중..."):
