@@ -1,4 +1,4 @@
-"""Supabase 보고서·관심종목 저장소 — 엔진(GitHub Actions)·뷰어(Streamlit) 공용 얇은 계층.
+"""Supabase 보고서·관심종목·부동산 저장소 — 엔진(GitHub Actions)·뷰어(Streamlit) 공용 얇은 계층.
 
 - 뷰어에서는 Streamlit Secrets, 엔진에서는 환경변수로 키를 읽는다(둘 다 지원).
 - 보고서는 reports 테이블에 (report_date, report_kind) 기준 upsert 된다.
@@ -13,6 +13,20 @@
     );
     insert into watchlist (id, stocks) values (1, '[]'::jsonb)
       on conflict (id) do nothing;
+
+- 부동산 실거래 스냅샷은 realestate_snapshots 테이블에 날짜(asof_date)별 upsert 된다.
+  뷰어는 가장 최신 1행만 읽는다(과거 행은 향후 추세/이력용으로 누적). 갱신은 운영자 버튼
+  또는 일일 GitHub Actions(engine.realestate_run)가 수행한다.
+  (※ 최초 1회 아래 SQL로 테이블을 만들어야 함)
+
+    create table if not exists realestate_snapshots (
+      asof_date  date primary key,
+      asof       text,
+      metrics    jsonb,
+      anomalies  jsonb,
+      indicators jsonb,
+      updated_at timestamptz default now()
+    );
 """
 import os
 import re
@@ -23,6 +37,7 @@ from supabase import create_client, Client
 TABLE = "reports"
 WL_TABLE = "watchlist"
 WL_ID = 1
+RE_TABLE = "realestate_snapshots"
 _CLIENT: Client | None = None
 
 
@@ -152,3 +167,37 @@ def save_watchlist_db(stocks: list) -> list[str]:
         {"id": WL_ID, "stocks": clean, "updated_at": datetime.now().isoformat()},
         on_conflict="id").execute()
     return clean
+
+
+# ── 부동산 스냅샷: 읽기·쓰기 ──────────────────────────────────
+# realestate_snapshots 테이블에 날짜(asof_date)별로 최신 수집 결과를 upsert.
+# 뷰어는 최신 1행만 읽어 '항상 실데이터'를 보장(샘플 폴백은 행이 없을 때만).
+# metrics/anomalies/indicators는 뷰어가 그대로 그릴 수 있는 형식(dict/list)으로 저장.
+
+def save_realestate(metrics=None, anomalies=None, indicators=None,
+                    asof: str | None = None, asof_date: str | None = None) -> str:
+    """부동산 스냅샷 저장(upsert, asof_date 단일행). asof는 'YYYY-MM-DD HH:MM' 문자열."""
+    now = datetime.now()
+    asof = asof or now.strftime("%Y-%m-%d %H:%M")
+    asof_date = asof_date or asof[:10]
+    row = {
+        "asof_date": asof_date,
+        "asof": asof,
+        "metrics": metrics,
+        "anomalies": anomalies,
+        "indicators": indicators,
+        "updated_at": now.isoformat(),
+    }
+    _client().table(RE_TABLE).upsert(row, on_conflict="asof_date").execute()
+    return asof_date
+
+
+def load_realestate() -> dict | None:
+    """가장 최신 부동산 스냅샷 1행을 반환. 행이 없으면 None.
+       반환 dict: {'asof','metrics','anomalies','indicators'}."""
+    res = (_client().table(RE_TABLE)
+           .select("asof,metrics,anomalies,indicators")
+           .order("asof_date", desc=True)
+           .limit(1)
+           .execute())
+    return res.data[0] if res.data else None
