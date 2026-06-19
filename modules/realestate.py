@@ -15,12 +15,15 @@
 렌더 방식:
   - 지도: 호버 인터랙션(JS) 때문에 components.html(iframe)로 렌더한다.
     iframe은 부모 CSS 변수를 못 읽으므로 색을 hex로 인라인한다(파스텔 톤).
+    한글 라벨 가독성을 위해 iframe 안에 Pretendard 웹폰트를 직접 임베드한다
+    (실패 시 시스템 폰트 폴백). 라벨이 작은/생략된 구는 호버 시 큰 라벨로 보강.
   - 지표·거래: st.markdown으로 부모 문서에 그려 전역 변수(--sage 등)를 그대로 쓴다.
 
 TODO(다음 단계):
   - fetch_region_metrics(): 부동산원 주간 시군구 지수 + 국토부 실거래 집계
   - fetch_indicators() / fetch_anomalies(): 실제 수집 연결
   - 거래 탭 필터 칩 동작(현재 정적)
+  - 서울 확대/인셋(라벨 더 키우기) — mockup 승인 후 별도 적용
 """
 
 import json
@@ -153,10 +156,12 @@ def _map_component(regions):
 _MAP_HEAD = """
 <!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
 <style>
-:root{--ink:#34352f;--muted:#9a9b92;--card:#fff;--line:#ECEDE7;--line2:#DEDED7;--sage:#7E9A83;--up:#B65F5A;--dn:#5A7CA0;}
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
+:root{--ink:#34352f;--muted:#9a9b92;--card:#fff;--line:#ECEDE7;--line2:#DEDED7;--sage:#7E9A83;--up:#B65F5A;--dn:#5A7CA0;
+  --kfont:'Pretendard',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;}
 *{box-sizing:border-box}
 body{margin:0;background:transparent;color:var(--ink);
-  font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;font-size:14px;}
+  font-family:var(--kfont);font-size:14px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
 .strip{display:flex;gap:22px;align-items:center;overflow-x:auto;padding:6px 0 10px;border-bottom:1px solid var(--line);margin-bottom:12px}
 .si{display:flex;align-items:center;gap:8px;white-space:nowrap}.si .lab{color:var(--muted);font-size:12px}.si .val{font-weight:700;font-size:13px}
 table.sm{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed;margin-bottom:12px}
@@ -165,12 +170,13 @@ table.sm th{color:var(--muted);font-weight:400;font-size:11px}
 table.sm td:first-child,table.sm th:first-child{text-align:left}
 .up{color:var(--up)}.dn{color:var(--dn)}
 .seg{display:inline-flex;border:1px solid var(--line2);border-radius:8px;overflow:hidden;margin:0 8px 12px 0;background:var(--card)}
-.seg button{border:none;background:none;padding:6px 13px;font-size:12.5px;color:var(--muted);cursor:pointer;border-right:1px solid var(--line)}
+.seg button{border:none;background:none;padding:6px 13px;font-size:12.5px;color:var(--muted);cursor:pointer;border-right:1px solid var(--line);font-family:var(--kfont)}
 .seg button:last-child{border-right:none}.seg button.on{background:#EEF1EC;color:var(--ink);font-weight:700}
-.mapwrap{position:relative;width:100%;max-width:760px;margin:0 auto;border:1px solid var(--line);border-radius:12px;background:#FCFCFA;overflow:hidden}
+.mapwrap{position:relative;width:100%;max-width:940px;margin:0 auto;border:1px solid var(--line);border-radius:12px;background:#FCFCFA;overflow:hidden}
 #map{display:block;width:100%}
 .dist{stroke:#FCFCFA;stroke-width:0.7;cursor:pointer;transition:fill .45s ease,opacity .25s ease}
-.dlabel{pointer-events:none;fill:#3c3d36}
+.dlabel{pointer-events:none;fill:#2f302a;font-family:var(--kfont)}
+#hoverLabel{pointer-events:none;font-family:var(--kfont);font-weight:800;fill:#23241d;opacity:0;transition:opacity .12s ease}
 #border{fill:none;stroke:#6E7A6A;stroke-width:2.2;stroke-linejoin:round;pointer-events:none}
 .tip{position:absolute;pointer-events:none;background:var(--card);border:1px solid var(--line2);border-radius:8px;padding:9px 11px;font-size:12px;min-width:150px;box-shadow:0 6px 22px rgba(52,53,47,.13);opacity:0;transform:translateY(4px);transition:opacity .15s,transform .15s;z-index:5}
 .ov{position:absolute;background:rgba(255,255,255,.93);border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:11.5px}
@@ -217,20 +223,22 @@ function regTable(){const g=[["수도권",D],["서울",seoul],["경기",gg],["�
 function placeLabels(){const cand=D.filter(d=>!(region!=="all"&&d.sd!==region));
   cand.sort((a,b)=>{if(a.sd!==b.sd)return a.sd==="seoul"?-1:1;return b.ar-a.ar;});
   const placed=[],out=[];
-  for(const d of cand){const fs=d.sd==="seoul"?8.5:10;const w=d.sl.length*fs*0.64,h=fs;
+  for(const d of cand){const fs=d.sd==="seoul"?9:11;const w=d.sl.length*fs*0.64,h=fs;
     if(d.sd==="gg"&&d.ar<420)continue;
     const box=[d.cx-w/2,d.cy-h/2,d.cx+w/2,d.cy+h/2];let ok=true;
     for(const p of placed){if(!(box[2]<p[0]||box[0]>p[2]||box[3]<p[1]||box[1]>p[3])){ok=false;break;}}
     if(!ok)continue;placed.push(box);
-    out.push(`<text class="dlabel" x="${d.cx}" y="${d.cy}" text-anchor="middle" dominant-baseline="middle" font-size="${fs}" font-weight="${d.sd==="seoul"?700:400}" paint-order="stroke" stroke="#FCFCFA" stroke-width="2.4" stroke-linejoin="round">${d.sl}</text>`);}
+    out.push(`<text class="dlabel" x="${d.cx}" y="${d.cy}" text-anchor="middle" dominant-baseline="middle" font-size="${fs}" font-weight="${d.sd==="seoul"?700:600}" paint-order="stroke" stroke="#FCFCFA" stroke-width="2.8" stroke-linejoin="round">${d.sl}</text>`);}
   return out.join("");}
 function drawMap(){const ps=D.map((d,i)=>{const dim=region!=="all"&&d.sd!==region;
     return `<path class="dist" data-i="${i}" d="${d.d}" fill="${fill(d)}" style="opacity:${dim?0.12:1};pointer-events:${dim?"none":"auto"}"></path>`;}).join("");
-  document.getElementById("map").innerHTML=`<g id="paths">${ps}</g><path id="border" d="${BORDER}"></path><g id="labels">${placeLabels()}</g>`;
-  const wrap=document.getElementById("mapwrap"),tip=document.getElementById("tip"),pg=document.getElementById("paths");
+  document.getElementById("map").innerHTML=`<g id="paths">${ps}</g><path id="border" d="${BORDER}"></path><g id="labels">${placeLabels()}</g>`
+    +`<text id="hoverLabel" text-anchor="middle" dominant-baseline="middle" paint-order="stroke" stroke="#FCFCFA" stroke-width="3.6" stroke-linejoin="round"></text>`;
+  const wrap=document.getElementById("mapwrap"),tip=document.getElementById("tip"),pg=document.getElementById("paths"),hl=document.getElementById("hoverLabel");
   document.querySelectorAll("#map path.dist").forEach(p=>{
-    p.onmouseenter=()=>{const d=D[+p.dataset.i];showTip(d);p.style.stroke="#34352f";p.style.strokeWidth="1.6";pg.appendChild(p);tip.style.opacity="1";tip.style.transform="translateY(0)";};
-    p.onmouseleave=()=>{p.style.stroke="#FCFCFA";p.style.strokeWidth="0.7";tip.style.opacity="0";tip.style.transform="translateY(4px)";};});
+    p.onmouseenter=()=>{const d=D[+p.dataset.i];showTip(d);p.style.stroke="#34352f";p.style.strokeWidth="1.6";pg.appendChild(p);tip.style.opacity="1";tip.style.transform="translateY(0)";
+      hl.setAttribute("x",d.cx);hl.setAttribute("y",d.cy);hl.setAttribute("font-size",d.sd==="seoul"?13:15);hl.textContent=d.sl;hl.style.opacity="1";};
+    p.onmouseleave=()=>{p.style.stroke="#FCFCFA";p.style.strokeWidth="0.7";tip.style.opacity="0";tip.style.transform="translateY(4px)";hl.style.opacity="0";};});
   wrap.onmousemove=e=>{const r=wrap.getBoundingClientRect();let x=e.clientX-r.left+14,y=e.clientY-r.top+14;if(x>r.width-170)x=e.clientX-r.left-164;tip.style.left=x+"px";tip.style.top=y+"px";};}
 function showTip(d){document.getElementById("tip").innerHTML=`<div style="font-weight:700;margin-bottom:5px">${d.n} <span style="font-weight:400;color:#9a9b92">${d.sd==="seoul"?"서울":"경기"}</span></div>
   <div style="color:#9a9b92">매매 <span class="${cls(d.mm)}">${fmt(d.mm)}</span> · 전세 <span class="${cls(d.js)}">${fmt(d.js)}</span></div>
@@ -256,7 +264,7 @@ strip();regTable();refresh();
 
 # ── 서브탭 렌더러 ───────────────────────────────────────────────
 def _render_map():
-    components.html(_map_component(_merged_regions()), height=1080, scrolling=False)
+    components.html(_map_component(_merged_regions()), height=1320, scrolling=False)
 
 
 def _render_indicators():
