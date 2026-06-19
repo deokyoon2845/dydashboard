@@ -8,8 +8,11 @@
   list_reports()는 DB의 보고서를 '가상 경로(Path)'로 반환해, 기존 path 기반 로직을
   그대로 재사용한다. (slug = 파일명 stem = "2026-06-14_0430")
 
-2026-06 레이아웃 개선(⑥⑧): 생성 로직 무변경, 뷰어 순서/위치만 조정.
-  - ⑧ 주목 테마를 장전·장후 카드 '위'로 이동 (TL;DR → 테마 → 좌우 카드).
+2026-06 레이아웃 개선(⑥): 생성 로직 무변경, 뷰어 순서/위치만 조정.
+  - ⑥ 검증용 원문 섹션은 제거됨.
+
+2026-06 주목 테마 섹션 제거:
+  - 주제 카드(topics)와 내용이 겹쳐 뷰어의 '주목 테마' 섹션을 통째로 제거.
 
 2026-06 추가(기본값·탭):
   - 기본 표시 날짜를 '오늘(date.today)'이 아니라 '가장 최근 보고서 일자'로 변경.
@@ -20,8 +23,6 @@
     상태)은 여전히 '장마감 후'. (st.tabs는 항상 첫 탭이 기본 선택돼 이 조합이 불가 →
     st.segmented_control(default=장마감 후)로 교체.)
   - 검증용 '취합된 텔레그램 원문' 섹션 전면 제거.
-  - 주목 테마가 비어 있던 문제: 새 topics 스키마 보고서는 themes를 따로 만들지 않아
-    'themes' 키가 비어 있었음 → topics에서 테마 카드를 폴백 생성해 항상 표시.
 """
 
 import html
@@ -208,15 +209,6 @@ div[data-testid="stSegmentedControl"]{margin-bottom:14px;}
 .ch-new .ch-item::before{content:"+ ";color:#0f6e56;font-weight:700;}
 .ch-cont .ch-item::before{content:"· ";color:var(--muted,#9a9b92);font-weight:700;}
 
-/* 주목 테마 (전체 폭) */
-.rpt-theme-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
-@media(max-width:900px){.rpt-theme-grid{grid-template-columns:repeat(2,1fr);}}
-@media(max-width:560px){.rpt-theme-grid{grid-template-columns:1fr;}}
-.theme-card{background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);border-left:3px solid var(--sage,#A7BBA9);border-radius:0 13px 13px 0;padding:13px 16px 11px;}
-.theme-name{font-size:14px;font-weight:700;color:var(--ink,#34352f);margin-bottom:5px;}
-.theme-detail{font-size:13px;line-height:1.7;color:var(--ink,#34352f);margin-bottom:8px;}
-.theme-tickers{font-size:11.5px;color:var(--muted,#9a9b92);}
-.theme-tickers a{color:var(--sage-deep,#7E9A83);font-weight:600;text-decoration:none;background:var(--pill-bg,#F1F2EC);padding:2px 8px;border-radius:6px;border:1px solid var(--line,#ECEDE7);margin-right:4px;}
 .rpt-side-empty{color:var(--muted,#9a9b92);font-size:13px;padding:8px 0;}
 </style>
 """
@@ -368,8 +360,6 @@ def _render_report_help_popover():
             '<div class="rpt-help-h second">📖 읽는 순서</div>'
             '<div class="rpt-help-li">맨 위 <b>오늘의 한 줄</b>로 그날 시장을 한 문장으로 파악하세요. '
             '장전·장후 분위기 뱃지와 핵심 수치가 함께 붙어 있어요.</div>'
-            '<div class="rpt-help-li">바로 아래 <b>주목 테마</b>에서 그날 자금이 쏠린 섹터를 먼저 훑으면 '
-            '큰 그림이 잡혀요. 세부 근거는 그 아래 카드에서 확인합니다.</div>'
             '<div class="rpt-help-li"><b>장전 / 장마감 후 탭</b>으로 보고서가 나뉘어요. '
             '둘 다 있으면 그날의 결과를 담은 <b>장마감 후</b>가 기본으로 펼쳐지고, '
             '아침 시나리오인 <b>장전</b>은 탭을 눌러 확인할 수 있어요. '
@@ -749,61 +739,6 @@ def _render_report_pair(pre, post):
         _render_placeholder("post")
 
 
-# ── 렌더링: 주목 테마 (전체 폭) ──────────────────────────────
-
-def _derive_themes_from_topics(data: dict) -> list:
-    """새 topics 스키마 보고서는 'themes'를 따로 만들지 않는다.
-    → 주제 카드(topics)에서 주목 테마 카드를 폴백 생성한다.
-    (themes 키가 비어 '이 보고서에는 테마 정보가 없어요'만 뜨던 문제 해결)"""
-    topics = (data or {}).get("topics") or []
-    derived = []
-    for tp in topics:
-        if not isinstance(tp, dict):
-            continue
-        name = str(tp.get("title", "")).strip()
-        if not name:
-            continue
-        detail = str(tp.get("fact", "")).strip()
-        if len(detail) > 95:
-            detail = detail[:93].rstrip() + "…"
-        stocks = [str(s).strip() for s in (tp.get("stocks") or []) if str(s).strip()]
-        derived.append({
-            "name": name,
-            "detail": detail,
-            "tickers": ", ".join(stocks),
-        })
-        if len(derived) >= 6:
-            break
-    return derived
-
-
-def _render_themes(data: dict):
-    themes = (data.get("themes") if data else None) or []
-    # 새 보고서(topics)는 themes가 비어 있으므로 topics에서 폴백 생성
-    if not themes:
-        themes = _derive_themes_from_topics(data or {})
-    st.markdown('<div class="rpt2-grp">🎯 주목 테마</div>', unsafe_allow_html=True)
-    if not themes:
-        st.markdown('<div class="rpt-side-empty">이 보고서에는 테마 정보가 없어요.</div>',
-                    unsafe_allow_html=True)
-        return
-    cards = ""
-    for th in themes:
-        name = th.get("name", "")
-        detail = th.get("detail", "")
-        tickers = [t.strip() for t in (th.get("tickers") or "").split(",") if t.strip()]
-        tk_html = "".join(
-            f'<a href="{naver_stock_url(t)}" target="_blank">{html.escape(t)}</a>'
-            for t in tickers)
-        cards += (
-            f'<div class="theme-card">'
-            f'<div class="theme-name">{html.escape(str(name))}</div>'
-            f'<div class="theme-detail">{html.escape(str(detail))}</div>'
-            + (f'<div class="theme-tickers">관련: {tk_html}</div>' if tk_html else "")
-            + '</div>')
-    st.markdown(f'<div class="rpt-theme-grid">{cards}</div>', unsafe_allow_html=True)
-
-
 # ── 삭제 UI ─────────────────────────────────────────────────
 
 def _render_delete_ui(files):
@@ -865,9 +800,6 @@ def render_reports():
     # ① 시장 동력 매트릭스 (구형 보고서에만 — 새 보고서는 topics가 대체)
     if latest and not (latest.get("topics")):
         _render_matrix(latest, latest_kind)
-
-    # ⑧ 주목 테마 (전체 폭) — 좌우 카드 '위'로 이동
-    _render_themes(latest)
 
     # ② 장전·장마감 후 — 세그먼트(왼쪽=장전, 기본 선택=장마감 후). 둘 다 있을 때만 세그먼트.
     st.markdown("<div style='height:14px'></div>", unsafe_allow_html=True)
