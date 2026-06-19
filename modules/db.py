@@ -20,13 +20,17 @@
   (※ 최초 1회 아래 SQL로 테이블을 만들어야 함)
 
     create table if not exists realestate_snapshots (
-      asof_date  date primary key,
-      asof       text,
-      metrics    jsonb,
-      anomalies  jsonb,
-      indicators jsonb,
-      updated_at timestamptz default now()
+      asof_date     date primary key,
+      asof          text,
+      metrics       jsonb,
+      anomalies     jsonb,
+      indicators    jsonb,
+      subscriptions jsonb,
+      updated_at    timestamptz default now()
     );
+
+  (※ 이미 테이블이 있으면 분양용 컬럼만 한 번 추가)
+    alter table realestate_snapshots add column if not exists subscriptions jsonb;
 """
 import os
 import re
@@ -175,6 +179,7 @@ def save_watchlist_db(stocks: list) -> list[str]:
 # metrics/anomalies/indicators는 뷰어가 그대로 그릴 수 있는 형식(dict/list)으로 저장.
 
 def save_realestate(metrics=None, anomalies=None, indicators=None,
+                    subscriptions=None,
                     asof: str | None = None, asof_date: str | None = None) -> str:
     """부동산 스냅샷 저장(upsert, asof_date 단일행). asof는 'YYYY-MM-DD HH:MM' 문자열."""
     now = datetime.now()
@@ -186,6 +191,7 @@ def save_realestate(metrics=None, anomalies=None, indicators=None,
         "metrics": metrics,
         "anomalies": anomalies,
         "indicators": indicators,
+        "subscriptions": subscriptions,
         "updated_at": now.isoformat(),
     }
     _client().table(RE_TABLE).upsert(row, on_conflict="asof_date").execute()
@@ -194,9 +200,9 @@ def save_realestate(metrics=None, anomalies=None, indicators=None,
 
 def load_realestate() -> dict | None:
     """가장 최신 부동산 스냅샷 1행을 반환. 행이 없으면 None.
-       반환 dict: {'asof','metrics','anomalies','indicators'}."""
+       반환 dict: {'asof','metrics','anomalies','indicators','subscriptions'}."""
     res = (_client().table(RE_TABLE)
-           .select("asof,metrics,anomalies,indicators")
+           .select("asof,metrics,anomalies,indicators,subscriptions")
            .order("asof_date", desc=True)
            .limit(1)
            .execute())
