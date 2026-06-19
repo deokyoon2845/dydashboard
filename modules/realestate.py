@@ -349,20 +349,40 @@ _SAMPLE_SUBS = [
 
 
 def fetch_subscriptions():
-    """분양 단지 리스트. 청약홈 수집이 붙으면 세션값(re_subs), 없으면 샘플."""
-    return st.session_state.get("re_subs") or _SAMPLE_SUBS
+    """분양 단지 리스트. 세션(직전 갱신)→DB 스냅샷→내장 샘플 폴백.
+       DB/세션 값이면 실데이터, _SAMPLE_SUBS 객체면 샘플(렌더에서 identity로 구분)."""
+    s = st.session_state.get("re_subs")
+    if s:
+        return s
+    snap = _load_re_snapshot()
+    if snap:
+        subs = snap.get("subscriptions")
+        if subs:
+            return subs
+    return _SAMPLE_SUBS
 
 
 def _sub_status(start, end):
-    """'MM.DD' 청약 기간으로 예정/분양중/마감 분류 (KST 기준, 연도는 올해로 근사). (라벨, 정렬순)."""
-    from datetime import datetime
+    """'MM.DD' 청약 기간으로 예정/분양중/마감 분류 (KST 기준). (라벨, 정렬순).
+       연말연초 경계에서 창이 과도하게 과거/미래면 연도 이월로 간주해 보정."""
+    from datetime import datetime, timedelta
     from zoneinfo import ZoneInfo
     today = datetime.now(ZoneInfo("Asia/Seoul")).date()
     try:
-        s = datetime.strptime(f"{today.year}.{start}", "%Y.%m.%d").date()
-        e = datetime.strptime(f"{today.year}.{end}", "%Y.%m.%d").date()
+        y = today.year
+        s = datetime.strptime(f"{y}.{start}", "%Y.%m.%d").date()
+        e = datetime.strptime(f"{y}.{end}", "%Y.%m.%d").date()
     except Exception:
         return "예정", 1
+    try:
+        if e < today - timedelta(days=300):       # 사실상 내년 건(연초)
+            s = s.replace(year=s.year + 1)
+            e = e.replace(year=e.year + 1)
+        elif s > today + timedelta(days=300):     # 사실상 작년 건(연말)
+            s = s.replace(year=s.year - 1)
+            e = e.replace(year=e.year - 1)
+    except ValueError:
+        pass
     if today < s:
         return "예정", 1
     if s <= today <= e:
@@ -735,8 +755,14 @@ def _render_subscriptions():
         "지역", ["수도권", "서울", "경기"], default="수도권",
         key="re_sub_region", label_visibility="collapsed")
     rmap = {"서울": "seoul", "경기": "gg"}
+    subs = fetch_subscriptions()
+    live = subs is not _SAMPLE_SUBS
     items = []
-    for nm, gu, addr, typ, nse, s, e, mv, sd in fetch_subscriptions():
+    for row in subs:
+        try:
+            nm, gu, addr, typ, nse, s, e, mv, sd = row
+        except (ValueError, TypeError):
+            continue
         if region in rmap and sd != rmap[region]:
             continue
         status, order = _sub_status(s, e)
@@ -751,32 +777,50 @@ def _render_subscriptions():
     for order, s, nm, gu, addr, typ, nse, e, mv, sd, status in items:
         bg, fg = bdg[status]
         reg_kr = "서울" if sd == "seoul" else "경기"
+        try:
+            units = f"{int(nse):,}세대"
+        except (ValueError, TypeError):
+            units = "-세대"
         html += (f'<div class="re-sub-card">'
                  f'<span class="re-sub-bdg" style="background:{bg};color:{fg}">{status}</span>'
                  f'<div style="flex:1"><div class="re-sub-nm">{nm}</div>'
-                 f'<div class="re-sub-meta">{reg_kr} {gu} · {typ} · {nse:,}세대 · {addr}</div></div>'
+                 f'<div class="re-sub-meta">{reg_kr} {gu} · {typ} · {units} · {addr}</div></div>'
                  f'<div class="re-sub-r"><b>청약 {s}~{e}</b>입주 {mv}</div></div>')
     st.markdown(html, unsafe_allow_html=True)
-    st.caption("소스: 한국부동산원 청약홈 분양정보(data.go.kr) — 현재 샘플. "
-               "실연결하려면 청약홈 API 활용신청 후 수집기 연결 예정. 상태는 청약기간 기준 자동 분류.")
+    if live:
+        st.caption("소스: 한국부동산원 청약홈 분양정보(data.go.kr) — 실데이터. "
+                   "서울·경기 · 청약종료 임박/진행 우선. 상태는 청약기간 기준 자동 분류.")
+    else:
+        st.caption("소스: 한국부동산원 청약홈 분양정보(data.go.kr) — 현재 샘플. "
+                   "‘갱신’ 누르면 실데이터(청약홈 분양정보 활용신청 필요). "
+                   "상태는 청약기간 기준 자동 분류.")
 
 
 def _run_collection():
-    """국토부 실거래 수집 → 세션 저장 + (가능하면) Supabase 스냅샷 저장."""
+    """국토부 실거래·청약홈 분양 수집 → 세션 저장 + (가능하면) Supabase 스냅샷 저장."""
     from datetime import datetime
     from zoneinfo import ZoneInfo
     from engine.realestate_collect import collect_region_metrics, collect_anomalies
     metrics = collect_region_metrics()
     anoms = collect_anomalies()
+    subs = None
+    try:
+        from engine.realestate_subscriptions import collect_subscriptions
+        subs = collect_subscriptions()
+    except Exception:
+        subs = None
     asof = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")
     st.session_state["re_metrics"] = metrics
     st.session_state["re_anoms"] = anoms
+    if subs:
+        st.session_state["re_subs"] = subs
     st.session_state["re_asof"] = asof
     # 영속화: 재부팅 후에도·다른 방문자에게도 실데이터가 보이게
     try:
         from modules.db import supabase_configured, save_realestate
         if supabase_configured():
-            save_realestate(metrics=metrics, anomalies=anoms, asof=asof)
+            save_realestate(metrics=metrics, anomalies=anoms,
+                            subscriptions=subs, asof=asof)
             _load_re_snapshot.clear()   # 스냅샷 캐시만 무효화
     except Exception:
         pass
