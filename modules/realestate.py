@@ -42,10 +42,31 @@ _GEO = json.loads(r"""[{"n":"광주시","sl":"광주","sd":"gg","d":"M770.4 478.
 _BORDER = r"""M318.3 516.5L306.0 503.3L310.1 486.5L307.5 455.6L258.9 447.9L255.6 442.7L280.4 416.5L291.1 395.1L305.9 407.7L341.5 423.2L364.9 407.6L383.6 403.7L382.7 386.8L393.7 356.7L433.7 346.2L450.4 368.2L464.6 385.0L453.5 369.0L462.6 364.1L457.9 346.6L469.4 323.1L485.2 318.2L492.4 302.6L525.7 315.9L555.3 307.0L567.9 313.9L565.4 351.3L583.4 358.5L578.2 379.1L589.9 394.6L573.6 424.2L585.2 436.8L634.5 418.5L650.9 436.2L633.0 451.4L615.3 478.2L631.3 494.2L610.8 519.5L594.0 527.6L569.2 531.2L561.6 546.2L540.0 562.2L522.6 560.4L512.3 535.8L466.4 534.4L442.1 550.7L427.6 552.7L408.9 542.1L382.3 554.2L357.7 508.4L329.9 519.0L318.3 516.5ZM433.0 419.1L431.6 375.3L429.9 391.5L433.0 419.1ZM463.4 443.1L497.2 460.9L485.5 452.4L463.4 443.1ZM458.3 482.8L488.6 467.8L497.2 460.9L458.3 482.8ZM541.2 470.5L531.3 466.6L497.2 460.9L541.2 470.5ZM552.3 425.8L546.1 437.1L531.3 466.6L552.3 425.8ZM545.4 384.1L545.7 392.5L552.3 425.8L545.4 384.1ZM516.9 369.1L489.3 349.1L525.0 375.7L545.4 384.1L516.9 369.1ZM372.1 446.5L368.6 452.8L362.3 478.4L372.1 446.5ZM440.5 438.2L441.4 445.3L445.4 431.5L440.5 438.2Z"""
 
 
-# ── 데이터 훅 (실제 수집 붙기 전까지 None → 내장 샘플 폴백) ───────
+# ── 데이터 훅 (세션 → Supabase 스냅샷 → 내장 샘플 폴백) ──────────
+@st.cache_data(ttl=1800, show_spinner=False)
+def _load_re_snapshot():
+    """Supabase에 저장된 최신 부동산 스냅샷. 미설정/실패/테이블없음이면 None. (30분 캐시)"""
+    try:
+        from modules.db import supabase_configured, load_realestate
+        if not supabase_configured():
+            return None
+        return load_realestate()
+    except Exception:
+        return None
+
+
+def _resolved_metrics():
+    """지역 지표: 세션(직전 갱신) → DB 스냅샷 → None(샘플)."""
+    m = st.session_state.get("re_metrics")
+    if m:
+        return m
+    snap = _load_re_snapshot()
+    return (snap or {}).get("metrics") if snap else None
+
+
 def fetch_region_metrics():
-    """지역명 -> {'mm','js','v','vc','jr'}. '실거래 갱신' 후 세션 저장값 사용, 없으면 None(샘플)."""
-    return st.session_state.get("re_metrics")
+    """지역명 -> {'mm','js','v','vc','jr'}. 세션→DB 스냅샷, 둘 다 없으면 None(샘플)."""
+    return _resolved_metrics()
 
 
 def _merged_regions():
@@ -63,20 +84,231 @@ def _merged_regions():
     return out
 
 
+# ── 지표 (그룹 · 델타 · 기준선) ─────────────────────────────────
+#   각 카드 dict: group/label/value/kind/col/series/note/dunit/baseline
+#   거래량은 세션 re_metrics 합산, 금리는 한은 ECOS에서 실값을 끌어오고
+#   실패하면 샘플 시리즈로 폴백한다(화면이 절대 비거나 깨지지 않게).
+ECOS_MORTGAGE_STAT = "722Y001"   # 예금은행 가중평균금리(신규취급액 기준)
+ECOS_MORTGAGE_ITEM = "BECABA03"  # 주택담보대출 ← 값이 안 맞으면 이 item 코드만 확인/교체
+_RATE_SAMPLE = [4.35, 4.28, 4.20, 4.12, 4.05, 3.98, 3.92]
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _fetch_mortgage_rate():
+    """한은 ECOS 주담대 가중평균금리(월, 최근 7개). 실패 시 None → 샘플 폴백. (1h 캐시)"""
+    try:
+        import requests
+        from datetime import datetime
+        key = ""
+        try:
+            key = st.secrets.get("ECOS_API_KEY", "")
+        except Exception:
+            key = ""
+        if not key:
+            return None
+        end = datetime.now().strftime("%Y%m")
+        start = f"{int(end[:4]) - 1}{end[4:]}"
+        url = (f"https://ecos.bok.or.kr/api/StatisticSearch/{key}/json/kr/1/24/"
+               f"{ECOS_MORTGAGE_STAT}/M/{start}/{end}/{ECOS_MORTGAGE_ITEM}")
+        r = requests.get(url, timeout=8)
+        rows = r.json().get("StatisticSearch", {}).get("row", [])
+        vals = [float(x["DATA_VALUE"]) for x in rows if x.get("DATA_VALUE")]
+        return vals[-7:] if len(vals) >= 2 else None
+    except Exception:
+        return None
+
+
+def _kb_value_series(df, decimals=1):
+    """KB Kbland 결과 df → 최근 7개 값 시리즈(날짜 정렬·값 컬럼 자동탐색). 실패 시 None."""
+    import pandas as pd
+    if df is None or len(df) == 0:
+        return None
+    if "날짜" in df.columns:
+        df = df.sort_values("날짜")
+    valcol = None
+    for c in reversed(list(df.columns)):
+        if c == "지역코드":
+            continue
+        s = pd.to_numeric(df[c], errors="coerce")
+        if s.notna().sum() >= 2:
+            valcol = c
+            df = df.assign(**{c: s})
+            break
+    if valcol is None:
+        return None
+    vals = [float(v) for v in df[valcol].tolist() if v == v]
+    return [round(v, decimals) for v in vals[-7:]] if len(vals) >= 2 else None
+
+
+@st.cache_data(ttl=21600, show_spinner=False)
+def _fetch_kb_buy_superiority():
+    """KB 주간 매수우위지수(서울). 키 불필요. 실패 시 None → 샘플. (6h 캐시)"""
+    try:
+        from PublicDataReader import Kbland
+        df = Kbland().get_market_trend(
+            메뉴코드="01", 월간주간구분코드="02", 지역코드="11", 기간="1")
+        return _kb_value_series(df, 1)
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=21600, show_spinner=False)
+def _fetch_kb_sales_index():
+    """KB 주간 아파트 매매가격지수(서울). 키 불필요. 실패 시 None → 샘플."""
+    try:
+        from PublicDataReader import Kbland
+        df = Kbland().get_price_index(
+            월간주간구분코드="02", 매물종별구분="01", 매매전세코드="01",
+            지역코드="11", 기간="1")
+        return _kb_value_series(df, 2)
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=21600, show_spinner=False)
+def _fetch_kb_jeonse_ratio():
+    """KB 아파트 전세가격비율(서울, 월간). 키 불필요. 실패 시 None → 샘플."""
+    try:
+        from PublicDataReader import Kbland
+        df = Kbland().get_jeonse_price_ratio("01", 지역코드="11", 기간="1")
+        return _kb_value_series(df, 1)
+    except Exception:
+        return None
+
+
+# KOSIS 미분양주택현황(시도/시군구) DT_1YL202001E · 항목=미분양현황 · objL1=전국
+_KOSIS_UNSOLD = {"org": "101", "tbl": "DT_1YL202001E",
+                 "itm": "13103871087T1", "obj": "13102871087A.0002"}
+
+
+@st.cache_data(ttl=21600, show_spinner=False)
+def _fetch_kosis_unsold():
+    """KOSIS 전국 미분양(월, 최근 7개) → 만호 단위. KOSIS_API_KEY 필요. 실패 시 None → 샘플."""
+    try:
+        import pandas as pd
+        key = ""
+        try:
+            key = st.secrets.get("KOSIS_API_KEY", "")
+        except Exception:
+            key = ""
+        if not key:
+            return None
+        from PublicDataReader import Kosis
+        df = Kosis(key).get_data(
+            "통계자료", orgId=_KOSIS_UNSOLD["org"], tblId=_KOSIS_UNSOLD["tbl"],
+            itmId=_KOSIS_UNSOLD["itm"], objL1=_KOSIS_UNSOLD["obj"],
+            prdSe="M", newEstPrdCnt="14")
+        if df is None or len(df) == 0:
+            return None
+        pcol = next((c for c in df.columns if "시점" in c or c.upper() == "PRD_DE"), None)
+        vcol = next((c for c in df.columns if "수치" in c or c.upper() == "DT"), None)
+        if vcol is None:
+            for c in reversed(list(df.columns)):
+                if pd.to_numeric(df[c], errors="coerce").notna().sum() >= 2:
+                    vcol = c
+                    break
+        if vcol is None:
+            return None
+        if pcol:
+            df = df.sort_values(pcol)
+        vals = [v for v in pd.to_numeric(df[vcol], errors="coerce").tolist() if v == v]
+        out = [round(v / 10000, 1) for v in vals[-7:]]
+        return out if len(out) >= 2 else None
+    except Exception:
+        return None
+
+
+def _live_volume():
+    """수도권 주간 실거래 (총건수, 전주비 평균%). 세션→DB 스냅샷, 없으면 None."""
+    m = _resolved_metrics()
+    if not m:
+        return None
+    try:
+        total = int(sum(r.get("v", 0) for r in m.values()))
+        vcs = [r["vc"] for r in m.values() if "vc" in r]
+        avg_vc = round(sum(vcs) / len(vcs), 1) if vcs else 0.0
+        return total, avg_vc
+    except Exception:
+        return None
+
+
 def fetch_indicators():
+    """그룹별 지표 카드 리스트. 거래량·금리는 실값 우선, 나머지는 샘플(연결 예정)."""
+    vol = _live_volume()
+    if vol:
+        v_total, v_vc = vol
+        vol_card = {"group": "선행·심리", "label": "주간 실거래량(수도권)",
+                    "value": f"{v_total:,}건", "kind": "bar", "col": "#7E9A83",
+                    "series": [int(v_total * x) for x in (.82, .78, .9, .85, .94, .97, 1.0)],
+                    "note": "국토부 실거래 합산 · 전주비 "
+                            + (f"+{v_vc}%" if v_vc >= 0 else f"{v_vc}%"),
+                    "dunit": "건", "baseline": None}
+    else:
+        vol_card = {"group": "선행·심리", "label": "주간 실거래량(수도권)",
+                    "value": "2,594건", "kind": "bar", "col": "#7E9A83",
+                    "series": [2120, 2030, 2350, 2210, 2440, 2510, 2594],
+                    "note": "국토부 실거래 · '갱신' 누르면 실값(현재 샘플)",
+                    "dunit": "건", "baseline": None}
+
+    rate_live = _fetch_mortgage_rate()
+    rate = rate_live or _RATE_SAMPLE
+    rate_card = {"group": "금융", "label": "주담대 금리(가중평균)",
+                 "value": f"{rate[-1]:.2f}%", "kind": "line", "col": "#5A7CA0",
+                 "series": rate, "dunit": "%p", "baseline": None,
+                 "note": "한은 ECOS · 신규취급 가중평균" if rate_live
+                         else "한은 ECOS · 키/코드 확인 전 샘플"}
+
+    kb_live = _fetch_kb_buy_superiority()
+    kb_series = kb_live or [44, 46, 49, 52, 55, 57, 58.4]
+    kb_card = {"group": "선행·심리", "label": "매수우위지수",
+               "value": f"{kb_series[-1]:.1f}", "kind": "line", "col": "#7E9A83",
+               "series": kb_series, "dunit": "p", "baseline": 100,
+               "note": "KB 주간 · 100=중립" if kb_live
+                       else "KB 주간 · 100=중립(현재 샘플)"}
+
+    unsold_live = _fetch_kosis_unsold()
+    unsold = unsold_live or [7.2, 7, 6.8, 6.6, 6.4, 6.2, 6.1]
+    unsold_card = {"group": "공급·펀더멘털", "label": "미분양(전국)",
+                   "value": f"{unsold[-1]:.1f}만", "kind": "bar", "col": "#B65F5A",
+                   "series": unsold, "dunit": "만", "baseline": None,
+                   "note": "KOSIS 미분양현황 · 월간 · 적을수록 수급 양호" if unsold_live
+                           else "KOSIS 미분양현황 · 키/표 확인 전 샘플"}
+
+    mi_live = _fetch_kb_sales_index()
+    mi = mi_live or [95.6, 95.7, 95.9, 96.0, 96.1, 96.2, 96.3]
+    if mi_live and len(mi) >= 2 and mi[-2]:
+        _wk = (mi[-1] / mi[-2] - 1) * 100
+        mi_note = f"KB 주간 아파트 매매가격지수(서울) · 주간 {_wk:+.2f}%"
+    else:
+        mi_note = "KB 주간 매매가격지수(서울) · 확인 전 샘플"
+    mi_card = {"group": "가격(동행)", "label": "매매 주간지수(서울)",
+               "value": f"{mi[-1]:.1f}", "kind": "line", "col": "#B65F5A",
+               "series": mi, "dunit": "p", "baseline": None, "note": mi_note}
+
+    jr_live = _fetch_kb_jeonse_ratio()
+    jr = jr_live or [57, 56.5, 56, 55.5, 55.1, 54.9, 54.8]
+    jr_card = {"group": "가격(동행)", "label": "전세가율(서울 아파트)",
+               "value": f"{jr[-1]:.1f}%", "kind": "line", "col": "#5A7CA0",
+               "series": jr, "dunit": "%p", "baseline": None,
+               "note": "KB 월간 · 갭·전세 레버리지" if jr_live
+                       else "KB 전세가격비율 · 확인 전 샘플"}
+
     return [
-        ("매매수급 · 매수우위지수", "58.4", "line", "#7E9A83",
-         [44, 46, 49, 52, 55, 57, 58.4], "부동산원 주간 · 100↑ 매수우위"),
-        ("경매 낙찰가율(서울)", "94.2%", "line", "#B65F5A",
-         [86, 88, 87, 90, 92, 93, 94.2], "법원경매 월간 · 선행지표"),
-        ("전세가율(서울 평균)", "54.8%", "line", "#5A7CA0",
-         [57, 56.5, 56, 55.5, 55.1, 54.9, 54.8], "부동산원 · 갭·전세 레버리지"),
-        ("인구·세대수(수도권, 천)", "13,420천", "bar", "#A7BBA9",
-         [13380, 13390, 13400, 13405, 13410, 13418, 13420], "통계청 KOSIS 월간"),
-        ("아파트 입주물량(수도권, 천호)", "8.4천호", "bar", "#9a9b92",
-         [6.1, 9.8, 7, 11.5, 5.2, 4.8, 8.4], "국토부/민간 월별"),
-        ("미분양(전국, 만호)", "6.1만", "bar", "#B65F5A",
-         [7.2, 7, 6.8, 6.6, 6.4, 6.2, 6.1], "국토부 월간 · 수요 신호"),
+        kb_card,
+        vol_card,
+        {"group": "선행·심리", "label": "경매 낙찰가율(서울)", "value": "94.2%", "kind": "line",
+         "col": "#B65F5A", "series": [86, 88, 87, 90, 92, 93, 94.2],
+         "note": "법원경매 월간 · 선행지표", "dunit": "%p", "baseline": None},
+        mi_card,
+        jr_card,
+        {"group": "공급·펀더멘털", "label": "입주물량(수도권)", "value": "8.4천호", "kind": "bar",
+         "col": "#9a9b92", "series": [6.1, 9.8, 7, 11.5, 5.2, 4.8, 8.4],
+         "note": "국토부/민간 월별", "dunit": "천호", "baseline": None},
+        unsold_card,
+        {"group": "공급·펀더멘털", "label": "인구·세대수(수도권)", "value": "13,420천", "kind": "bar",
+         "col": "#A7BBA9", "series": [13380, 13390, 13400, 13405, 13410, 13418, 13420],
+         "note": "KOSIS 주민등록인구 · 표 확정 후 연결(현재 샘플)", "dunit": "천", "baseline": None},
+        rate_card,
     ]
 
 
@@ -92,8 +324,50 @@ _SAMPLE_ANOMALIES = [
 
 
 def fetch_anomalies():
-    """특이거래 리스트. '실거래 갱신' 후 세션값 사용, 없으면 샘플."""
-    return st.session_state.get("re_anoms") or _SAMPLE_ANOMALIES
+    """특이거래 리스트. 세션 → DB 스냅샷 → 샘플."""
+    a = st.session_state.get("re_anoms")
+    if a:
+        return a
+    snap = _load_re_snapshot()
+    if snap and snap.get("anomalies"):
+        return snap["anomalies"]
+    return _SAMPLE_ANOMALIES
+
+
+# ── 분양 단지 (청약홈 분양정보 — 현재 샘플 · 폴백) ───────────────
+#   (단지명, 시군구, 주소, 유형, 공급세대, 청약시작 'MM.DD', 청약종료, 입주예정 'YY.MM', seoul|gg)
+#   실연결: 한국부동산원 청약홈 분양정보 조회 서비스(data.go.kr/15098547) — 별도 활용신청 필요.
+_SAMPLE_SUBS = [
+    ("래미안 OO포레", "서초구", "서울 서초구 방배동", "민영", 689, "06.16", "06.18", "28.09", "seoul"),
+    ("OO자이 디에이치", "강동구", "서울 강동구 천호동", "민영", 1248, "06.23", "06.25", "28.12", "seoul"),
+    ("광명 OO푸르지오", "광명시", "경기 광명시 광명동", "민영", 1051, "06.17", "06.19", "28.06", "gg"),
+    ("수원 OO트리니티", "수원시", "경기 수원시 영통구", "민영", 842, "06.30", "07.02", "28.10", "gg"),
+    ("용인 OO센트럴", "용인시", "경기 용인시 처인구", "민영", 1395, "07.07", "07.09", "29.02", "gg"),
+    ("은평 OO엘리프", "은평구", "서울 은평구 대조동", "민영", 423, "05.26", "05.28", "27.11", "seoul"),
+    ("화성동탄 OO리슈빌", "화성시", "경기 화성시 동탄2", "민영", 614, "05.19", "05.21", "27.08", "gg"),
+]
+
+
+def fetch_subscriptions():
+    """분양 단지 리스트. 청약홈 수집이 붙으면 세션값(re_subs), 없으면 샘플."""
+    return st.session_state.get("re_subs") or _SAMPLE_SUBS
+
+
+def _sub_status(start, end):
+    """'MM.DD' 청약 기간으로 예정/분양중/마감 분류 (KST 기준, 연도는 올해로 근사). (라벨, 정렬순)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    today = datetime.now(ZoneInfo("Asia/Seoul")).date()
+    try:
+        s = datetime.strptime(f"{today.year}.{start}", "%Y.%m.%d").date()
+        e = datetime.strptime(f"{today.year}.{end}", "%Y.%m.%d").date()
+    except Exception:
+        return "예정", 1
+    if today < s:
+        return "예정", 1
+    if s <= today <= e:
+        return "분양중", 0
+    return "마감", 2
 
 
 # ── 지표·거래 카드 CSS (부모 문서 · 전역 변수 사용) ──────────────
@@ -118,30 +392,65 @@ _RE_CSS = """
 .re-price{font-weight:700;color:var(--ink,#34352f);text-align:right;}
 .re-chg{font-size:12px;font-weight:700;text-align:right;}
 .re-chg.up{color:var(--up,#B65F5A);} .re-chg.dn{color:var(--down,#5A7CA0);}
+.re-chg.lv1{font-size:13px;}
+.re-chg.lv2{font-size:15px;letter-spacing:-.01em;}
+.re-apt a{color:inherit;text-decoration:none;border-bottom:1px dashed #D6D8CF;}
+.re-apt a:hover{border-bottom-color:var(--sage,#A7BBA9);}
 .re-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
 .re-chip{font-size:12px;color:var(--pill-ink,#5d6258);background:var(--pill-bg,#F1F2EC);
   border:1px solid var(--line,#ECEDE7);border-radius:999px;padding:4px 12px;}
 .re-chip.on{background:var(--sage-deep,#7E9A83);color:#fff;border-color:var(--sage-deep,#7E9A83);}
+.re-phase{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;background:var(--card,#fff);
+  border:1px solid var(--line,#ECEDE7);border-radius:12px;padding:11px 15px;margin:2px 0 14px;}
+.re-phase b{font-size:12px;color:var(--muted,#9a9b92);font-weight:600;margin-right:2px;}
+.re-phase .seg{font-size:13px;font-weight:700;color:var(--ink,#34352f);}
+.re-grp{font-size:12px;font-weight:700;color:var(--ink,#34352f);margin:16px 0 8px;letter-spacing:.02em;}
+.re-grp .sub{font-weight:500;color:var(--muted,#9a9b92);font-size:11px;margin-left:6px;}
+.re-delta{font-size:11px;font-weight:700;margin-left:7px;}
+.re-delta.up{color:var(--up,#B65F5A);} .re-delta.dn{color:var(--down,#5A7CA0);} .re-delta.fl{color:var(--muted,#9a9b92);}
+.re-base{font-size:10.5px;font-weight:500;color:var(--muted,#9a9b92);margin-left:6px;}
+.re-sub-card{display:flex;align-items:flex-start;gap:11px;background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);
+  border-radius:12px;padding:11px 14px;margin-bottom:8px;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease;}
+.re-sub-card:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(52,53,47,.07);border-color:var(--sage,#A7BBA9);}
+.re-sub-bdg{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:6px;flex:none;margin-top:1px;}
+.re-sub-nm{font-weight:700;color:var(--ink,#34352f);}
+.re-sub-meta{font-size:12px;color:var(--muted,#9a9b92);margin-top:2px;}
+.re-sub-r{margin-left:auto;text-align:right;font-size:11.5px;color:var(--muted,#9a9b92);white-space:nowrap;padding-left:10px;}
+.re-sub-r b{display:block;color:var(--ink,#34352f);font-size:12.5px;margin-bottom:1px;}
 </style>
 """
 
 
-def _spark_svg(series, col, kind):
+def _spark_svg(series, col, kind, baseline=None):
     w, h = 240, 46
-    mn, mx = min(series), max(series)
-    rng = (mx - mn) or 1
+    lo, hi = min(series), max(series)
+    if baseline is not None:
+        lo, hi = min(lo, baseline), max(hi, baseline)
+    rng = (hi - lo) or 1
+
+    def y(v):
+        return h - 4 - (v - lo) / rng * (h - 8)
+
     if kind == "bar":
+        mx = max(series) or 1
         bw = w / len(series)
         rects = "".join(
             f'<rect x="{i*bw+1:.1f}" y="{h-(v/mx)*(h-6):.1f}" '
-            f'width="{bw-3:.1f}" height="{(v/mx)*(h-6):.1f}" fill="{col}" rx="1"/>'
+            f'width="{bw-3:.1f}" height="{(v/mx)*(h-6):.1f}" fill="{col}" '
+            f'opacity="{1 if i == len(series)-1 else 0.5:.1f}" rx="1"/>'
             for i, v in enumerate(series))
         return f'<svg class="re-spark" viewBox="0 0 {w} {h}">{rects}</svg>'
-    pts = " ".join(
-        f"{i/(len(series)-1)*w:.1f},{h-4-(v-mn)/rng*(h-8):.1f}"
-        for i, v in enumerate(series))
+
+    pts = " ".join(f"{i/(len(series)-1)*w:.1f},{y(v):.1f}" for i, v in enumerate(series))
+    base = ""
+    if baseline is not None:
+        by = y(baseline)
+        base = (f'<line x1="0" y1="{by:.1f}" x2="{w}" y2="{by:.1f}" '
+                f'stroke="#C9CBC2" stroke-width="1" stroke-dasharray="3 3"/>')
+    dot = f'<circle cx="{w}" cy="{y(series[-1]):.1f}" r="2.6" fill="{col}"/>'
     return (f'<svg class="re-spark" viewBox="0 0 {w} {h}" preserveAspectRatio="none">'
-            f'<polyline points="{pts}" fill="none" stroke="{col}" stroke-width="2"/></svg>')
+            f'{base}<polyline points="{pts}" fill="none" stroke="{col}" stroke-width="2"/>'
+            f'{dot}</svg>')
 
 
 # ── 지도 컴포넌트(iframe) HTML 생성 ─────────────────────────────
@@ -267,61 +576,242 @@ def _render_map():
     components.html(_map_component(_merged_regions()), height=1320, scrolling=False)
 
 
+_GROUP_ORDER = [
+    ("선행·심리", "시장 방향이 먼저 움직이는 신호"),
+    ("가격(동행)", "현재 가격 수준"),
+    ("공급·펀더멘털", "중기 수급"),
+    ("금융", "구매력·자금조달"),
+]
+
+
+def _delta_html(series, dunit):
+    """직전값 대비 변화 → 화살표 칩(빨강=상승/파랑=하락)."""
+    if not series or len(series) < 2:
+        return ""
+    d = series[-1] - series[-2]
+    cls = "up" if d > 5e-4 else ("dn" if d < -5e-4 else "fl")
+    arr = "▲" if cls == "up" else ("▼" if cls == "dn" else "–")
+    mag = abs(d)
+    txt = f"{mag:,.0f}" if dunit == "건" else (f"{mag:.2f}".rstrip("0").rstrip("."))
+    return f'<span class="re-delta {cls}">{arr} {txt}{dunit}</span>'
+
+
+def _market_phase(cards):
+    """지표 시리즈로 규칙기반 '시장 국면' 한 줄 요약(비용 0)."""
+    by = {c["label"]: c for c in cards}
+
+    def trend(label):
+        s = by.get(label, {}).get("series")
+        return (s[-1] - s[-2]) if s and len(s) >= 2 else 0
+
+    seg = []
+    if "주간 실거래량(수도권)" in by:
+        d = trend("주간 실거래량(수도권)")
+        seg.append("거래 " + ("회복세" if d > 0 else "둔화" if d < 0 else "보합"))
+    if "매매 주간지수(서울)" in by:
+        d = trend("매매 주간지수(서울)")
+        seg.append("가격 " + ("상승" if d > 0 else "하락" if d < 0 else "보합"))
+    if "매수우위지수" in by:
+        v = by["매수우위지수"]["series"][-1]
+        seg.append("심리 " + ("매수우위" if v >= 100 else "매도우위"))
+    if "미분양(전국)" in by:
+        d = trend("미분양(전국)")
+        seg.append("공급 부담 " + ("완화" if d < 0 else "확대" if d > 0 else "보합"))
+    if "주담대 금리(가중평균)" in by:
+        d = trend("주담대 금리(가중평균)")
+        seg.append("금리 " + ("하락" if d < 0 else "상승" if d > 0 else "보합"))
+    spans = '<span style="color:#C9CBC2;margin:0 2px">·</span>'.join(
+        f'<span class="seg">{s}</span>' for s in seg)
+    return f'<div class="re-phase"><b>시장 국면</b>{spans}</div>'
+
+
 def _render_indicators():
-    cards = ""
-    for label, value, kind, col, series, note in fetch_indicators():
-        cards += (f'<div class="re-card"><div class="re-lab">{label}</div>'
-                  f'<div class="re-val">{value}</div>'
-                  f'{_spark_svg(series, col, kind)}'
-                  f'<div class="re-note">{note}</div></div>')
-    st.markdown(f'<div class="re-grid">{cards}</div>', unsafe_allow_html=True)
-    st.caption("소스: 부동산원 R-ONE · 통계청 KOSIS · 법원경매(낙찰가율) · 국토부 주택공급 "
-               "— 항목별 갱신주기 상이 (현재 샘플)")
+    cards = fetch_indicators()
+    st.markdown(_market_phase(cards), unsafe_allow_html=True)
+    html = ""
+    for gtitle, gsub in _GROUP_ORDER:
+        members = [c for c in cards if c["group"] == gtitle]
+        if not members:
+            continue
+        html += f'<div class="re-grp">{gtitle}<span class="sub">{gsub}</span></div>'
+        inner = ""
+        for c in members:
+            base_tag = (f'<span class="re-base">기준 {c["baseline"]}</span>'
+                        if c.get("baseline") is not None else "")
+            inner += (f'<div class="re-card"><div class="re-lab">{c["label"]}</div>'
+                      f'<div class="re-val">{c["value"]}'
+                      f'{_delta_html(c["series"], c.get("dunit", ""))}{base_tag}</div>'
+                      f'{_spark_svg(c["series"], c["col"], c["kind"], c.get("baseline"))}'
+                      f'<div class="re-note">{c["note"]}</div></div>')
+        html += f'<div class="re-grid">{inner}</div>'
+    st.markdown(html, unsafe_allow_html=True)
+    st.caption("소스: KB · 부동산원 R-ONE · 통계청 KOSIS · 법원경매 · 국토부 · 한은 ECOS — "
+               "매수우위·매매지수·전세가율(KB)·거래량(실거래)·미분양(KOSIS)·금리(ECOS) 실연결, "
+               "나머지는 연결 예정(샘플). 항목별 갱신주기 상이. ▲빨강=상승 / ▼파랑=하락(직전값 대비)")
+
+
+# ── 거래(특이거래) — 필터·정렬·지역 분류 ────────────────────────
+_SEOUL_GU = {d["n"] for d in _GEO if d["sd"] == "seoul"}
+_GG_SI = {d["n"] for d in _GEO if d["sd"] == "gg"}
+_GANGNAM3 = {"강남구", "서초구", "송파구"}
+
+
+def _region_of(gu):
+    """단지 지역명(구/시)을 서울/경기로 분류. 못 찾으면 None."""
+    if any(n in gu for n in _SEOUL_GU):
+        return "seoul"
+    if any(n in gu for n in _GG_SI):
+        return "gg"
+    return None
+
+
+def _chg_abs(chg):
+    """'+8.1%'·'-4.0%'·'+148%' → 절대 변동률(정렬·강조용)."""
+    try:
+        return abs(float(str(chg).replace("%", "").replace("+", "").strip()))
+    except Exception:
+        return 0.0
+
+
+def _naver_land_url(apt):
+    from urllib.parse import quote
+    return "https://m.land.naver.com/search/result/" + quote(apt)
 
 
 def _render_anomalies():
-    st.markdown(
-        '<div class="re-chips">'
-        '<span class="re-chip on">전체</span><span class="re-chip">신고가</span>'
-        '<span class="re-chip">신저가</span><span class="re-chip">거래량 급증</span>'
-        '<span class="re-chip">급등</span><span class="re-chip">급락</span></div>',
-        unsafe_allow_html=True)
+    typ_f = st.segmented_control(
+        "유형", ["전체", "신고가", "신저가", "거래량 급증", "급등", "급락"],
+        default="전체", key="re_anom_type")
+    reg_f = st.segmented_control(
+        "지역", ["수도권", "서울", "경기", "강남3구"],
+        default="수도권", key="re_anom_region")
     exclude_direct = st.checkbox("직거래(증여추정) 제외", value=True, key="re_excl_direct")
-    rows = ""
+
+    rows = []
     for typ, bg, fg, apt, gu, area, price, chg, trade, excl in fetch_anomalies():
         if excl and exclude_direct:
             continue
-        chg_cls = "dn" if chg.startswith("-") else "up"
+        if typ_f and typ_f != "전체" and typ != typ_f:
+            continue
+        if reg_f == "서울" and _region_of(gu) != "seoul":
+            continue
+        if reg_f == "경기" and _region_of(gu) != "gg":
+            continue
+        if reg_f == "강남3구" and not any(n in gu for n in _GANGNAM3):
+            continue
+        rows.append((typ, bg, fg, apt, gu, area, price, chg, trade, excl))
+
+    rows.sort(key=lambda r: _chg_abs(r[7]), reverse=True)
+
+    if not rows:
+        st.caption("조건에 맞는 거래가 없어요. 필터를 바꿔보세요.")
+        return
+
+    html = ""
+    for typ, bg, fg, apt, gu, area, price, chg, trade, excl in rows:
+        v = _chg_abs(chg)
+        chg_cls = "dn" if str(chg).startswith("-") else "up"
+        emph = "lv2" if v >= 7 else ("lv1" if v >= 3 else "")
         trade_html = ('<span style="color:#A32D2D">직거래(증여추정·제외)</span>'
                       if trade == "직거래" else f"거래유형 {trade}")
-        rows += (f'<div class="re-anom{" excl" if excl else ""}">'
+        apt_link = (f'<a href="{_naver_land_url(apt)}" target="_blank" '
+                    f'rel="noopener">{apt}</a>')
+        html += (f'<div class="re-anom{" excl" if excl else ""}">'
                  f'<span class="re-bdg" style="background:{bg};color:{fg}">{typ}</span>'
-                 f'<div style="flex:1"><div class="re-apt">{apt} '
+                 f'<div style="flex:1"><div class="re-apt">{apt_link} '
                  f'<span class="re-sub">· {gu} · {area}</span></div>'
                  f'<div class="re-sub">{trade_html}</div></div>'
                  f'<div><div class="re-price">{price}</div>'
-                 f'<div class="re-chg {chg_cls}">{chg}</div></div></div>')
-    st.markdown(rows, unsafe_allow_html=True)
+                 f'<div class="re-chg {chg_cls} {emph}">{chg}</div></div></div>')
+    st.markdown(html, unsafe_allow_html=True)
     st.caption("신고가/신저가·거래량 급변·급등락. 직거래는 증여 추정으로 기본 제외 "
-               "(국토부 실거래 '거래유형' 기준). 신고가 판정은 실거래 이력 누적 후 정확해져요.")
+               "(국토부 실거래 '거래유형' 기준). 변동률 큰 순 정렬 · 단지명 클릭 시 네이버부동산. "
+               "신고가 판정은 실거래 이력 누적 후 정확해져요.")
 
 
 # ── 메인 ────────────────────────────────────────────────────────
+def _render_subscriptions():
+    region = st.segmented_control(
+        "지역", ["수도권", "서울", "경기"], default="수도권",
+        key="re_sub_region", label_visibility="collapsed")
+    rmap = {"서울": "seoul", "경기": "gg"}
+    items = []
+    for nm, gu, addr, typ, nse, s, e, mv, sd in fetch_subscriptions():
+        if region in rmap and sd != rmap[region]:
+            continue
+        status, order = _sub_status(s, e)
+        items.append((order, s, nm, gu, addr, typ, nse, e, mv, sd, status))
+    items.sort(key=lambda x: (x[0], x[1]))
+    if not items:
+        st.caption("해당 지역 분양 단지가 없어요.")
+        return
+    bdg = {"분양중": ("#FCEBEB", "#A32D2D"), "예정": ("#EAF1EA", "#3F6F49"),
+           "마감": ("#F0F1EC", "#8A8C82")}
+    html = ""
+    for order, s, nm, gu, addr, typ, nse, e, mv, sd, status in items:
+        bg, fg = bdg[status]
+        reg_kr = "서울" if sd == "seoul" else "경기"
+        html += (f'<div class="re-sub-card">'
+                 f'<span class="re-sub-bdg" style="background:{bg};color:{fg}">{status}</span>'
+                 f'<div style="flex:1"><div class="re-sub-nm">{nm}</div>'
+                 f'<div class="re-sub-meta">{reg_kr} {gu} · {typ} · {nse:,}세대 · {addr}</div></div>'
+                 f'<div class="re-sub-r"><b>청약 {s}~{e}</b>입주 {mv}</div></div>')
+    st.markdown(html, unsafe_allow_html=True)
+    st.caption("소스: 한국부동산원 청약홈 분양정보(data.go.kr) — 현재 샘플. "
+               "실연결하려면 청약홈 API 활용신청 후 수집기 연결 예정. 상태는 청약기간 기준 자동 분류.")
+
+
 def _run_collection():
-    """국토부 실거래 수집 → 세션 저장(지역지표 + 특이거래)."""
+    """국토부 실거래 수집 → 세션 저장 + (가능하면) Supabase 스냅샷 저장."""
     from datetime import datetime
     from zoneinfo import ZoneInfo
     from engine.realestate_collect import collect_region_metrics, collect_anomalies
-    st.session_state["re_metrics"] = collect_region_metrics()
-    st.session_state["re_anoms"] = collect_anomalies()
-    st.session_state["re_asof"] = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")
+    metrics = collect_region_metrics()
+    anoms = collect_anomalies()
+    asof = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")
+    st.session_state["re_metrics"] = metrics
+    st.session_state["re_anoms"] = anoms
+    st.session_state["re_asof"] = asof
+    # 영속화: 재부팅 후에도·다른 방문자에게도 실데이터가 보이게
+    try:
+        from modules.db import supabase_configured, save_realestate
+        if supabase_configured():
+            save_realestate(metrics=metrics, anomalies=anoms, asof=asof)
+            _load_re_snapshot.clear()   # 스냅샷 캐시만 무효화
+    except Exception:
+        pass
+
+
+def _re_can_collect():
+    """갱신(대량 API 호출)은 소유자 전용. APP_PASSWORD 미설정이면 누구나 가능.
+       리포트 생성 잠금(gen_authed)을 그대로 재사용해 한 번 풀면 둘 다 열린다."""
+    try:
+        pw = st.secrets.get("APP_PASSWORD", "")
+    except Exception:
+        pw = ""
+    if not pw or st.session_state.get("gen_authed"):
+        return True
+    with st.expander("🔒 실거래 갱신은 소유자 전용이에요", expanded=False):
+        st.caption("둘러보기는 자유롭고, 갱신(공공API 대량 호출)만 소유자 비밀번호가 필요해요.")
+        p = st.text_input("비밀번호", type="password", key="re_pw")
+        if st.button("잠금 해제", key="re_unlock"):
+            if p == pw:
+                st.session_state["gen_authed"] = True
+                st.success("잠금 해제됐어요.")
+                st.rerun()
+            else:
+                st.error("비밀번호가 일치하지 않아요.")
+    return False
 
 
 def render_realestate():
-    """부동산 탭 본문 — 지도 / 지표 / 거래 서브탭."""
+    """부동산 탭 본문 — 지도 / 지표 / 거래 / 분양 서브탭."""
     st.markdown(_RE_CSS, unsafe_allow_html=True)
 
     asof = st.session_state.get("re_asof")
+    if not asof:
+        snap = _load_re_snapshot()
+        asof = (snap or {}).get("asof") if snap else None
     if asof:
         st.caption(f"수도권 아파트 · 국토부 실거래 기준 {asof} KST · "
                    "가격지표·인구·공급은 샘플(연결 예정)")
@@ -329,7 +819,8 @@ def render_realestate():
         st.caption("수도권 아파트 · 현재 샘플 데이터 — "
                    "'실거래 갱신'을 누르면 국토부 실거래로 지도·거래가 채워집니다.")
 
-    if st.button("🔄 실거래 데이터 갱신",
+    authed = _re_can_collect()
+    if st.button("🔄 실거래 데이터 갱신", disabled=not authed,
                  help="국토부 실거래가 API 수집 (수십 초 소요·API 호출이 많아요)"):
         with st.spinner("국토부 실거래 수집 중... (지역 지표 + 특이거래)"):
             try:
@@ -339,10 +830,12 @@ def render_realestate():
             except Exception as e:
                 st.warning(f"수집 실패 · {e} — 샘플 데이터로 표시합니다.")
 
-    t_map, t_ind, t_anom = st.tabs(["지도", "지표", "거래"])
+    t_map, t_ind, t_anom, t_sub = st.tabs(["지도", "지표", "거래", "분양"])
     with t_map:
         _render_map()
     with t_ind:
         _render_indicators()
     with t_anom:
         _render_anomalies()
+    with t_sub:
+        _render_subscriptions()
