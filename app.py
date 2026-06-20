@@ -11,7 +11,7 @@ import streamlit.components.v1 as components
 from dotenv import load_dotenv
 
 from modules.indices import (
-    INDEX_GROUPS, fetch_index, sparkline_points,
+    INDEX_GROUPS, fetch_index, sparkline_points, sparkline_axis_html,
     fetch_supply_demand_summary, fetch_history, fetch_intraday,
     is_kr_market_open,
 )
@@ -73,6 +73,8 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 .mkt-group { font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:16px 0 10px; }
 .grp-asof { font-weight:600; font-size:10.5px; letter-spacing:0; text-transform:none; color:var(--muted); opacity:.8; margin-left:8px; }
 .grp-divider { border:none; border-top:1px solid var(--line); margin:22px 0 0; }
+.sect-banner { font-family:'Fraunces','Noto Sans KR',serif; font-size:15.5px; font-weight:600; color:var(--sage-deep); letter-spacing:.01em; margin:18px 0 14px; display:flex; align-items:center; gap:9px; }
+.sect-banner::before { content:""; width:18px; height:3px; background:var(--sage); border-radius:3px; flex:none; }
 .mkt-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
 @media (max-width:980px){ .mkt-grid{ grid-template-columns:repeat(3,1fr);} }
 @media (max-width:640px){ .mkt-grid{ grid-template-columns:repeat(2,1fr);} }
@@ -101,6 +103,14 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 .heat-val { font-size:18px; font-weight:700; margin-top:3px; letter-spacing:-.02em; }
 .heat-pct { font-size:12.5px; font-weight:700; margin-top:2px; }
 .heat-spark { width:100%; height:28px; display:block; margin-top:8px; }
+
+/* ── 미니차트 보름축 (3개월 · 하단 눈금 + 월 라벨) ── */
+.spark-wrap { position:relative; margin-top:8px; }
+.spark-wrap .heat-spark, .spark-wrap .mkt-spark { margin-top:0; }
+.spark-axis { position:relative; height:13px; margin-top:1px; }
+.spark-axis span { position:absolute; top:0; font-size:9px; line-height:1; opacity:.6; white-space:nowrap; transform:translateX(-50%); }
+.spark-axis span.first { transform:none; left:0 !important; }
+.spark-axis span.last { transform:none; left:auto !important; right:0; }
 
 .supply-wrap { background:var(--summary-bg); border:1px solid var(--line); border-radius:14px; padding:14px 16px; margin-bottom:10px; }
 .supply-mkt { font-size:12px; font-weight:700; letter-spacing:.05em; color:var(--muted); margin-bottom:10px; }
@@ -328,13 +338,13 @@ def _heat_color(pct):
     return f"rgb({r},{g},{b})", txt
 
 
-# ── 히트맵 타일 HTML (6개월 미니차트 포함) ──
+# ── 히트맵 타일 HTML (3개월 미니차트 + 보름축 포함) ──
 def _heat_html(datas, histories=None):
     """히트맵 타일 그리드.
 
     histories: {표시이름: pd.Series(날짜→종가)}
-    있으면 타일 하단에 6개월 SVG sparkline을 그려 추이를 보여준다.
-    없으면 기존처럼 숫자만 표시.
+    있으면 타일 하단에 3개월 미니차트(하단 보름 눈금 + 월 라벨)를 그려 추이를 보여준다.
+    없으면 숫자만 표시.
     """
     histories = histories or {}
     tiles = ""
@@ -349,20 +359,12 @@ def _heat_html(datas, histories=None):
         bg, txt = _heat_color(pct)
         arrow = "▲" if d["change"] > 0 else ("▼" if d["change"] < 0 else "▬")
 
-        # 6개월 SVG sparkline
+        # 3개월 미니차트 (하단 보름 눈금 + 월 라벨)
         spark = ""
         series = histories.get(name)
         if series is not None and len(series) >= 2:
-            pts = sparkline_points(series, n=130)
-            if pts:
-                spark = (
-                    f'<svg class="heat-spark" viewBox="0 0 100 28" preserveAspectRatio="none">'
-                    f'<polygon points="{pts} 100,28 0,28" '
-                    f'style="fill:{txt};opacity:.13"/>'
-                    f'<polyline points="{pts}" '
-                    f'style="fill:none;stroke:{txt};stroke-width:1.6;opacity:.65"/>'
-                    f'</svg>'
-                )
+            spark = sparkline_axis_html(series, txt, height=38, n_days=92,
+                                        label_color=txt)
 
         tiles += (
             f'<div class="heat-tile" style="background:{bg};">'
@@ -487,12 +489,21 @@ def _big_index_chart_intraday(name: str, ticker: str):
                                     on="mouseover", empty=False)
         selectors = alt.Chart(df).mark_point().encode(
             x=x_enc, opacity=alt.value(0)).add_params(hover)
-        rule = alt.Chart(df).mark_rule(color=axis_c, strokeDash=[3, 3]).encode(
+        # 세로 + 가로 크로스헤어 (가로선으로 세로축 값 위치를 함께 표시)
+        vrule = alt.Chart(df).mark_rule(color=axis_c, strokeDash=[3, 3]).encode(
             x=x_enc).transform_filter(hover)
+        hrule = alt.Chart(df).mark_rule(color=axis_c, strokeDash=[3, 3]).encode(
+            y=y_enc).transform_filter(hover)
         hpoints = alt.Chart(df).mark_point(size=60, color=line_c, filled=True).encode(
             x=x_enc, y=y_enc,
             opacity=alt.condition(hover, alt.value(1), alt.value(0)))
-        chart = (alt.layer(*layers, selectors, rule, hpoints)
+        htext = alt.Chart(df).mark_text(
+            align="left", dx=8, dy=-10, fontSize=12, fontWeight="bold",
+            color=line_c).encode(
+            x=x_enc, y=y_enc,
+            text=alt.condition(hover, alt.Text("종가:Q", format=",.2f"),
+                               alt.value("")))
+        chart = (alt.layer(*layers, selectors, vrule, hrule, hpoints, htext)
                  .properties(height=260, background="transparent")
                  .configure_view(strokeWidth=0))
     except Exception:
@@ -564,8 +575,11 @@ def _big_index_chart(name: str, ticker: str, days: int):
         zoom = alt.selection_interval(bind="scales", encodings=["x"])
         selectors = alt.Chart(seg).mark_point().encode(
             x=x_enc, opacity=alt.value(0)).add_params(hover)
-        rule = alt.Chart(seg).mark_rule(color=axis_c, strokeDash=[3, 3]).encode(
+        # 세로 + 가로 크로스헤어 (가로선으로 세로축 값 위치를 함께 표시)
+        vrule = alt.Chart(seg).mark_rule(color=axis_c, strokeDash=[3, 3]).encode(
             x=x_enc).transform_filter(hover)
+        hrule = alt.Chart(seg).mark_rule(color=axis_c, strokeDash=[3, 3]).encode(
+            y=y_enc).transform_filter(hover)
         hpoints = alt.Chart(seg).mark_point(size=60, color=line_c, filled=True).encode(
             x=x_enc, y=y_enc,
             opacity=alt.condition(hover, alt.value(1), alt.value(0)))
@@ -575,7 +589,7 @@ def _big_index_chart(name: str, ticker: str, days: int):
             x=x_enc, y=y_enc,
             text=alt.condition(hover, alt.Text("종가:Q", format=",.2f"),
                                alt.value("")))
-        chart = (alt.layer(area, line_main, selectors, rule, hpoints, htext)
+        chart = (alt.layer(area, line_main, selectors, vrule, hrule, hpoints, htext)
                  .add_params(zoom)
                  .properties(height=260, background="transparent")
                  .configure_view(strokeWidth=0))
@@ -609,9 +623,9 @@ def _render_domestic_charts():
 
     if is_intraday:
         st.caption("당일(휴장 시 직전 거래일) 5분봉 · 전일 종가 대비 등락(회색 점선=전일 종가) · "
-                   "yfinance 기준 약 15분 지연이며 한국 지수 분봉은 일부 누락될 수 있어요.")
+                   "정규장(09:00~15:30)만 표시 · yfinance 기준 약 15분 지연이며 일부 누락될 수 있어요.")
     else:
-        st.caption("차트 위에서 마우스를 올리면 해당일 값이 표시되고, "
+        st.caption("차트 위에 마우스를 올리면 해당 시점·값(세로축)이 십자선으로 표시되고, "
                    "가로 스크롤·드래그로 기간을 확대할 수 있어요.")
 
 
@@ -631,7 +645,31 @@ def _render_indices_body():
             f'<div class="data-asof">데이터 기준 {next(iter(distinct))} · '
             f'해외 지수·환율은 직전 거래일 종가</div>', unsafe_allow_html=True)
 
-    krx_head = '<div class="mkt-group">국내'
+    # 3개월 히스토리 수집 (히트맵 미니차트용 · fetch_history 3600s 캐시 → 추가 비용 없음)
+    def _histories(group):
+        out = {}
+        for item_name, ticker in INDEX_GROUPS[group].items():
+            try:
+                hist = fetch_history(ticker, "3mo")
+                if hist is not None and len(hist) >= 2:
+                    out[item_name] = hist
+            except Exception:
+                pass
+        return out
+
+    def _heat_group(group):
+        st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
+        head = f'<div class="mkt-group">{group}'
+        if not unified and group_asof.get(group):
+            head += f'<span class="grp-asof">기준 {group_asof[group]}</span>'
+        head += "</div>"
+        st.markdown(head, unsafe_allow_html=True)
+        st.markdown(_heat_html(group_data[group], _histories(group)),
+                    unsafe_allow_html=True)
+
+    # ══════════════════ 1. 국내 증시 ══════════════════
+    st.markdown('<div class="sect-banner">국내 증시</div>', unsafe_allow_html=True)
+    krx_head = '<div class="mkt-group">코스피 · 코스닥'
     if not unified and group_asof.get("국내"):
         krx_head += f'<span class="grp-asof">기준 {group_asof["국내"]}</span>'
     krx_head += "</div>"
@@ -641,6 +679,12 @@ def _render_indices_body():
     from modules.supply_trend import render_supply_trend
     render_supply_trend()
 
+    # 외국인·기관 순매수 상위 종목 (pykrx 가능 시) — 수급 추세 바로 아래로 통합
+    supply = fetch_supply_demand_summary()
+    if supply:
+        st.markdown('<div class="mkt-group">💰 수급 상위 종목</div>', unsafe_allow_html=True)
+        st.markdown(_supply_html(supply), unsafe_allow_html=True)
+
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     from modules.market_breadth import render_market_breadth
     render_market_breadth()
@@ -649,47 +693,38 @@ def _render_indices_body():
     from modules.sectors import render_sectors
     render_sectors()
 
+    # ══════════════════ 2. 시장 심리 ══════════════════
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
+    st.markdown('<div class="sect-banner">시장 심리</div>', unsafe_allow_html=True)
     render_indicators()
-    render_calendar()
 
-    # ── 히트맵 그룹 (미국·환율·원자재·암호화폐) + 6개월 미니차트 ──
+    # ══════════════════ 3. 글로벌 지수 ══════════════════
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
-    st.caption("🌡️ 히트맵 · 타일 색 = 등락률 (빨강 상승 / 파랑 하락, ±3%에서 최대 채도) · 미니차트 = 6개월 추이")
-    for group_name, datas in group_data.items():
-        if group_name == "국내":
-            continue
-        st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
-        head = f'<div class="mkt-group">{group_name}'
-        if not unified and group_asof[group_name]:
-            head += f'<span class="grp-asof">기준 {group_asof[group_name]}</span>'
-        head += "</div>"
-        st.markdown(head, unsafe_allow_html=True)
+    st.markdown('<div class="sect-banner">글로벌 지수</div>', unsafe_allow_html=True)
+    st.caption("🌡️ 히트맵 · 타일 색 = 등락률 (빨강 상승 / 파랑 하락, ±3%에서 최대 채도) · "
+               "미니차트 = 3개월 추이 (하단 눈금 = 보름)")
+    for g in ("미국", "변동성·원자재", "암호화폐"):
+        if g in INDEX_GROUPS:
+            _heat_group(g)
 
-        # 6개월 히스토리 수집 (fetch_history는 3600s 캐시 → 추가 API 비용 없음)
-        histories = {}
-        for item_name, ticker in INDEX_GROUPS[group_name].items():
-            try:
-                hist = fetch_history(ticker, "6mo")
-                if hist is not None and len(hist) >= 2:
-                    histories[item_name] = hist
-            except Exception:
-                pass
-
-        st.markdown(_heat_html(datas, histories), unsafe_allow_html=True)
-
-    supply = fetch_supply_demand_summary()
-    if supply:
-        st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
-        st.markdown('<div class="mkt-group">💰 수급 상위 종목</div>', unsafe_allow_html=True)
-        st.markdown(_supply_html(supply), unsafe_allow_html=True)
+    # ══════════════════ 4. 외환 · 금리 ══════════════════
+    st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
+    st.markdown('<div class="sect-banner">외환 · 금리</div>', unsafe_allow_html=True)
+    if "환율" in INDEX_GROUPS:
+        _heat_group("환율")
 
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     from modules.rates import render_rates
     render_rates()
+
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     from modules.rate_gap import render_rate_gap
     render_rate_gap()
+
+    # ══════════════════ 5. 일정 ══════════════════
+    st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
+    st.markdown('<div class="sect-banner">일정</div>', unsafe_allow_html=True)
+    render_calendar()
 
 
 # ── 지수 현황 탭 ──
