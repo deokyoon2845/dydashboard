@@ -905,12 +905,15 @@ def render_realestate():
     (.accent-bar·h1 스타일은 app.py 전역 CSS를 그대로 사용해 증시와 픽셀 일치.)
     갱신/진단은 주 화면인 '지도' 탭 안에 위치하고, 나머지 탭은 같은 세션/스냅샷을 읽는다.
     """
-    st.markdown(_RE_CSS, unsafe_allow_html=True)
-
+    # 증시와 동일하게 '메인탭 → 서브탭' 사이에 빈 블록이 끼지 않도록
+    # st.tabs를 가장 먼저 만든다. 부동산 전용 CSS(_RE_CSS)는 별도 markdown
+    # 블록으로 두면 그 블록이 세로 간격을 한 칸 더 먹어 증시보다 벌어지므로,
+    # 첫 패널(지도)의 accent-bar와 한 블록으로 합쳐 주입한다(간격 일치).
     t_map, t_ind, t_anom, t_sub = st.tabs(["지도", "지표", "거래", "분양"])
 
     with t_map:
-        st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
+        st.markdown(_RE_CSS + '<div class="accent-bar"></div>',
+                    unsafe_allow_html=True)
         st.title("수도권 실거래 지도")
         _render_collect_controls()
         _render_map()
