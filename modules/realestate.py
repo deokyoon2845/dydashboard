@@ -848,10 +848,9 @@ def _re_can_collect():
     return False
 
 
-def render_realestate():
-    """부동산 탭 본문 — 지도 / 지표 / 거래 / 분양 서브탭."""
-    st.markdown(_RE_CSS, unsafe_allow_html=True)
-
+def _render_collect_controls():
+    """지도 탭 상단 컨트롤 — 데이터 기준 캡션 + 갱신/진단 버튼 + 수집·진단 처리.
+       (증시 '새로고침'과 같은 위치: 서브탭 제목 바로 아래.)"""
     asof = st.session_state.get("re_asof")
     if not asof:
         snap = _load_re_snapshot()
@@ -897,12 +896,40 @@ def render_realestate():
             except Exception as e:
                 st.warning(f"수집 실패 · {e} — 샘플 데이터로 표시합니다.")
 
+
+def render_realestate():
+    """부동산 탭 본문 — 지도 / 지표 / 거래 / 분양 서브탭.
+
+    증시 탭과 동일 구조로 통일: 서브탭을 먼저 두고, 각 서브탭 안에서
+    [액센트 바(.accent-bar) + 제목(st.title) + 캡션/컨트롤]로 연다.
+    (.accent-bar·h1 스타일은 app.py 전역 CSS를 그대로 사용해 증시와 픽셀 일치.)
+    갱신/진단은 주 화면인 '지도' 탭 안에 위치하고, 나머지 탭은 같은 세션/스냅샷을 읽는다.
+    """
+    st.markdown(_RE_CSS, unsafe_allow_html=True)
+
     t_map, t_ind, t_anom, t_sub = st.tabs(["지도", "지표", "거래", "분양"])
+
     with t_map:
+        st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
+        st.title("수도권 실거래 지도")
+        _render_collect_controls()
         _render_map()
+
     with t_ind:
+        st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
+        st.title("부동산 시장 지표")
+        st.caption("선행·심리 · 가격 · 공급 · 금융 지표를 한눈에 · 직전값 대비 ▲빨강/▼파랑")
         _render_indicators()
+
     with t_anom:
+        st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
+        st.title("특이거래")
+        st.caption("신고가·신저가·급등락·거래량 급증 · 국토부 실거래 기준 · "
+                   "직거래(증여추정) 기본 제외")
         _render_anomalies()
+
     with t_sub:
+        st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
+        st.title("분양 단지")
+        st.caption("한국부동산원 청약홈 분양정보 · 청약 임박·진행 우선")
         _render_subscriptions()
