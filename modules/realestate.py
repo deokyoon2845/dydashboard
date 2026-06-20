@@ -909,7 +909,8 @@ def render_realestate():
     # st.tabs를 가장 먼저 만든다. 부동산 전용 CSS(_RE_CSS)는 별도 markdown
     # 블록으로 두면 그 블록이 세로 간격을 한 칸 더 먹어 증시보다 벌어지므로,
     # 첫 패널(지도)의 accent-bar와 한 블록으로 합쳐 주입한다(간격 일치).
-    t_map, t_ind, t_anom, t_sub = st.tabs(["지도", "지표", "거래", "분양"])
+    t_map, t_ind, t_anom, t_sub, t_kw = st.tabs(
+        ["지도", "지표", "거래", "분양", "키워드"])
 
     with t_map:
         st.markdown(_RE_CSS + '<div class="accent-bar"></div>',
@@ -936,3 +937,8 @@ def render_realestate():
         st.title("분양 단지")
         st.caption("한국부동산원 청약홈 분양정보 · 청약 임박·진행 우선")
         _render_subscriptions()
+
+    with t_kw:
+        # 키워드 뷰어가 자체적으로 accent-bar + 제목을 그린다(증시 키워드 탭과 동일).
+        from modules.realestate_keywords_view import render_realestate_keywords
+        render_realestate_keywords()
