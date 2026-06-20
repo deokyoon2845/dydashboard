@@ -1,6 +1,6 @@
 """부동산 데이터 수집 — 국토부 아파트 실거래가(매매·전세) 기반.
 
-PublicDataReader.TransactionPrice로 수도권 시군구별 아파트 매매/전세 실거래를 받아
+수도권 시군구별 아파트 매매/전세 실거래를 받아
   · 지도용 지역 지표: 거래량(v)·거래량 전주비(vc)·매매 주간변화(mm)·전세 주간변화(js)·전세가율(jr)
   · 특이거래: 신고가/신저가·급등/급락 (직거래=증여추정 기본 제외)
 를 만든다.
@@ -9,27 +9,37 @@ self-contained(별도 DB 누적 불필요):
   - 지역 지표: 당월+직전월 2개월을 받아 '최근 N일 vs 그 전 N일'로 주간 비교를 계산.
   - 특이거래: 최근 ANOM_MONTHS개월 윈도우 내 단지·면적별 최고/최저가·직전거래 대비로 판정.
   ※ 실거래는 계약일 기준이라 최근일은 신고지연으로 표본이 적다(주간 수치는 변동 큼).
-    표본이 MIN_N 미만이면 등락은 0(보합)으로 처리한다. 더 정확한 신고가 판정은
-    추후 Supabase 이력 누적으로 보강(현재는 윈도우 기반 근사).
+    표본이 MIN_N 미만이면 등락은 0(보합)으로 처리한다.
+
+────────────────────────────────────────────────────────────────────────────
+[2026-06 개편] PublicDataReader 우회 — requests로 RTMS 엔드포인트 직접 호출.
+  이전엔 PublicDataReader.TransactionPrice를 썼는데, HTTP가 200이 아니면
+  내부에서 print 한 줄만 찍고 '빈 DataFrame'을 조용히 돌려줬다(예외 없음).
+  그래서 600콜이 전부 0건이어도 원인(차단/키범위/표본부족/월형식)을 구분 못 했다.
+  ⇒ 이제는 직접 호출해서 HTTP status·resultCode·totalCount·인증에러문구를 그대로 본다.
+     · http가 막히면 https로 자동 폴백(데이터포털 http→https 전환 이슈 대응).
+     · 성공한 scheme은 _SCHEME에 캐시 → 600콜 동안 재탐색 안 함.
+     · 진단(diagnose)은 강남구 1콜만 던져 '진짜 원인 한 줄'을 돌려준다.
 
 키: 공공데이터포털 서비스키. 환경변수/secrets 에서 다음 순서로 찾는다.
     MOLIT_API_KEY → PUBLIC_DATA_API_KEY → DATA_GO_KR_KEY
-    (PublicDataReader는 'Decoding(일반 인증키)'를 받는다.)
+    (Encoding/Decoding 키 어느 쪽이든 동작 — 내부에서 unquote 후 requests가 재인코딩.)
 
-진단(중요): 수집 전에 diagnose()로 단 1회 시험 호출을 던져
-    '키 없음 / 키 미승인·무효 / 네트워크·IP 차단 / 호출 한도 / 정상' 을 구분한다.
-    예전엔 _fetch가 모든 예외를 삼켜서, 키가 틀려도 빈 결과가 '성공'처럼 저장됐다.
-    이제는 치명 오류(키/차단)는 즉시 예외로 띄우고, 전수 0건이면 저장하지 않는다.
-
-주의: data.go.kr 오픈API는 해외 IP에서도 호출되지만, Streamlit Cloud에서 막히면
-      키/운영계정 트래픽 한도(개발계정 ~10,000콜/일)를 점검할 것.
-      수집 1회 호출 수 ≈ 지역지표 60코드×2개월×2유형(매매·전세)=240,
-      특이거래 60코드×ANOM_MONTHS(매매)= 약 360콜(6개월 기준). 캐시·버튼 수집 권장.
+주의: getRTMSDataSvcAptTradeDev(상세자료)는 기본자료(getRTMSDataSvcAptTrade)와
+      별개 활용신청이 필요하다. 키가 '상세자료'에 미승인이면 resultCode 30이 떠서
+      이제 진단이 KEY_INVALID로 정확히 알려준다(예전엔 0건으로 뭉뚱그려짐).
 """
 
 import os
 import statistics
 from datetime import date, timedelta
+
+import requests
+
+try:                                   # verify=False 경고 억제
+    requests.packages.urllib3.disable_warnings()  # type: ignore[attr-defined]
+except Exception:
+    pass
 
 # ── 시군구 법정동코드 (서울 25 자치구 + 경기 24 시/군, 자치구 있는 시는 구별 코드) ──
 SIGUNGU_CODES = {
@@ -84,7 +94,6 @@ SIGUNGU_CODES = {
     "종로구": ["11110"],
 }
 
-# 지도 지역명(_GEO의 'n') ↔ 시도구분
 _SEOUL = {n for n in SIGUNGU_CODES if n.endswith("구")}
 
 # 파라미터
@@ -96,6 +105,17 @@ JUMP_PCT = 7.0         # 급등/급락 임계(직전 거래 대비 %)
 VOL_SURGE = 2.0        # 거래량 급증 배수(최근주 vs 윈도우 주평균)
 
 _DIAG_CODE = "11680"   # 진단용 시험 호출 시군구(강남구 — 거래가 늘 있는 편)
+
+# ── RTMS 엔드포인트 (아파트 매매/전월세) ────────────────────────
+_RTMS_HOST = "apis.data.go.kr/1613000"
+_RTMS_PATH = {
+    "매매": "RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev",
+    "전월세": "RTMSDataSvcAptRent/getRTMSDataSvcAptRent",
+}
+_NUM_ROWS = 2000       # 시군구·월당 충분(보통 수백 건) — 99999는 일부 엔드포인트서 불안정
+_TIMEOUT = 12
+_SCHEMES = ("https", "http")   # https 우선(http 차단 대비) — 성공 scheme은 캐시
+_SCHEME = None         # 첫 성공 scheme 캐시(프로세스 단위)
 
 
 # ── 인증키 ──────────────────────────────────────────────────────
@@ -114,20 +134,78 @@ def _get_key():
     return None
 
 
-def _api():
-    from PublicDataReader import TransactionPrice
-    key = _get_key()
-    if not key:
-        raise RuntimeError(
-            "공공데이터포털 서비스키가 없어요. Streamlit Secrets(또는 GitHub Actions Secret)에 "
-            "MOLIT_API_KEY(또는 PUBLIC_DATA_API_KEY/DATA_GO_KR_KEY)를 추가하세요. "
-            "값은 공공데이터포털의 'Decoding(일반 인증키)'을 넣으세요.")
-    return TransactionPrice(key)
+# ── 저수준 호출 + 응답 해석 ─────────────────────────────────────
+def _endpoint(trade_type, scheme):
+    return f"{scheme}://{_RTMS_HOST}/{_RTMS_PATH[trade_type]}"
 
 
-# ── 오류 분류 / 단일 호출 진단 ──────────────────────────────────
+def _request(key, code, ym, trade_type, scheme):
+    """단일 RTMS 호출 → requests.Response (예외는 호출부에서 처리)."""
+    # Encoding/Decoding 키 모두 대응: unquote 후 params로 넘기면 requests가 재인코딩.
+    skey = requests.utils.unquote(key)
+    params = {"serviceKey": skey, "LAWD_CD": code,
+              "DEAL_YMD": ym, "numOfRows": str(_NUM_ROWS), "pageNo": "1"}
+    return requests.get(_endpoint(trade_type, scheme), params=params,
+                        timeout=_TIMEOUT, verify=False)
+
+
+def _interpret(res):
+    """Response → dict. status/resultCode/totalCount/items/에러문구를 구분해 담는다.
+
+    반환 키:
+      http   : HTTP 상태코드
+      kind   : OK | EMPTY | AUTH | RESULT | NON200 | PARSE
+      items  : 정상일 때 raw item dict 리스트
+      total  : totalCount (있으면)
+      msg    : 사람이 읽을 원인 문구
+      rcode  : resultCode 또는 인증 returnReasonCode
+    """
+    out = {"http": res.status_code, "kind": "NON200", "items": [],
+           "total": None, "msg": "", "rcode": None}
+    if res.status_code != 200:
+        out["msg"] = f"HTTP {res.status_code}"
+        return out
+    try:
+        import xmltodict
+        j = xmltodict.parse(res.text)
+    except Exception as e:
+        out["kind"] = "PARSE"
+        out["msg"] = f"응답 파싱 실패: {e} · 앞부분: {res.text[:120]!r}"
+        return out
+
+    # 인증/트래픽 에러 봉투
+    if "OpenAPI_ServiceResponse" in j:
+        h = (j["OpenAPI_ServiceResponse"] or {}).get("cmmMsgHeader", {}) or {}
+        out["kind"] = "AUTH"
+        out["rcode"] = h.get("returnReasonCode")
+        out["msg"] = f"{h.get('errMsg')} (code {h.get('returnReasonCode')})"
+        return out
+
+    body = (j.get("response") or {})
+    header = body.get("header", {}) or {}
+    rc = header.get("resultCode")
+    out["rcode"] = rc
+    if rc not in ("00", "000"):
+        out["kind"] = "RESULT"
+        out["msg"] = f"resultCode {rc}: {header.get('resultMsg')}"
+        return out
+
+    b = body.get("body", {}) or {}
+    out["total"] = b.get("totalCount")
+    items = (b.get("items") or {})
+    items = items.get("item") if isinstance(items, dict) else None
+    if items is None:
+        out["kind"] = "EMPTY"
+        return out
+    if isinstance(items, dict):
+        items = [items]
+    out["kind"] = "OK"
+    out["items"] = items
+    return out
+
+
 def _classify_exc(exc):
-    """수집 중 발생한 예외를 NETWORK / KEY_INVALID / RATE_LIMIT / API_ERROR 로 분류."""
+    """requests 예외를 NETWORK / KEY_INVALID / RATE_LIMIT / API_ERROR 로 분류."""
     name = type(exc).__name__.upper()
     txt = str(exc).upper()
     net_names = ("CONNECTIONERROR", "CONNECTTIMEOUT", "READTIMEOUT", "TIMEOUT",
@@ -137,68 +215,83 @@ def _classify_exc(exc):
     if any(h in txt for h in ("TIMED OUT", "MAX RETRIES", "CONNECTION ABORTED",
                               "FAILED TO ESTABLISH", "NEWCONNECTIONERROR", "SSL")):
         return "NETWORK"
-    key_hints = ("SERVICE KEY", "SERVICEKEY", "NOT_REGISTERED", "NOT REGISTERED",
-                 "REGISTERED ERROR", "UNREGISTERED", "등록되지", "활용신청", "미등록",
-                 "INVALID", "ACCESS DENIED", "ACCESS_DENIED", "NO_OPENAPI_SERVICE",
-                 "HTTP_ERROR", "권한", "허용되지", "DENIED")
-    if any(h in txt for h in key_hints):
+    if any(h in txt for h in ("NOT_REGISTERED", "UNREGISTERED", "INVALID",
+                              "ACCESS DENIED", "DENIED")):
         return "KEY_INVALID"
-    if any(h in txt for h in ("LIMITED", "요청제한", "트래픽", "EXCEEDS", "LIMIT_EXCEED",
-                              "LIMITNUMBER", "한도")):
+    if any(h in txt for h in ("LIMITED", "EXCEEDS", "LIMIT_EXCEED", "한도")):
         return "RATE_LIMIT"
     return "API_ERROR"
 
 
+# ── 진단 (강남구 1콜) ───────────────────────────────────────────
 def diagnose(asof=None, test_code=_DIAG_CODE):
     """수집 전 단 1회 시험 호출로 연결 상태 점검.
 
     반환: (status, message)
-      status ∈ {"OK","OK_EMPTY","NO_KEY","NO_LIB","NETWORK","KEY_INVALID","RATE_LIMIT","API_ERROR"}
+      status ∈ {"OK","OK_EMPTY","NO_KEY","NETWORK","KEY_INVALID","RATE_LIMIT","API_ERROR"}
       OK / OK_EMPTY 는 '키·네트워크 정상'(수집 진행 가능), 나머지는 치명 오류.
+    성공 시 동작 scheme(https/http)을 _SCHEME에 캐시한다.
     """
+    global _SCHEME
     key = _get_key()
     if not key:
         return ("NO_KEY",
                 "data.go.kr 서비스키가 없어요. Streamlit Secrets에 "
                 "MOLIT_API_KEY(또는 PUBLIC_DATA_API_KEY/DATA_GO_KR_KEY)를 추가하세요. "
-                "값은 공공데이터포털의 'Decoding(일반 인증키)'을 넣으세요.")
-    try:
-        from PublicDataReader import TransactionPrice
-    except Exception as e:
-        return ("NO_LIB",
-                f"PublicDataReader import 실패: {e} — requirements.txt에 PublicDataReader가 "
-                "있는지, 재배포(Manage app → Reboot)가 됐는지 확인하세요.")
+                "값은 공공데이터포털의 '일반 인증키'를 넣으세요.")
 
-    api = TransactionPrice(key)
     asof = asof or date.today()
-    # 당월 → 비면 직전월 순으로 시험(_months_back은 과거→현재라 역순으로 당월 먼저)
-    for ym in reversed(_months_back(asof, 2)):
-        try:
-            df = api.get_data(property_type="아파트", trade_type="매매",
-                              sigungu_code=test_code, year_month=ym)
-        except Exception as e:
-            kind = _classify_exc(e)
-            if kind == "NETWORK":
-                return ("NETWORK",
-                        f"data.go.kr 연결 실패(네트워크/IP 차단 가능). 잠시 후 재시도하거나 "
-                        f"GitHub Actions(서버측) 수집을 사용하세요. 원문: {e}")
-            if kind == "KEY_INVALID":
-                return ("KEY_INVALID",
-                        "키가 미등록/무효예요. data.go.kr에서 '국토교통부 아파트 매매/전월세 "
-                        "실거래가 상세 자료' 활용신청 승인 여부와, 키 형식(Decoding 일반 인증키)을 "
-                        f"확인하세요. 원문: {e}")
-            if kind == "RATE_LIMIT":
-                return ("RATE_LIMIT", f"호출 한도 초과. 잠시 후 재시도하세요. 원문: {e}")
-            return ("API_ERROR", f"API 오류: {e}")
-        if df is not None and len(df) > 0:
-            return ("OK", f"정상 — 강남구 {ym} 매매 {len(df)}건 확인. 수집을 진행할 수 있어요.")
-    return ("OK_EMPTY",
-            "호출 자체는 정상인데 최근 2개월 강남구 표본이 0건이에요(월 초·신고지연 가능). "
-            "키/네트워크는 문제 없어 보입니다. 그대로 수집을 시도해도 됩니다.")
+    yms = list(reversed(_months_back(asof, 2)))   # 당월 → 직전월 순
+    net_err = None
+    empty_detail = None
+
+    for scheme in _SCHEMES:
+        scheme_ok = False
+        for ym in yms:
+            try:
+                res = _request(key, test_code, ym, "매매", scheme)
+            except Exception as e:
+                net_err = f"{scheme}: {e}"
+                break   # 이 scheme은 연결 자체가 안 됨 → 다음 scheme
+            info = _interpret(res)
+            if info["kind"] == "OK":
+                _SCHEME = scheme
+                return ("OK", f"정상 — 강남구 {ym} 매매 {len(info['items'])}건 확인"
+                              f"({scheme}). 수집을 진행할 수 있어요.")
+            if info["kind"] == "AUTH":
+                code = info.get("rcode")
+                if code in ("30", "31", "32"):   # 미등록/만료/IP제한 류
+                    return ("KEY_INVALID",
+                            "키가 '아파트 매매 실거래가 상세자료(getRTMSDataSvcAptTradeDev)'에 "
+                            "미승인/무효예요. data.go.kr에서 해당 서비스 활용신청 승인 여부와 "
+                            f"키를 확인하세요. 원문: {info['msg']}")
+                if code in ("22",):              # 트래픽 초과
+                    return ("RATE_LIMIT", f"호출 한도 초과. 잠시 후 재시도하세요. 원문: {info['msg']}")
+                return ("KEY_INVALID", f"인증 오류({scheme}): {info['msg']}")
+            if info["kind"] == "RESULT":
+                return ("API_ERROR", f"API 오류({scheme}): {info['msg']}")
+            if info["kind"] == "EMPTY":
+                scheme_ok = True   # 호출은 성공(키·연결 OK), 그 달 표본만 0
+                empty_detail = f"{scheme}·{ym}·totalCount={info.get('total')}"
+                continue
+            if info["kind"] in ("NON200", "PARSE"):
+                net_err = f"{scheme}·{ym}: {info['msg']}"
+                break   # 이 scheme은 막힘 → 다음 scheme
+        if scheme_ok:
+            _SCHEME = scheme
+            return ("OK_EMPTY",
+                    f"호출은 정상인데 최근 2개월 강남구 표본이 0건이에요({empty_detail}). "
+                    "키·네트워크는 문제 없어 보여요. 월 초·신고지연일 수 있어요.")
+
+    # 모든 scheme 실패
+    return ("NETWORK",
+            "data.go.kr 연결에 실패했어요(네트워크/IP 차단/엔드포인트 의심). "
+            "Streamlit Cloud에서 막히면 GitHub Actions(서버측) 수집을 쓰세요. "
+            f"원문: {net_err}")
 
 
 def _preflight(asof=None):
-    """diagnose 결과가 치명 오류면 RuntimeError 로 즉시 중단."""
+    """diagnose 결과가 치명 오류면 RuntimeError 로 즉시 중단(+동작 scheme 확정)."""
     status, msg = diagnose(asof)
     if status not in ("OK", "OK_EMPTY"):
         raise RuntimeError(msg)
@@ -212,58 +305,81 @@ def _to_int(x):
         return None
 
 
-def _fetch(api, code, ym, trade_type, stats=None):
+def _scheme():
+    return _SCHEME or "http"
+
+
+def _fetch(key, code, ym, trade_type, stats=None):
     """단일 시군구·월 조회 → 표준 레코드 리스트.
 
-    예외 처리 변경: 키/권한 오류는 더 이상 삼키지 않고 즉시 예외로 올린다(전수 실패 확정).
-    네트워크 일시오류·해당 월 데이터 없음은 [] 로 건너뛰되 stats에 기록한다."""
+    키/권한 오류(AUTH)는 즉시 RuntimeError(전수 실패 확정 → 600콜 낭비 방지).
+    네트워크 일시오류·해당 월 0건·NON200은 [] 로 건너뛰되 stats에 원인을 남긴다."""
     try:
-        df = api.get_data(property_type="아파트", trade_type=trade_type,
-                          sigungu_code=code, year_month=ym)
+        res = _request(key, code, ym, trade_type, _scheme())
     except Exception as e:
         kind = _classify_exc(e)
         if stats is not None:
             stats["fail"] = stats.get("fail", 0) + 1
-            stats["last_err"] = str(e)
+            stats["last_err"] = f"{kind}: {e}"
         if kind == "KEY_INVALID":
-            # 키 문제는 모든 코드에서 동일하게 실패 → 600콜 돌릴 필요 없이 즉시 중단
-            raise RuntimeError(
-                "실거래 키가 미등록/무효예요 (data.go.kr 활용신청 승인·키 형식 확인). "
-                f"원문: {e}")
-        return []   # NETWORK/RATE_LIMIT/일시 오류·해당 월 0건 → 건너뜀
+            raise RuntimeError(f"실거래 키가 미등록/무효예요. 원문: {e}")
+        return []
+
+    info = _interpret(res)
+    if stats is not None:
+        stats["calls"] = stats.get("calls", 0) + 1
+
+    if info["kind"] == "AUTH":
+        # 키 문제는 모든 코드에서 동일 → 즉시 중단
+        raise RuntimeError(
+            "실거래 키가 '상세자료(getRTMSDataSvcAptTradeDev)'에 미승인/무효예요 "
+            f"(data.go.kr 활용신청 확인). 원문: {info['msg']}")
+    if info["kind"] in ("RESULT", "NON200", "PARSE"):
+        if stats is not None:
+            stats["fail"] = stats.get("fail", 0) + 1
+            stats["last_err"] = info["msg"]
+            stats.setdefault("http", {})[info["http"]] = \
+                stats["http"].get(info["http"], 0) + 1
+        return []
+    if info["kind"] == "EMPTY":
+        if stats is not None:
+            stats["ok"] = stats.get("ok", 0) + 1
+            stats["empty200"] = stats.get("empty200", 0) + 1
+        return []
+
+    # OK
     if stats is not None:
         stats["ok"] = stats.get("ok", 0) + 1
-    if df is None or len(df) == 0:
-        return []
+
     out = []
-    for r in df.to_dict("records"):
-        if str(r.get("해제여부", "")).strip().upper() == "O":   # 취소건 제외
+    for r in info["items"]:
+        if str(r.get("cdealType", "")).strip().upper() == "O":   # 취소건 제외
             continue
         try:
-            y = int(r.get("계약년도")); m = int(r.get("계약월")); d = int(r.get("계약일"))
+            y = int(r.get("dealYear")); m = int(r.get("dealMonth")); d = int(r.get("dealDay"))
             dt = date(y, m, d)
         except (ValueError, TypeError):
             continue
-        area = None
         try:
-            area = float(r.get("전용면적"))
-        except (ValueError, TypeError):
-            pass
+            area = float(str(r.get("excluUseAr")).strip())
+        except (ValueError, TypeError, AttributeError):
+            continue
         if trade_type == "매매":
-            price = _to_int(r.get("거래금액"))
+            price = _to_int(r.get("dealAmount"))
         else:  # 전월세: 전세만(월세 0)
-            if _to_int(r.get("월세금액")) not in (0, None):
+            if _to_int(r.get("monthlyRent")) not in (0, None):
                 continue
-            price = _to_int(r.get("보증금액"))
+            price = _to_int(r.get("deposit"))
         if not price or not area or area <= 0:
             continue
+        trade = str(r.get("dealingGbn", "")).strip()
         out.append({
             "date": dt, "price": price, "area": area,
             "ppa": price / area,                       # 만원/㎡ (구성효과 완화)
-            "apt": str(r.get("단지명", "")).strip(),
-            "dong": str(r.get("법정동", "")).strip(),
-            "trade": str(r.get("거래유형", "")).strip(),  # 중개거래/직거래/''
-            "direct": "직" in str(r.get("거래유형", "")),
+            "apt": str(r.get("aptNm", "")).strip(),
+            "dong": str(r.get("umdNm", "")).strip(),
+            "trade": trade,                            # 중개거래/직거래/''
+            "direct": "직" in trade,
         })
     if stats is not None:
         stats["rows"] = stats.get("rows", 0) + len(out)
@@ -286,14 +402,29 @@ def _median_ppa(rows):
     return statistics.median(vals) if vals else None
 
 
+def _zero_hint(stats):
+    """전수 0건일 때 stats로 '진짜 원인 한 줄'을 만든다."""
+    if stats.get("last_err"):
+        return f" 최근 오류: {stats['last_err']}"
+    http = stats.get("http") or {}
+    if http:
+        codes = ", ".join(f"HTTP {k}×{v}" for k, v in http.items())
+        return f" ({codes} — IP 차단/엔드포인트 의심)."
+    if stats.get("empty200"):
+        return (f" (HTTP 200·totalCount 0 ×{stats['empty200']} — 해당 월 표본 없음 또는 "
+                "키가 '상세자료'에 미승인). '연결 진단'으로 원인을 확인하세요.")
+    return " (호출은 됐지만 데이터가 0건 — 차단/한도/표본부족 가능)."
+
+
 # ── 지역 지표 (지도) ────────────────────────────────────────────
 def collect_region_metrics(asof=None, exclude_direct=True):
     """지역명 -> {'mm','js','v','vc','jr'}. 실패 시 예외(뷰어에서 샘플 폴백)."""
     asof = asof or date.today()
-    _preflight(asof)                   # 키/네트워크 치명 오류면 여기서 즉시 중단
-    api = _api()
+    _preflight(asof)                   # 키/네트워크 치명 오류면 즉시 중단(+scheme 확정)
+    key = _get_key()
     yms = _months_back(asof, 2)        # 당월 + 직전월
-    stats = {"ok": 0, "fail": 0, "rows": 0, "last_err": ""}
+    stats = {"ok": 0, "fail": 0, "rows": 0, "calls": 0, "empty200": 0,
+             "http": {}, "last_err": ""}
 
     w_now0 = asof - timedelta(days=WINDOW_DAYS - 1)
     w_prev0 = asof - timedelta(days=2 * WINDOW_DAYS - 1)
@@ -304,8 +435,8 @@ def collect_region_metrics(asof=None, exclude_direct=True):
         sales, jeonse = [], []
         for code in codes:
             for ym in yms:
-                sales += _fetch(api, code, ym, "매매", stats)
-                jeonse += _fetch(api, code, ym, "전월세", stats)
+                sales += _fetch(key, code, ym, "매매", stats)
+                jeonse += _fetch(key, code, ym, "전월세", stats)
         if exclude_direct:
             sales = [r for r in sales if not r["direct"]]
 
@@ -317,11 +448,9 @@ def collect_region_metrics(asof=None, exclude_direct=True):
         j_now = win(jeonse, w_now0, asof)
         j_prev = win(jeonse, w_prev0, w_now0 - timedelta(days=1))
 
-        # 거래량 + 전주비
         v = len(s_now)
         vc = round((v / len(s_prev) - 1) * 100) if s_prev else 0
 
-        # 매매·전세 주간 변화(중위 단가, 표본 부족 시 보합)
         def chg(now, prev):
             if len(now) < MIN_N or len(prev) < MIN_N:
                 return 0.0
@@ -331,18 +460,14 @@ def collect_region_metrics(asof=None, exclude_direct=True):
         mm = chg(s_now, s_prev)
         js = chg(j_now, j_prev)
 
-        # 전세가율(최근 JR_DAYS 중위 단가 비율)
         s_jr = _median_ppa(win(sales, jr_from, asof))
         j_jr = _median_ppa(win(jeonse, jr_from, asof))
         jr = round(j_jr / s_jr * 100, 1) if (s_jr and j_jr) else None
 
         result[name] = {"mm": mm, "js": js, "v": v, "vc": vc, "jr": jr}
 
-    # 전수 0건이면 저장 금지(예전엔 빈 결과가 '성공'으로 둔갑) — 실패로 띄운다.
     if stats["rows"] == 0:
-        hint = (f" 최근 오류: {stats['last_err']}" if stats["last_err"]
-                else " (호출은 됐지만 데이터가 0건 — 차단/한도/표본부족 가능).")
-        raise RuntimeError("실거래를 한 건도 받지 못했어요." + hint)
+        raise RuntimeError("실거래를 한 건도 받지 못했어요." + _zero_hint(stats))
     return result
 
 
@@ -360,27 +485,27 @@ def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=
     """특이거래 리스트. 뷰어 fetch_anomalies와 동일한 튜플 형식으로 반환.
        (유형, 배경, 글자색, 단지, 지역, 면적, 가격, 변동, 거래유형, 제외여부)"""
     asof = asof or date.today()
-    _preflight(asof)                   # 키/네트워크 치명 오류면 즉시 중단
-    api = _api()
+    _preflight(asof)
+    key = _get_key()
     yms = _months_back(asof, months)
     recent0 = asof - timedelta(days=WINDOW_DAYS - 1)
     prev_weeks = max((months * 30) / WINDOW_DAYS - 1, 1)
-    stats = {"ok": 0, "fail": 0, "rows": 0, "last_err": ""}
+    stats = {"ok": 0, "fail": 0, "rows": 0, "calls": 0, "empty200": 0,
+             "http": {}, "last_err": ""}
 
     items = []
     for name, codes in SIGUNGU_CODES.items():
         rows = []
         for code in codes:
             for ym in yms:
-                rows += _fetch(api, code, ym, "매매", stats)
+                rows += _fetch(key, code, ym, "매매", stats)
         if not rows:
             continue
 
-        # 단지+전용면적(반올림) 그룹
         groups = {}
         for r in rows:
-            key = (r["apt"], round(r["area"]))
-            groups.setdefault(key, []).append(r)
+            gkey = (r["apt"], round(r["area"]))
+            groups.setdefault(gkey, []).append(r)
 
         for (apt, area), grp in groups.items():
             grp.sort(key=lambda r: r["date"])
@@ -395,12 +520,10 @@ def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=
                     continue
                 area_s = f"{round(area)}㎡"
                 base = (apt, name, area_s, _fmt_eok(r["price"]))
-                # 신고가 / 신저가 (윈도우 내 최고/최저, 표본 2건 이상)
                 if len(grp) >= 2 and r["price"] >= hi:
                     items.append(("신고가", *_BG["신고가"], *base, "신고", r["trade"] or "-", r["direct"]))
                 elif len(grp) >= 2 and r["price"] <= lo:
                     items.append(("신저가", *_BG["신저가"], *base, "신저", r["trade"] or "-", r["direct"]))
-                # 급등/급락 (직전 거래 대비)
                 idx = grp.index(r)
                 if idx > 0:
                     prev_p = grp[idx - 1]["price"]
@@ -411,7 +534,6 @@ def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=
                         elif dpct <= -JUMP_PCT:
                             items.append(("급락", *_BG["급락"], *base, f"{dpct:.1f}%", r["trade"] or "-", r["direct"]))
 
-        # 거래량 급증(단지 단위): 최근주 거래수 vs 윈도우 주평균
         apt_recent, apt_total = {}, {}
         for r in rows:
             apt_total[r["apt"]] = apt_total.get(r["apt"], 0) + 1
@@ -423,13 +545,9 @@ def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=
                 items.append(("거래량 급증", *_BG["거래량 급증"], apt, name, "전체",
                               f"{rc}건/주", f"+{round((rc/avg_wk-1)*100)}%", "-", False))
 
-    # 데이터 자체를 한 건도 못 받았으면 실패로 띄운다(빈 결과 ≠ 정상 0건).
     if stats["rows"] == 0:
-        hint = (f" 최근 오류: {stats['last_err']}" if stats["last_err"]
-                else " (호출은 됐지만 데이터가 0건 — 차단/한도/표본부족 가능).")
-        raise RuntimeError("특이거래 판정용 실거래를 한 건도 받지 못했어요." + hint)
+        raise RuntimeError("특이거래 판정용 실거래를 한 건도 받지 못했어요." + _zero_hint(stats))
 
-    # 정렬: 변동 크기·유형 우선, 상위 limit
     def _mag(it):
         chg = it[7]
         try:
@@ -437,7 +555,6 @@ def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=
         except ValueError:
             return 999
     items.sort(key=_mag, reverse=True)
-    # 중복 제거(단지+유형)
     seen, dedup = set(), []
     for it in items:
         k = (it[0], it[3], it[5])
