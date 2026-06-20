@@ -6,15 +6,19 @@
       ECOS 호출 로직은 rate_gap.py의 헬퍼를 재사용한다(중복 방지).
 
 2026-06: 수익률 카드를 히트맵 타일로 표시 — 전일 대비 변화 '방향'으로 색칠
-  (상승=빨강 / 하락=파랑, ±10bp에서 최대 채도). 정적 카드보다 커브 전반의
-  '오늘 움직임'이 한눈에 들어온다. 지수 히트맵과 같은 .heat-tile 스타일 사용.
+  (상승=빨강 / 하락=파랑, ±10bp에서 최대 채도).
+2026-06 추가: 각 타일에 3개월 추이 미니차트(하단 보름 눈금 + 월 라벨) 표시.
+  지수 히트맵과 동일한 sparkline_axis_html 헬퍼 사용.
 """
 
+import pandas as pd
 import streamlit as st
 import yfinance as yf
 
 # ECOS 호출 헬퍼 재사용 (rate_gap.py 정의)
 from modules.rate_gap import _cfg, _ecos_items, _ecos_latest, _find_code
+# 보름축 미니차트 헬퍼 재사용 (indices.py 정의)
+from modules.indices import sparkline_axis_html
 
 # 미 국채 (표시 순서대로)
 _RATE_TICKERS = [
@@ -49,8 +53,9 @@ def _rate_heat_color(bp):
     return f"rgb({r},{g},{b})", txt
 
 
-def _rate_tile(name, cur, bp):
-    """수익률 히트맵 타일. cur=수익률(%), bp=전일대비(bp). cur가 None이면 '데이터 없음'."""
+def _rate_tile(name, cur, bp, series=None):
+    """수익률 히트맵 타일. cur=수익률(%), bp=전일대비(bp), series=날짜축 3개월 추이.
+    cur가 None이면 '데이터 없음'."""
     if cur is None:
         return (f'<div class="heat-tile" style="background:#F6F7F2;color:#9a9b92;">'
                 f'<div class="heat-name">{name}</div>'
@@ -60,31 +65,36 @@ def _rate_tile(name, cur, bp):
     arrow = "▲" if chg > 0 else ("▼" if chg < 0 else "▬")
     bp_html = (f'<div class="heat-pct" style="color:{txt};">{arrow} {bp:+.0f}bp</div>'
                if bp is not None else "")
+    spark = sparkline_axis_html(series, txt, height=38, n_days=92, label_color=txt)
     return (f'<div class="heat-tile" style="background:{bg};">'
             f'<div class="heat-name" style="color:{txt};opacity:.92;">{name}</div>'
             f'<div class="heat-val" style="color:{txt};">{cur:.2f}%</div>'
-            f'{bp_html}</div>')
+            f'{bp_html}{spark}</div>')
 
 
 @st.cache_data(ttl=900)
 def _fetch_rate(ticker: str):
-    """미 국채: 현재 수익률(%)과 전일 대비 변화(%p). 실패 시 None."""
+    """미 국채: 현재 수익률(%), 전일 대비 변화(%p), 3개월 추이(날짜축 Series). 실패 시 None."""
     try:
-        hist = yf.Ticker(ticker).history(period="7d")
+        hist = yf.Ticker(ticker).history(period="3mo")
         if hist.empty:
             return None
         closes = hist["Close"].dropna()
         if len(closes) < 1:
             return None
+        # tz 제거(날짜축 정합용)
+        idx = closes.index
+        if getattr(idx, "tz", None) is not None:
+            closes.index = idx.tz_localize(None)
         cur = float(closes.iloc[-1])
         prev = float(closes.iloc[-2]) if len(closes) >= 2 else cur
-        return {"cur": cur, "chg": cur - prev}
+        return {"cur": cur, "chg": cur - prev, "series": closes}
     except Exception:
         return None
 
 
 def _fetch_kr_yields(key):
-    """한국 국고채 2년·3년·10년: {라벨: {'cur','bp'} or None}. ECOS 헬퍼 재사용."""
+    """한국 국고채 2년·3년·10년: {라벨: {'cur','bp','series'} or None}. ECOS 헬퍼 재사용."""
     items = _ecos_items(key)
     out = {}
     for label, kw in _KR_TENORS:
@@ -93,7 +103,20 @@ def _fetch_kr_yields(key):
         if vals:
             cur = vals[-1][1]
             prev = vals[-2][1] if len(vals) >= 2 else cur
-            out[label] = {"cur": cur, "bp": (cur - prev) * 100}  # %p → bp
+            # 날짜축 Series (TIME='YYYYMMDD')
+            idx, data = [], []
+            for t, v in vals:
+                s = str(t)
+                if len(s) == 8:
+                    s = f"{s[:4]}-{s[4:6]}-{s[6:8]}"
+                try:
+                    idx.append(pd.Timestamp(s))
+                    data.append(float(v))
+                except Exception:
+                    continue
+            series = (pd.Series(data, index=pd.DatetimeIndex(idx)).sort_index()
+                      if idx else None)
+            out[label] = {"cur": cur, "bp": (cur - prev) * 100, "series": series}
         else:
             out[label] = None
     return out
@@ -109,7 +132,10 @@ def render_rates():
     tiles = ""
     for name, _tk in _RATE_TICKERS:
         d = data[name]
-        tiles += _rate_tile(name, d["cur"], d["chg"] * 100) if d else _rate_tile(name, None, None)
+        if d:
+            tiles += _rate_tile(name, d["cur"], d["chg"] * 100, d.get("series"))
+        else:
+            tiles += _rate_tile(name, None, None)
     st.markdown(f'<div class="mkt-grid">{tiles}</div>', unsafe_allow_html=True)
 
     # 장단기 금리차 (10년 − 3개월): 음수면 '금리 역전' = 경기침체 경고 신호
@@ -119,9 +145,10 @@ def render_rates():
         note = "정상 (우상향)" if spread >= 0 else "역전 — 경기침체 경고 신호로 읽히는 구간"
         st.caption(f"미 10년−3개월 장단기 금리차: {spread:+.2f}%p · {note} · "
                    f"색 = 전일 대비 변화(상승 빨강/하락 파랑, ±10bp 최대) · "
-                   f"데이터: yfinance · 약 15분 지연")
+                   f"미니차트 = 3개월 추이(눈금=보름) · 데이터: yfinance · 약 15분 지연")
     else:
-        st.caption("색 = 전일 대비 변화(상승 빨강/하락 파랑) · 데이터: yfinance · 약 15분 지연")
+        st.caption("색 = 전일 대비 변화(상승 빨강/하락 파랑) · 미니차트 = 3개월 추이 · "
+                   "데이터: yfinance · 약 15분 지연")
 
     # ── 한국 국고채 수익률 (ECOS · 히트맵 타일) ──
     st.markdown('<div class="mkt-group" style="margin-top:18px;">🇰🇷 한국 국고채 수익률</div>',
@@ -135,7 +162,10 @@ def render_rates():
     tiles = ""
     for label, _kw in _KR_TENORS:
         d = kr.get(label)
-        tiles += _rate_tile(label, d["cur"], d["bp"]) if d else _rate_tile(label, None, None)
+        if d:
+            tiles += _rate_tile(label, d["cur"], d["bp"], d.get("series"))
+        else:
+            tiles += _rate_tile(label, None, None)
     st.markdown(f'<div class="mkt-grid">{tiles}</div>', unsafe_allow_html=True)
 
     # 한국 장단기 금리차 (10년 − 2년)
@@ -144,6 +174,8 @@ def render_rates():
         ks = k10["cur"] - k2["cur"]
         note = "정상 (우상향)" if ks >= 0 else "역전"
         st.caption(f"한 10년−2년 장단기 금리차: {ks:+.2f}%p · {note} · "
-                   f"색 = 전일 대비 변화 · 데이터: 한국은행 ECOS")
+                   f"색 = 전일 대비 변화 · 미니차트 = 3개월 추이(눈금=보름) · "
+                   f"데이터: 한국은행 ECOS")
     else:
-        st.caption("색 = 전일 대비 변화(상승 빨강/하락 파랑) · 데이터: 한국은행 ECOS")
+        st.caption("색 = 전일 대비 변화(상승 빨강/하락 파랑) · 미니차트 = 3개월 추이 · "
+                   "데이터: 한국은행 ECOS")
