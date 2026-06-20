@@ -4,6 +4,11 @@
   문제가 있어, 네이버 금융 일별 시세로 '최근 거래일 꼬리'를 보강한다.
   - fetch_index / fetch_history 가 한국 지수일 때만 _merge_naver_tail()을 거친다.
   - 네이버가 실패하면 기존 야후 데이터를 그대로 쓴다(무회귀, graceful degradation).
+
+2026-06 추가: fetch_intraday(1일 차트)가 NXT(넥스트레이드)·시간외 데이터를 섞어
+  마지막 값이 정규장 종가와 어긋나던 문제 수정.
+  - 한국 지수는 정규장(09:00~15:30 KST)만 남긴다.
+  - 헤더 현재값/전일 종가는 네이버 보강 일봉(공식 종가)으로 맞춰 카드·티커와 일치시킨다.
 """
 
 import json
@@ -64,6 +69,10 @@ _PERIOD = {"^KS11": "6mo", "^KQ11": "6mo"}
 # 야후 티커 → 네이버 금융 지수 심볼 (한국 지수 최근일 보강용)
 _KR_NAVER_SYMBOL = {"^KS11": "KOSPI", "^KQ11": "KOSDAQ"}
 
+# 한국 정규장 시간 (NXT/시간외 데이터 제외용)
+_KR_OPEN = dtime(9, 0)
+_KR_CLOSE = dtime(15, 30)
+
 
 # ── 장 운영시간 헬퍼 (자동 새로고침 기본값 판단용) ──────────────
 
@@ -74,7 +83,7 @@ def is_kr_market_open() -> bool:
     now = datetime.now(_KST) if _KST else datetime.now()
     if now.weekday() >= 5:  # 5=토, 6=일
         return False
-    return dtime(9, 0) <= now.time() <= dtime(15, 30)
+    return _KR_OPEN <= now.time() <= _KR_CLOSE
 
 
 # ── 한국 지수 네이버 보강 ───────────────────────────────────────
@@ -254,6 +263,112 @@ def sparkline_points(series, width=100, height=28, pad=3, n=20):
     return " ".join(pts)
 
 
+def _biweekly_ticks(dates):
+    """오름차순 Timestamp 리스트에서 보름(15일) 간격 눈금의 (index, date) 목록.
+
+    마지막 날짜에서 15일씩 거슬러 올라가며 각 시점에 '가장 가까운 거래일'을
+    찾아 인덱스로 매핑한다(거래일은 보통 ~10영업일이 보름에 해당)."""
+    if len(dates) < 2:
+        return []
+    first, last = dates[0], dates[-1]
+    raw, t = [], last
+    while t >= first:
+        raw.append(t)
+        t = t - pd.Timedelta(days=15)
+    raw.reverse()
+    seen, ticks = set(), []
+    for tk in raw:
+        best, bd = 0, None
+        for i, d in enumerate(dates):
+            diff = abs((d - tk).days)
+            if bd is None or diff < bd:
+                bd, best = diff, i
+        if best not in seen:
+            seen.add(best)
+            ticks.append((best, dates[best]))
+    return ticks
+
+
+def sparkline_axis_html(series, color, height=38, n_days=92, label_color=None):
+    """3개월 추이 미니차트(B안): 면적+선 + 하단 보름 눈금 + 월 라벨(HTML).
+
+    series : 날짜(DatetimeIndex) 종가/수익률 Series
+    color  : 선·면 색 / label_color : 축 라벨 색(없으면 color)
+    반환    : '<div class="spark-wrap">…svg…axis…</div>' · 데이터 부족 시 ''.
+    날짜 인덱스가 아니면 축 없이 단순 스파크라인만 그린다(무회귀)."""
+    if series is None:
+        return ""
+    try:
+        s = series.dropna()
+    except Exception:
+        return ""
+    if len(s) < 2:
+        return ""
+
+    # 최근 n_days(달력일)로 슬라이스
+    if isinstance(s.index, pd.DatetimeIndex):
+        try:
+            cutoff = s.index.max() - pd.Timedelta(days=n_days)
+            s = s[s.index >= cutoff]
+        except Exception:
+            pass
+    if len(s) < 2:
+        return ""
+
+    vals = [float(v) for v in s.values]
+    n = len(vals)
+    last = n - 1
+    lo, hi = min(vals), max(vals)
+    rng = (hi - lo) or 1.0
+    pad = 3.0
+    pts = " ".join(
+        f"{(i / last * 100):.1f},"
+        f"{(height - pad - ((v - lo) / rng) * (height - 2 * pad)):.1f}"
+        for i, v in enumerate(vals)
+    )
+    label_color = label_color or color
+
+    # 보름 눈금 + 월 라벨 (날짜 인덱스가 있을 때만)
+    tick_svg, axis_html = "", ""
+    if isinstance(s.index, pd.DatetimeIndex):
+        dates = []
+        for d in s.index:
+            ts = pd.Timestamp(d)
+            if ts.tzinfo is not None:
+                ts = ts.tz_localize(None)
+            dates.append(ts)
+        ticks = _biweekly_ticks(dates)
+        if ticks:
+            marks = ""
+            for idx_i, _d in ticks:
+                x = idx_i / last * 100
+                marks += (f'<line x1="{x:.1f}" y1="{height - 3.2:.1f}" '
+                          f'x2="{x:.1f}" y2="{height}" stroke="{color}" '
+                          f'stroke-width="0.9" opacity="0.5"/>')
+            tick_svg = marks
+            seen_m, spans = set(), ""
+            for k, (idx_i, d) in enumerate(ticks):
+                if d.month in seen_m:
+                    continue
+                seen_m.add(d.month)
+                x = idx_i / last * 100
+                cls = ' class="first"' if (k == 0 or x < 6) else (
+                    ' class="last"' if x > 92 else "")
+                spans += (f'<span{cls} style="left:{x:.1f}%;color:{label_color}">'
+                          f'{d.month}월</span>')
+            if spans:
+                axis_html = f'<div class="spark-axis">{spans}</div>'
+
+    svg = (f'<svg class="heat-spark" viewBox="0 0 100 {height}" '
+           f'preserveAspectRatio="none" style="height:{height}px;margin-top:0;">'
+           f'<polygon points="{pts} 100,{height} 0,{height}" '
+           f'style="fill:{color};opacity:.12"/>'
+           f'<polyline points="{pts}" '
+           f'style="fill:none;stroke:{color};stroke-width:1.6;opacity:.7"/>'
+           f'{tick_svg}</svg>')
+    return f'<div class="spark-wrap">{svg}{axis_html}</div>'
+
+
 @st.cache_data(ttl=3600)
 def fetch_history(ticker: str, period: str = "3mo"):
     """일별 종가 Series (정규화된 날짜 인덱스). 실패 시 None.
@@ -284,6 +399,10 @@ def fetch_intraday(ticker: str, interval: str = "5m"):
     1일 차트용. yfinance 분봉을 받아 '가장 최근 거래일 하루치'만 잘라 반환한다.
     - 당일 데이터가 비어 있으면(개장 전·휴장) 최근 5일에서 마지막 거래일을 사용.
     - 인덱스는 KST(tz-naive)로 변환해 시:분이 그대로 보이게 한다.
+    - 한국 지수(^KS11·^KQ11)는 정규장(09:00~15:30 KST)만 남기고
+      NXT(넥스트레이드)·시간외 단일가 데이터를 제외한다.
+    - 한국 지수의 헤더 현재값/전일 종가는 네이버 보강 일봉(공식 종가)으로 맞춰
+      티커테이프·카드와 동일한 값이 되도록 보정한다.
 
     반환: {"series": pd.Series(시각→종가), "asof": "YYYY-MM-DD",
            "current": float, "change": float, "pct": float,
@@ -320,33 +439,55 @@ def fetch_intraday(ticker: str, interval: str = "5m"):
         if scale != 1.0:
             close = close * scale
 
+        is_kr = ticker in _KR_NAVER_SYMBOL
+
         # 가장 최근 거래일 하루치만 추출
         last_day = close.index[-1].date()
         day_series = close[[d.date() == last_day for d in close.index]]
+
+        # ── 한국 지수: 정규장(09:00~15:30 KST)만 — NXT/시간외 제외 ──
+        if is_kr and len(day_series) >= 1:
+            reg = day_series[[_KR_OPEN <= t.time() <= _KR_CLOSE
+                              for t in day_series.index]]
+            if len(reg) >= 2:
+                day_series = reg
+
         if len(day_series) < 2:
             # 하루치가 너무 적으면 전체 분봉이라도 반환
             day_series = close
 
         current = float(day_series.iloc[-1])
 
-        # 1일 등락 기준 = '전일 종가' 대비 (시가 대비가 아님).
-        # 일봉을 별도로 받아 last_day 직전 거래일의 종가를 base로 사용한다.
+        # ── 전일 종가(base) 및 당일 헤더값 보정 ──
         base = None
-        try:
-            daily = yf.Ticker(ticker).history(period="7d", interval="1d")
-            if not daily.empty:
-                dclose = daily["Close"].dropna()
-                # 배율 동일 적용
-                if scale != 1.0:
-                    dclose = dclose * scale
-                # 인덱스를 날짜로 비교 (tz 영향 제거)
-                dates = [ix.date() for ix in dclose.index]
-                # last_day 이전(미만)의 가장 마지막 종가 = 전일 종가
-                prev_idx = [i for i, dd in enumerate(dates) if dd < last_day]
+        if is_kr:
+            # 네이버 보강 일봉으로 전일 종가 확보 + 당일 헤더값을 공식 종가로 보정.
+            # (장중이면 당일 공식 종가가 아직 없어 same 매칭 실패 → 현재값은
+            #  정규장 마지막 분봉값을 그대로 사용한다.)
+            daily_kr = fetch_history(ticker, "1mo")
+            if daily_kr is not None and len(daily_kr):
+                dts = [ix.date() for ix in daily_kr.index]
+                same = [i for i, dd in enumerate(dts) if dd == last_day]
+                if same:
+                    current = float(daily_kr.iloc[same[-1]])  # 공식 종가로 헤더 보정
+                prev_idx = [i for i, dd in enumerate(dts) if dd < last_day]
                 if prev_idx:
-                    base = float(dclose.iloc[prev_idx[-1]])
-        except Exception:
-            base = None
+                    base = float(daily_kr.iloc[prev_idx[-1]])
+
+        if base is None:
+            # 해외 지수 등: yfinance 일봉에서 last_day 직전 거래일 종가 = 전일 종가
+            try:
+                daily = yf.Ticker(ticker).history(period="7d", interval="1d")
+                if not daily.empty:
+                    dclose = daily["Close"].dropna()
+                    if scale != 1.0:
+                        dclose = dclose * scale
+                    dates = [ix.date() for ix in dclose.index]
+                    prev_idx = [i for i, dd in enumerate(dates) if dd < last_day]
+                    if prev_idx:
+                        base = float(dclose.iloc[prev_idx[-1]])
+            except Exception:
+                base = None
 
         # 전일 종가를 못 구하면 당일 첫 분봉(시가)으로 안전 폴백
         base_is_prev = base is not None
