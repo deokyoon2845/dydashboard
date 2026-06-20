@@ -1,4 +1,4 @@
-"""오늘의 키워드 뷰 — 카테고리·중요도·연속배지·NEW배지·워치리스트★·인라인종목·아카이브.
+"""오늘의 키워드 뷰 — 카테고리·중요도·연속배지·워치리스트★·인라인종목·아카이브.
 
 데스크톱: 2열 그리드 카드 (TOP15) / 모바일: 1열로 자동 전환.
 뉴스 제목은 카드 높이 균일화를 위해 1줄로 표시(말줄임).
@@ -38,7 +38,6 @@ _KW_CSS = """
 .cat-stock{background:#F3EEE6;color:#7C5F2C;}
 .cat-policy{background:#F0E9F3;color:#6B4A7C;}
 .kw-streak{font-size:9.5px;font-weight:700;color:#C2410C;background:#FDEEE3;padding:2px 6px;border-radius:5px;flex:none;}
-.kw-new{font-size:9.5px;font-weight:700;color:#0f6e56;background:#e1f5ee;padding:2px 6px;border-radius:5px;flex:none;}
 .kw-watch{font-size:11px;flex:none;}
 .kw-wbar{height:4px;border-radius:3px;background:var(--line,#ECEDE7);margin:0 0 9px;overflow:hidden;}
 .kw-wbar>span{display:block;height:100%;background:var(--sage,#A7BBA9);border-radius:3px;}
@@ -157,7 +156,6 @@ def _render_items(items, watch_set):
                     if cat else "")
         streak = it.get("streak", 1)
         streak_html = f'<span class="kw-streak">🔥 {streak}일째</span>' if streak and streak >= 2 else ""
-        new_html = '<span class="kw-new">NEW</span>' if it.get("is_new") else ""
 
         # 워치리스트 종목이 엮인 키워드는 카드 강조
         stocks = it.get("stocks") or []
@@ -196,7 +194,7 @@ def _render_items(items, watch_set):
             f'<div class="kw-card-head">'
             f'<span class="kw-rank">{i}</span>'
             f'<span class="kw-kw">{kw}</span>'
-            f'{watch_html}{cat_html}{new_html}{streak_html}</div>'
+            f'{watch_html}{cat_html}{streak_html}</div>'
             f'{wbar}{stocks_html}{news_html}{weak_html}</div>'
         )
 
@@ -253,5 +251,5 @@ def render_keywords():
     # 키워드 카드 (TOP15)
     _render_items(data["items"], watch_set)
     st.caption("※ 키워드·종목·카테고리·중요도는 AI 추출, 링크는 네이버 뉴스 실제 기사. "
-               "🔥 = 연속 등장 일수, NEW = 오늘 첫 등장, ⭐ = 내 워치리스트 종목 포함, "
+               "🔥 = 연속 등장 일수, ⭐ = 내 워치리스트 종목 포함, "
                "막대 = 중요도. 뉴스는 카드당 2건 표시.")
