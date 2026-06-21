@@ -1174,6 +1174,44 @@ def _render_subscriptions():
     today = datetime.now(ZoneInfo("Asia/Seoul")).date()
     WD = ["월", "화", "수", "목", "금", "토", "일"]
 
+    # ── 분양 갱신/진단 (소유자 전용 · 지도 탭과 동일 패턴) ──
+    #   지도 탭의 _re_can_collect()는 같은 키(re_pw/re_unlock) 위젯을 그리므로
+    #   여기서 다시 호출하면 중복키 충돌 → 인증 상태만 직접 읽는다(잠금 해제는 지도 탭에서).
+    try:
+        _pw = st.secrets.get("APP_PASSWORD", "")
+    except Exception:
+        _pw = ""
+    _authed = (not _pw) or st.session_state.get("gen_authed")
+    _sc1, _sc2 = st.columns([3, 1])
+    with _sc1:
+        _do_sub = st.button("🔄 분양 데이터 갱신", key="sub_collect",
+                            disabled=not _authed, use_container_width=True,
+                            help="청약홈 분양정보 API 수집")
+    with _sc2:
+        _do_sdiag = st.button("🔍 연결 진단", key="sub_diag",
+                              use_container_width=True)
+    if not _authed:
+        st.caption("🔒 갱신은 소유자 전용 — '지도' 탭에서 잠금 해제하면 여기서도 갱신돼요.")
+    _serr = st.session_state.get("re_subs_err")
+    if _serr and not st.session_state.get("re_subs"):
+        st.caption(f"분양 자동수집 보류 · {_serr}")
+    if _do_sdiag:
+        from engine.realestate_subscriptions import diagnose_subscriptions
+        with st.spinner("청약홈 연결 점검 중..."):
+            try:
+                _ss, _sm = diagnose_subscriptions()
+            except Exception as e:
+                _ss, _sm = "API_ERROR", str(e)
+        (st.success if _ss in ("OK", "OK_EMPTY") else st.error)(f"[{_ss}] {_sm}")
+    if _do_sub:
+        with st.spinner("청약홈 분양정보 수집 중..."):
+            try:
+                _n = _run_subs_collection()
+                st.success(f"분양 {_n}건으로 갱신했어요.")
+                st.rerun()
+            except Exception as e:
+                st.warning(f"수집 실패 · {e} — 샘플로 표시합니다.")
+
     region = st.segmented_control(
         "지역", ["수도권", "서울", "경기"], default="수도권",
         key="re_sub_region", label_visibility="collapsed")
@@ -1284,8 +1322,10 @@ def _run_collection():
     try:
         from engine.realestate_subscriptions import collect_subscriptions
         subs = collect_subscriptions()
-    except Exception:
+        st.session_state.pop("re_subs_err", None)
+    except Exception as e:
         subs = None
+        st.session_state["re_subs_err"] = str(e)   # 무음 삼킴 금지 — 분양 탭에서 안내
     asof = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")
     st.session_state["re_metrics"] = metrics
     st.session_state["re_anoms"] = anoms
@@ -1301,6 +1341,34 @@ def _run_collection():
             _load_re_snapshot.clear()   # 스냅샷 캐시만 무효화
     except Exception:
         pass
+
+
+def _run_subs_collection():
+    """청약홈 분양만 단독 수집 → 세션 저장 + (가능하면) DB 스냅샷에 분양만 병합.
+       지도 탭 metrics/anomalies는 보존하고 subscriptions만 갱신한다. 건수 반환."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from engine.realestate_subscriptions import collect_subscriptions
+    subs = collect_subscriptions()
+    asof = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")
+    st.session_state["re_subs"] = subs
+    st.session_state.pop("re_subs_err", None)
+    try:
+        from modules.db import (supabase_configured, save_realestate,
+                                load_realestate)
+        if supabase_configured():
+            metrics = st.session_state.get("re_metrics")
+            anoms = st.session_state.get("re_anoms")
+            if metrics is None or anoms is None:
+                snap = load_realestate() or {}
+                metrics = metrics if metrics is not None else snap.get("metrics")
+                anoms = anoms if anoms is not None else snap.get("anomalies")
+            save_realestate(metrics=metrics, anomalies=anoms,
+                            subscriptions=subs, asof=asof)
+            _load_re_snapshot.clear()
+    except Exception:
+        pass
+    return len(subs)
 
 
 def _re_can_collect():
