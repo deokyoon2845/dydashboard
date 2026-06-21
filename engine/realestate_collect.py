@@ -483,7 +483,7 @@ def _fmt_eok(manwon):
 
 def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=40):
     """특이거래 리스트. 뷰어 fetch_anomalies와 동일한 튜플 형식으로 반환.
-       (유형, 배경, 글자색, 단지, 지역, 면적, 가격, 변동, 거래유형, 제외여부)"""
+       (유형, 배경, 글자색, 단지, 지역, 면적, 가격, 변동, 거래유형, 제외여부, 거래일ISO)"""
     asof = asof or date.today()
     _preflight(asof)
     key = _get_key()
@@ -521,18 +521,18 @@ def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=
                 area_s = f"{round(area)}㎡"
                 base = (apt, name, area_s, _fmt_eok(r["price"]))
                 if len(grp) >= 2 and r["price"] >= hi:
-                    items.append(("신고가", *_BG["신고가"], *base, "신고", r["trade"] or "-", r["direct"]))
+                    items.append(("신고가", *_BG["신고가"], *base, "신고", r["trade"] or "-", r["direct"], r["date"].isoformat()))
                 elif len(grp) >= 2 and r["price"] <= lo:
-                    items.append(("신저가", *_BG["신저가"], *base, "신저", r["trade"] or "-", r["direct"]))
+                    items.append(("신저가", *_BG["신저가"], *base, "신저", r["trade"] or "-", r["direct"], r["date"].isoformat()))
                 idx = grp.index(r)
                 if idx > 0:
                     prev_p = grp[idx - 1]["price"]
                     if prev_p:
                         dpct = (r["price"] / prev_p - 1) * 100
                         if dpct >= JUMP_PCT:
-                            items.append(("급등", *_BG["급등"], *base, f"+{dpct:.1f}%", r["trade"] or "-", r["direct"]))
+                            items.append(("급등", *_BG["급등"], *base, f"+{dpct:.1f}%", r["trade"] or "-", r["direct"], r["date"].isoformat()))
                         elif dpct <= -JUMP_PCT:
-                            items.append(("급락", *_BG["급락"], *base, f"{dpct:.1f}%", r["trade"] or "-", r["direct"]))
+                            items.append(("급락", *_BG["급락"], *base, f"{dpct:.1f}%", r["trade"] or "-", r["direct"], r["date"].isoformat()))
 
         apt_recent, apt_total = {}, {}
         for r in rows:
@@ -543,7 +543,7 @@ def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=
             avg_wk = apt_total[apt] / prev_weeks
             if avg_wk > 0 and rc >= 3 and rc >= VOL_SURGE * avg_wk:
                 items.append(("거래량 급증", *_BG["거래량 급증"], apt, name, "전체",
-                              f"{rc}건/주", f"+{round((rc/avg_wk-1)*100)}%", "-", False))
+                              f"{rc}건/주", f"+{round((rc/avg_wk-1)*100)}%", "-", False, asof.isoformat()))
 
     if stats["rows"] == 0:
         raise RuntimeError("특이거래 판정용 실거래를 한 건도 받지 못했어요." + _zero_hint(stats))
