@@ -1,7 +1,8 @@
 name: 부동산 실거래 수집 (일일)
 
 # ──────────────────────────────────────────────────────────────────────────
-#  국토부 실거래를 매일 1회 수집해 Supabase(realestate_snapshots)에 저장한다.
+#  KB 가격지수·국토부 실거래·청약홈 분양정보를 매일 06:30 KST 수집해
+#  Supabase(realestate_snapshots)에 저장한다. 뷰어(modules/realestate.py)는 DB만 읽는다.
 #  · 리포트 파이프라인(daily.yml)과 분리 — 잡 이름·테이블이 달라 충돌 없음.
 #  · 부동산은 일/주 단위 신선도라 cron 지연(증시에서 문제였던)이 사실상 무해.
 #  · 수동 실행도 가능: Actions → 이 워크플로 → Run workflow.
@@ -10,7 +11,7 @@ name: 부동산 실거래 수집 (일일)
 
 on:
   schedule:
-    - cron: '34 22 * * *'      # 매일 22:34 UTC = 07:34 KST (저부하 시간대·정시 회피)
+    - cron: '30 21 * * *'      # 매일 21:30 UTC = 06:30 KST (KB·국토부·분양 자동 수집)
   workflow_dispatch:
 
 permissions:
