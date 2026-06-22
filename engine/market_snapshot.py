@@ -5,6 +5,9 @@
 """
 
 from datetime import datetime, timedelta
+import json
+
+import requests
 
 _INDEX_TARGETS = {
     "코스피": "^KS11", "코스닥": "^KQ11",
@@ -12,6 +15,9 @@ _INDEX_TARGETS = {
     "원/달러": "KRW=X", "VIX": "^VIX",
 }
 _RSI_TARGETS = {"코스피": "^KS11", "코스닥": "^KQ11", "나스닥": "^IXIC"}
+
+# 야후 티커 → 네이버 금융 지수 심볼 (한국 지수 공식 종가 보정용)
+_KR_NAVER_SYMBOL = {"^KS11": "KOSPI", "^KQ11": "KOSDAQ"}
 
 # 미국 섹터 ETF — 간밤 미국장 흐름 파악용
 _US_SECTOR_TARGETS = {
@@ -30,19 +36,68 @@ def _history(ticker, period="3mo"):
     return df["Close"].dropna()
 
 
+def _naver_kr_daily(symbol: str) -> list:
+    """네이버 금융에서 코스피/코스닥 최근(약 40일) 일별 (날짜ISO, 종가)를 오래된→최신 순으로.
+    symbol: 'KOSPI'|'KOSDAQ'. 실패 시 [].
+
+    ★야후(^KS11·^KQ11) 일봉은 최근 거래일을 며칠씩 늦게 주거나 엉뚱한 종가를 주는 일이
+      잦아, 마지막 두 종가를 차분하면 등락률이 크게 틀어진다(예: 코스닥 -3% → -6%대).
+      KRX 공식 종가는 네이버가 클라우드에서도 안정적으로 주므로 이걸로 등락률을 계산한다.
+      (뷰어 modules/indices.py의 _merge_naver_tail과 동일한 소스 — 엔진은 streamlit 비의존이라
+       별도 구현.)"""
+    try:
+        end = datetime.now()
+        start = end - timedelta(days=40)
+        url = ("https://api.finance.naver.com/siseJson.naver"
+               f"?symbol={symbol}&requestType=1"
+               f"&startTime={start:%Y%m%d}&endTime={end:%Y%m%d}&timeframe=day")
+        r = requests.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        # 헤더 행에 작은따옴표가 섞여 옴 → 큰따옴표로 치환 후 파싱
+        rows = json.loads(r.text.strip().replace("'", '"'))
+        out = []
+        for row in rows[1:]:  # 0번째는 헤더(['날짜','시가',...])
+            if not row or len(row) < 5:
+                continue
+            d = str(row[0]).strip()
+            if len(d) < 8:
+                continue
+            try:
+                out.append((f"{d[:4]}-{d[4:6]}-{d[6:8]}", float(row[4])))  # 종가
+            except (ValueError, TypeError):
+                continue
+        out.sort(key=lambda x: x[0])
+        return out
+    except Exception:
+        return []
+
+
 def fetch_index_lines():
     lines = []
     for name, tk in _INDEX_TARGETS.items():
-        try:
-            close = _history(tk, "10d")
-            if len(close) < 2:
+        line = None
+        # 코스피·코스닥: 야후 일봉이 부정확/지연 → 네이버 공식 종가로 등락률 계산.
+        if tk in _KR_NAVER_SYMBOL:
+            daily = _naver_kr_daily(_KR_NAVER_SYMBOL[tk])
+            if len(daily) >= 2:
+                prev = daily[-2][1]
+                d_iso, cur = daily[-1]
+                pct = (cur / prev - 1) * 100 if prev else 0.0
+                d = f"{d_iso[5:7]}/{d_iso[8:10]}"
+                line = f"- {name}: {cur:,.2f} ({pct:+.2f}%, {d} 종가)"
+        # 네이버 실패(또는 해외 지수)면 야후로 폴백 — 무회귀.
+        if line is None:
+            try:
+                close = _history(tk, "10d")
+                if len(close) < 2:
+                    continue
+                cur, prev = float(close.iloc[-1]), float(close.iloc[-2])
+                pct = (cur / prev - 1) * 100
+                d = close.index[-1].strftime("%m/%d")
+                line = f"- {name}: {cur:,.2f} ({pct:+.2f}%, {d} 종가)"
+            except Exception:
                 continue
-            cur, prev = float(close.iloc[-1]), float(close.iloc[-2])
-            pct = (cur / prev - 1) * 100
-            d = close.index[-1].strftime("%m/%d")
-            lines.append(f"- {name}: {cur:,.2f} ({pct:+.2f}%, {d} 종가)")
-        except Exception:
-            continue
+        lines.append(line)
     return lines
 
 
