@@ -127,6 +127,22 @@ def list_slugs() -> list[str]:
     return [r["slug"] for r in (res.data or [])]
 
 
+def list_recent(limit: int = 12) -> list[dict]:
+    """최근 보고서들을 최신순으로 (slug, report_date, report_kind, data)까지 묶어 반환.
+    타임라인 등 '최근 며칠치 본문'이 한 번에 필요한 뷰어용. limit는 행 수(날짜 수 아님).
+
+    정렬: report_date desc → slug desc. slug='YYYY-MM-DD_HHMM'이라, 같은 날짜에서는
+    HHMM이 늦은(=장마감 후) 행이 먼저 온다 → 호출 측에서 날짜별 '처음 행'만 취하면
+    자동으로 장마감 후 우선이 된다."""
+    res = (_client().table(TABLE)
+           .select("slug,report_date,report_kind,data")
+           .order("report_date", desc=True)
+           .order("slug", desc=True)
+           .limit(limit)
+           .execute())
+    return res.data or []
+
+
 def load_by_slug(slug: str) -> dict | None:
     """slug(=파일명 stem)로 보고서 data(JSON) 단건 조회."""
     res = (_client().table(TABLE)
