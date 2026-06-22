@@ -1,17 +1,24 @@
-"""[뷰어] 관심 종목 브리핑 + 관심종목 관리 (키워드 탭 하단에 표시).
+"""[뷰어] 관심 종목 브리핑 (키워드 탭 하단에 표시).
 
-브리핑: 워치리스트 종목별로
-  · 오늘 등락(현재가·등락률) + 오늘자 미니차트
-  · '왜 움직였나' (오늘 리포트 토픽 / 키워드에서 이 종목을 짚은 항목)
-  · 리포트·키워드 근거(한 줄에 하나씩, 말줄임 없음)
-관리: 같은 섹션 하단에서 관심종목 추가·삭제(쉼표 구분). 저장은 Supabase DB(영속).
+레이아웃(A안): 종목마다 한 행을 차지하며
+  · 왼쪽  : '지수 탭과 동일한 양식'의 큰 인터랙티브 차트
+            (면적+선 · 마우스 십자선 · 가로 줌 · 기간 1일/1개월/3개월/6개월/1년)
+  · 오른쪽: 그 종목의 근거 패널
+            ('왜 움직였나' + 오늘 리포트 토픽 / 키워드에서 이 종목을 짚은 항목)
+기간 선택은 맨 위 공용 라디오 1개(지수 탭과 동일)로, 모든 종목 차트에 함께 적용.
+관리(추가·삭제, 쉼표 구분)는 같은 섹션 하단. 저장은 Supabase DB(영속).
 
 시세·차트 데이터 경로 (★pykrx 제거 — KRX가 클라우드 IP를 영구 차단하기 때문):
   · 종목명 → 종목코드(+시장)   : 네이버 자동완성 API (ac.stock.naver.com)
-  · 가격/등락/미니차트         : yfinance(fetch_intraday→오늘, fetch_history→일별)
-                                  실패 시 네이버 siseJson(일별)로 폴백
+  · 큰 차트(일별)             : yfinance fetch_history(1y)  · 실패 시 네이버 siseJson(일별)
+  · 큰 차트(1일·5분봉)        : yfinance fetch_intraday(5m)
+  · 요약 띠 시세              : fetch_intraday→오늘 / fetch_history→일별 / 네이버 siseJson
   · 리포트 토픽 = Supabase DB의 최신 보고서 topics[].stocks
   · 키워드 = data/keywords_today.json items[].stocks
+
+차트 함수(_big_stock_chart / _big_stock_chart_intraday)는 app.py의
+_big_index_chart / _big_index_chart_intraday 와 의도적으로 동일한 구조다.
+지수=지수값(소수 2자리), 종목=원 단위(정수)라 표시 포맷만 ',.0f'로 맞췄다.
 """
 
 import html
@@ -20,13 +27,14 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import altair as alt
 import pandas as pd
 import requests
 import streamlit as st
 
 from modules.stocks import naver_stock_url
 from modules.watchlist import load_watchlist, save_watchlist
-from modules.indices import fetch_intraday, fetch_history, sparkline_points
+from modules.indices import fetch_intraday, fetch_history
 
 _KW_PATH = Path("data/keywords_today.json")
 _KST = ZoneInfo("Asia/Seoul")
@@ -34,37 +42,42 @@ _UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                      "AppleWebKit/537.36 (KHTML, like Gecko) "
                      "Chrome/124.0 Safari/537.36"}
 
+# 지수 탭과 동일한 기간 → 일수 매핑
+_PERIODS = {"1일": 1, "1개월": 31, "3개월": 92, "6개월": 183, "1년": 366}
+
+# 지수 탭과 동일한 색 (미니멀 미스트)
+_UP_C, _DOWN_C = "#B65F5A", "#5A7CA0"
+_AXIS_C, _GRID_C = "#9a9b92", "#ECEDE7"
+
 _WB_CSS = """
 <style>
 .wb-bar{height:3px;width:30px;background:var(--sage,#A7BBA9);border-radius:3px;margin:0 0 12px;}
 .wb-strip{background:var(--summary-bg,#F6F7F2);border:1px solid var(--line,#ECEDE7);border-radius:10px;
-  padding:9px 13px;font-size:12.5px;color:var(--sage-deep,#7E9A83);font-weight:600;margin:2px 0 14px;line-height:1.65;}
+  padding:9px 13px;font-size:12.5px;color:var(--sage-deep,#7E9A83);font-weight:600;margin:2px 0 8px;line-height:1.65;}
 .wb-strip b{color:var(--ink,#34352f);font-weight:700;}
 .wb-strip b.up{color:var(--up,#B65F5A);} .wb-strip b.down{color:var(--down,#5A7CA0);}
-.wb-list{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
-@media(max-width:680px){.wb-list{grid-template-columns:1fr;}}
-.wb-card{background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);border-left:3px solid var(--sage,#A7BBA9);
-  border-radius:0 14px 14px 0;padding:13px 15px;transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease;}
-.wb-card:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(52,53,47,.08);border-color:var(--sage-deep,#7E9A83);}
-.wb-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
-.wb-name{font-size:15px;font-weight:700;color:var(--ink,#34352f);}
-.wb-name a{color:var(--ink,#34352f);text-decoration:none;}
-.wb-name a:hover{text-decoration:underline;}
-.wb-right{text-align:right;flex:none;}
-.wb-val{font-size:16px;font-weight:700;color:var(--ink,#34352f);letter-spacing:-.02em;}
-.wb-chg{font-size:12.5px;font-weight:700;margin-top:2px;}
-.wb-chg.up{color:var(--up,#B65F5A);} .wb-chg.down{color:var(--down,#5A7CA0);}
-.wb-na{font-size:11.5px;color:var(--muted,#9a9b92);margin-top:3px;}
-/* 오늘자 미니차트 */
-.wb-spark{width:100%;height:30px;display:block;margin:9px 0 2px;}
-.wb-why{font-size:12px;color:var(--muted,#9a9b92);margin-top:8px;line-height:1.55;word-break:keep-all;}
-/* 근거: 한 줄에 하나씩, 말줄임 없이 전체 표시 */
-.wb-refs{display:flex;flex-direction:column;gap:6px;margin-top:11px;}
-.wb-ref{font-size:11.5px;font-weight:600;padding:6px 10px;border-radius:8px;border:1px solid var(--line,#ECEDE7);
-  background:var(--pill-bg,#F1F2EC);color:var(--pill-ink,#5d6258);line-height:1.55;
+/* 차트 헤더 (지수 탭 헤더와 동일 톤) */
+.wb-chead{margin-bottom:2px;}
+.wb-chead .nm{font-size:12px;color:var(--muted,#9a9b92);font-weight:600;}
+.wb-chead .nm a{color:var(--ink,#34352f);text-decoration:none;}
+.wb-chead .nm a:hover{text-decoration:underline;}
+.wb-chead .val{font-size:24px;font-weight:700;color:var(--ink,#34352f);letter-spacing:-.02em;}
+.wb-chead .chg{font-size:13px;font-weight:700;margin-left:2px;}
+.wb-chead .chg.up{color:var(--up,#B65F5A);} .wb-chead .chg.down{color:var(--down,#5A7CA0);}
+.wb-cna{font-size:12px;color:var(--muted,#9a9b92);padding:18px 2px;}
+/* 오른쪽 근거 패널 */
+.wb-refpanel{padding-top:4px;}
+.wb-why-h{font-size:11px;font-weight:700;letter-spacing:.05em;color:var(--muted,#9a9b92);
+  text-transform:uppercase;margin:0 0 6px;}
+.wb-why{font-size:12.5px;color:var(--pill-ink,#5d6258);line-height:1.55;margin-bottom:11px;word-break:keep-all;}
+.wb-refs{display:flex;flex-direction:column;gap:6px;}
+.wb-ref{font-size:11.5px;font-weight:600;padding:7px 10px;border-radius:8px;border:1px solid var(--line,#ECEDE7);
+  background:var(--pill-bg,#F1F2EC);color:var(--pill-ink,#5d6258);line-height:1.5;
   word-break:keep-all;white-space:normal;}
 .wb-ref.rpt{background:#eef4ef;color:var(--sage-deep,#7E9A83);border-color:#dfe9e0;}
 .wb-ref b{font-weight:700;}
+.wb-na{font-size:11.5px;color:var(--muted,#9a9b92);}
+.wb-div{height:1px;background:var(--line,#ECEDE7);margin:16px 0 18px;}
 .wb-mng-h{font-size:12px;font-weight:700;letter-spacing:.05em;color:var(--muted,#9a9b92);margin:6px 0 8px;text-transform:uppercase;}
 </style>
 """
@@ -130,7 +143,10 @@ def _suffix_candidates(code, suffix):
 # ── 네이버 siseJson 일별 폴백 (yfinance 실패 시) ──
 
 def _naver_daily(code: str):
-    """네이버 siseJson 일별 종가. 반환 dict 또는 None."""
+    """네이버 siseJson 일별 종가. 반환 dict 또는 None.
+
+    반환: {'close', 'pct', 'series'(DatetimeIndex), 'asof'} · 약 70일치.
+    """
     try:
         end = date.today().strftime("%Y%m%d")
         start = (date.today() - timedelta(days=70)).strftime("%Y%m%d")
@@ -159,23 +175,22 @@ def _naver_daily(code: str):
         return None
 
 
-# ── 종목 시세 + 오늘자 미니차트 조회 ──
+# ── 요약 띠용: 종목 오늘 시세 (현재가·등락) ──
 
 @st.cache_data(ttl=600)
 def _quote(name: str):
-    """종목명 → 시세/차트. 반환:
-      {'code', 'close', 'pct', 'series', 'asof', 'intraday'} (코드 없으면 code=None).
+    """종목명 → 오늘 시세. 반환:
+      {'code', 'close', 'pct', 'asof'} (코드 없으면 code=None).
     경로: 코드해석(네이버) → yfinance 분봉(오늘) → yfinance 일별 → 네이버 siseJson 일별.
     """
     code, suffix = _resolve_code(name)
-    base = {"code": code, "close": None, "pct": None,
-            "series": None, "asof": "", "intraday": False}
+    base = {"code": code, "close": None, "pct": None, "asof": ""}
     if not code:
         return base
 
     cands = _suffix_candidates(code, suffix)
 
-    # 1) yfinance 분봉(오늘) — '오늘자 미니차트'에 가장 적합
+    # 1) yfinance 분봉(오늘)
     for tk in cands:
         try:
             d = fetch_intraday(tk, "5m")
@@ -183,9 +198,7 @@ def _quote(name: str):
             d = None
         if d and d.get("series") is not None and len(d["series"]) >= 2:
             base.update({"close": d.get("current"), "pct": d.get("pct"),
-                         "series": d["series"],
-                         "asof": datetime.now(_KST).strftime("%Y%m%d"),
-                         "intraday": True})
+                         "asof": datetime.now(_KST).strftime("%Y%m%d")})
             return base
 
     # 2) yfinance 일별
@@ -201,15 +214,51 @@ def _quote(name: str):
                 asof = pd.to_datetime(close.index[-1]).strftime("%Y%m%d")
             except Exception:
                 asof = ""
-            base.update({"close": cur, "pct": pct, "series": close,
-                         "asof": asof, "intraday": False})
+            base.update({"close": cur, "pct": pct, "asof": asof})
             return base
 
     # 3) 네이버 siseJson 일별 폴백
     nv = _naver_daily(code)
     if nv:
-        base.update(nv)
+        base.update({"close": nv["close"], "pct": nv["pct"], "asof": nv["asof"]})
     return base
+
+
+# ── 큰 차트용 시계열 ──
+
+@st.cache_data(ttl=1800)
+def _history_1y(name: str):
+    """큰 차트(일별)용 1년 종가 Series. yfinance 우선, 실패 시 네이버(~70일) 폴백.
+    반환: pd.Series(DatetimeIndex→종가) 또는 None."""
+    code, suffix = _resolve_code(name)
+    if not code:
+        return None
+    for tk in _suffix_candidates(code, suffix):
+        try:
+            close = fetch_history(tk, "1y")
+        except Exception:
+            close = None
+        if close is not None and len(close) >= 2:
+            return close
+    nv = _naver_daily(code)
+    if nv and nv.get("series") is not None and len(nv["series"]) >= 2:
+        return nv["series"]
+    return None
+
+
+def _intraday(name: str):
+    """큰 차트(1일·5분봉)용. fetch_intraday 후보 중 첫 성공분. 실패 시 None."""
+    code, suffix = _resolve_code(name)
+    if not code:
+        return None
+    for tk in _suffix_candidates(code, suffix):
+        try:
+            d = fetch_intraday(tk, "5m")
+        except Exception:
+            d = None
+        if d and d.get("series") is not None and len(d["series"]) >= 2:
+            return d
+    return None
 
 
 # ── 링크 소스: 최신 리포트 토픽 / 오늘의 키워드 ──
@@ -237,7 +286,7 @@ def _fmt_asof(d: str) -> str:
     return d
 
 
-# ── 행(카드) 데이터 빌드 ──
+# ── 행 데이터 빌드 (요약 띠 + 근거) ──
 
 def _build_rows(watchlist):
     report = _latest_report()
@@ -270,70 +319,241 @@ def _build_rows(watchlist):
         rows.append({
             "name": name, "code": q.get("code"),
             "close": q.get("close"), "pct": q.get("pct"),
-            "series": q.get("series"), "intraday": q.get("intraday"),
             "why": why, "rpt": rpt[:2], "kw": kw[:2],
         })
     asof = max(asofs) if asofs else ""
     return rows, asof
 
 
-def _spark_svg(series, up: bool) -> str:
-    """오늘자/최근 미니차트 SVG (지수 카드 sparkline과 동일 규격: 100x28)."""
-    if series is None or len(series) < 2:
-        return ""
+# ── 차트 헤더 HTML (지수 탭 헤더와 동일 톤 · 종목명은 네이버 링크) ──
+
+def _chart_head(name, code, cur, change, pct, sub=""):
+    up = change >= 0
+    color = _UP_C if up else _DOWN_C
+    cls = "up" if up else "down"
+    arrow = "▲" if change > 0 else ("▼" if change < 0 else "▬")
+    nm = html.escape(name)
+    if code:
+        nm_inner = (f'<a href="{html.escape(naver_stock_url(name))}" '
+                    f'target="_blank" rel="noopener">⭐ {nm}</a>')
+    else:
+        nm_inner = f'⭐ {nm}'
+    sub_html = f' · {html.escape(sub)}' if sub else ''
+    return (f'<div class="wb-chead">'
+            f'<span class="nm">{nm_inner}{sub_html}</span><br>'
+            f'<span class="val">{cur:,.0f}</span> '
+            f'<span class="chg {cls}">{arrow} {change:+,.0f} ({pct:+.2f}%)</span>'
+            f'</div>')
+
+
+# ── 큰 차트: 일별(1개월/3개월/6개월/1년) — app._big_index_chart 동일 구조 ──
+
+def _big_stock_chart(r, days: int):
+    name, code = r["name"], r.get("code")
+    if not code:
+        st.markdown(_chart_head(name, None, 0, 0, 0), unsafe_allow_html=True)
+        st.markdown('<div class="wb-cna">종목 코드를 확인하지 못했어요. '
+                    '(KRX 상장명과 정확히 일치해야 시세가 떠요)</div>',
+                    unsafe_allow_html=True)
+        return
+
+    close = _history_1y(name)
+    if close is None or len(close) < 2:
+        st.markdown(_chart_head(name, code, 0, 0, 0), unsafe_allow_html=True)
+        st.markdown(f'<div class="wb-cna">{html.escape(name)} 데이터를 불러오지 못했어요. '
+                    f'(잠시 후 새로고침)</div>', unsafe_allow_html=True)
+        return
+
+    df = pd.DataFrame({"날짜": pd.to_datetime(close.index),
+                       "종가": pd.to_numeric(close.values, errors="coerce")}).dropna()
+    if len(df) < 2:
+        st.markdown(_chart_head(name, code, 0, 0, 0), unsafe_allow_html=True)
+        st.markdown(f'<div class="wb-cna">{html.escape(name)} 데이터가 부족해요.</div>',
+                    unsafe_allow_html=True)
+        return
+
+    cutoff = df["날짜"].max() - pd.Timedelta(days=days)
+    seg = df[df["날짜"] >= cutoff]
+    if len(seg) < 2:
+        seg = df
+
+    cur, prev = float(seg["종가"].iloc[-1]), float(seg["종가"].iloc[-2])
+    change = cur - prev
+    pct = (change / prev) * 100 if prev else 0.0
+    period_up = cur >= float(seg["종가"].iloc[0])
+    line_c = _UP_C if period_up else _DOWN_C
+
+    st.markdown(_chart_head(name, code, cur, change, pct), unsafe_allow_html=True)
+
+    lo_v, hi_v = float(seg["종가"].min()), float(seg["종가"].max())
+    pad_v = (hi_v - lo_v) * 0.08 or 1.0
+    y_dom = [lo_v - pad_v, hi_v + pad_v]
+
+    x_enc = alt.X("날짜:T", axis=alt.Axis(title=None, format="%m/%d",
+                                          labelColor=_AXIS_C, grid=False))
+    y_enc = alt.Y("종가:Q", scale=alt.Scale(domain=y_dom, nice=False, clamp=True, zero=False),
+                  axis=alt.Axis(title=None, labelColor=_AXIS_C, gridColor=_GRID_C,
+                                format=",.0f"))
+    tip = [alt.Tooltip("날짜:T", format="%Y-%m-%d"),
+           alt.Tooltip("종가:Q", format=",.0f")]
+
+    seg_a = seg.copy()
+    seg_a["바닥"] = y_dom[0]
+    area = alt.Chart(seg_a).mark_area(color=line_c, opacity=0.13).encode(
+        x=x_enc, y=y_enc, y2=alt.Y2("바닥:Q"), tooltip=tip)
+    line_main = alt.Chart(seg).mark_line(color=line_c, strokeWidth=2).encode(
+        x=x_enc, y=y_enc, tooltip=tip)
+
     try:
-        pts = sparkline_points(series, n=min(60, len(series)))
+        hover = alt.selection_point(fields=["날짜"], nearest=True,
+                                    on="mouseover", empty=False)
+        zoom = alt.selection_interval(bind="scales", encodings=["x"])
+        selectors = alt.Chart(seg).mark_point().encode(
+            x=x_enc, opacity=alt.value(0)).add_params(hover)
+        vrule = alt.Chart(seg).mark_rule(color=_AXIS_C, strokeDash=[3, 3]).encode(
+            x=x_enc).transform_filter(hover)
+        hrule = alt.Chart(seg).mark_rule(color=_AXIS_C, strokeDash=[3, 3]).encode(
+            y=y_enc).transform_filter(hover)
+        hpoints = alt.Chart(seg).mark_point(size=60, color=line_c, filled=True).encode(
+            x=x_enc, y=y_enc,
+            opacity=alt.condition(hover, alt.value(1), alt.value(0)))
+        htext = alt.Chart(seg).mark_text(
+            align="left", dx=8, dy=-10, fontSize=12, fontWeight="bold",
+            color=line_c).encode(
+            x=x_enc, y=y_enc,
+            text=alt.condition(hover, alt.Text("종가:Q", format=",.0f"),
+                               alt.value("")))
+        chart = (alt.layer(area, line_main, selectors, vrule, hrule, hpoints, htext)
+                 .add_params(zoom)
+                 .properties(height=260, background="transparent")
+                 .configure_view(strokeWidth=0))
     except Exception:
-        pts = ""
-    if not pts:
-        return ""
-    v = "--up" if up else "--down"
-    return (f'<svg class="wb-spark" viewBox="0 0 100 28" preserveAspectRatio="none">'
-            f'<polygon points="{pts} 100,28 0,28" style="fill:var({v},#B65F5A);opacity:.10"/>'
-            f'<polyline points="{pts}" style="fill:none;stroke:var({v},#B65F5A);stroke-width:1.6"/>'
-            f'</svg>')
+        chart = (alt.layer(area, line_main)
+                 .properties(height=260, background="transparent")
+                 .configure_view(strokeWidth=0))
+
+    st.altair_chart(chart, use_container_width=True)
 
 
-def _card_html(r) -> str:
-    nm = html.escape(r["name"])
-    if r["code"]:
-        name_inner = (f'<a href="{html.escape(naver_stock_url(r["name"]))}" '
-                      f'target="_blank" rel="noopener">⭐ {nm}</a>')
-    else:
-        name_inner = f'⭐ {nm}'
+# ── 큰 차트: 1일(5분봉) — app._big_index_chart_intraday 동일 구조 ──
 
-    has_price = r["close"] is not None and r["pct"] is not None
-    if has_price:
-        up = r["pct"] >= 0
-        cls = "up" if up else "down"
-        arrow = "▲" if r["pct"] > 0 else ("▼" if r["pct"] < 0 else "▬")
-        price_html = (f'<div class="wb-val">{r["close"]:,.0f}</div>'
-                      f'<div class="wb-chg {cls}">{arrow} {r["pct"]:+.2f}%</div>')
-    elif r["code"]:
-        up = True
-        price_html = '<div class="wb-na">시세 조회 실패</div>'
-    else:
-        up = True
-        price_html = '<div class="wb-na">코드 미확인</div>'
+def _big_stock_chart_intraday(r):
+    name, code = r["name"], r.get("code")
+    if not code:
+        st.markdown(_chart_head(name, None, 0, 0, 0), unsafe_allow_html=True)
+        st.markdown('<div class="wb-cna">종목 코드를 확인하지 못했어요.</div>',
+                    unsafe_allow_html=True)
+        return
 
-    spark_html = _spark_svg(r.get("series"), up) if has_price else ""
+    d = _intraday(name)
+    if not d or d.get("series") is None or len(d["series"]) < 2:
+        st.markdown(_chart_head(name, code, 0, 0, 0), unsafe_allow_html=True)
+        st.markdown(f'<div class="wb-cna">{html.escape(name)} 분봉 데이터를 불러오지 못했어요. '
+                    f'(분봉은 지연·누락될 수 있어요. 다른 기간을 선택해 보세요.)</div>',
+                    unsafe_allow_html=True)
+        return
 
-    # 근거: 한 줄에 하나씩, 말줄임 없이 전체 표시
+    s = d["series"]
+    df = pd.DataFrame({"시각": pd.to_datetime(s.index),
+                       "종가": pd.to_numeric(s.values, errors="coerce")}).dropna()
+    if len(df) < 2:
+        st.markdown(_chart_head(name, code, 0, 0, 0), unsafe_allow_html=True)
+        st.markdown(f'<div class="wb-cna">{html.escape(name)} 분봉 데이터가 부족해요.</div>',
+                    unsafe_allow_html=True)
+        return
+
+    cur = d["current"]
+    change = d["change"]
+    pct = d["pct"]
+    day_up = change >= 0
+    prev_close = d.get("prev_close")
+    base_is_prev = d.get("base_is_prev", False)
+    line_c = _UP_C if day_up else _DOWN_C
+
+    base_label = "전일 종가 대비" if base_is_prev else "시가 대비"
+    sub = f'{d.get("asof", "")} ({base_label})'
+    st.markdown(_chart_head(name, code, cur, change, pct, sub=sub),
+                unsafe_allow_html=True)
+
+    lo_v, hi_v = float(df["종가"].min()), float(df["종가"].max())
+    span = (hi_v - lo_v) or (hi_v * 0.01) or 1.0
+
+    show_baseline = False
+    if base_is_prev and prev_close is not None and prev_close > 0:
+        if (lo_v - 1.5 * span) <= prev_close <= (hi_v + 1.5 * span):
+            lo_v = min(lo_v, prev_close)
+            hi_v = max(hi_v, prev_close)
+            show_baseline = True
+
+    pad_v = (hi_v - lo_v) * 0.10 or (hi_v * 0.01) or 1.0
+    y_dom = [lo_v - pad_v, hi_v + pad_v]
+
+    x_enc = alt.X("시각:T", axis=alt.Axis(title=None, format="%H:%M",
+                                          labelColor=_AXIS_C, grid=False))
+    y_enc = alt.Y("종가:Q", scale=alt.Scale(domain=y_dom, nice=False, clamp=True, zero=False),
+                  axis=alt.Axis(title=None, labelColor=_AXIS_C, gridColor=_GRID_C,
+                                format=",.0f"))
+    tip = [alt.Tooltip("시각:T", format="%H:%M"),
+           alt.Tooltip("종가:Q", format=",.0f")]
+
+    df_a = df.copy()
+    df_a["바닥"] = y_dom[0]
+    area = alt.Chart(df_a).mark_area(color=line_c, opacity=0.10).encode(
+        x=x_enc, y=y_enc, y2=alt.Y2("바닥:Q"), tooltip=tip)
+
+    layers = [area]
+    line_layer = alt.Chart(df).mark_line(color=line_c, strokeWidth=2).encode(
+        x=x_enc, y=y_enc, tooltip=tip)
+    layers.append(line_layer)
+    if show_baseline:
+        baseline = alt.Chart(pd.DataFrame({"y": [prev_close]})).mark_rule(
+            color=_AXIS_C, strokeDash=[4, 4], opacity=0.7).encode(y="y:Q")
+        layers.insert(0, baseline)
+
+    try:
+        hover = alt.selection_point(fields=["시각"], nearest=True,
+                                    on="mouseover", empty=False)
+        selectors = alt.Chart(df).mark_point().encode(
+            x=x_enc, opacity=alt.value(0)).add_params(hover)
+        vrule = alt.Chart(df).mark_rule(color=_AXIS_C, strokeDash=[3, 3]).encode(
+            x=x_enc).transform_filter(hover)
+        hrule = alt.Chart(df).mark_rule(color=_AXIS_C, strokeDash=[3, 3]).encode(
+            y=y_enc).transform_filter(hover)
+        hpoints = alt.Chart(df).mark_point(size=60, color=line_c, filled=True).encode(
+            x=x_enc, y=y_enc,
+            opacity=alt.condition(hover, alt.value(1), alt.value(0)))
+        htext = alt.Chart(df).mark_text(
+            align="left", dx=8, dy=-10, fontSize=12, fontWeight="bold",
+            color=line_c).encode(
+            x=x_enc, y=y_enc,
+            text=alt.condition(hover, alt.Text("종가:Q", format=",.0f"),
+                               alt.value("")))
+        chart = (alt.layer(*layers, selectors, vrule, hrule, hpoints, htext)
+                 .properties(height=260, background="transparent")
+                 .configure_view(strokeWidth=0))
+    except Exception:
+        chart = (alt.layer(*layers)
+                 .properties(height=260, background="transparent")
+                 .configure_view(strokeWidth=0))
+
+    st.altair_chart(chart, use_container_width=True)
+
+
+# ── 오른쪽 근거 패널 HTML ──
+
+def _refs_html(r) -> str:
+    parts = ('<div class="wb-why-h">왜 움직였나</div>'
+             f'<div class="wb-why">{html.escape(r["why"])}</div>')
     refs = ""
     for i, t in r["rpt"]:
         refs += f'<div class="wb-ref rpt"><b>리포트 {i}</b> · {html.escape(t)}</div>'
     for i, k in r["kw"]:
         refs += f'<div class="wb-ref"><b>키워드 {i}</b> · {html.escape(k)}</div>'
-    refs_html = f'<div class="wb-refs">{refs}</div>' if refs else ""
-
-    return (f'<div class="wb-card">'
-            f'<div class="wb-top">'
-            f'<div class="wb-name">{name_inner}</div>'
-            f'<div class="wb-right">{price_html}</div>'
-            f'</div>'
-            f'{spark_html}'
-            f'<div class="wb-why">{html.escape(r["why"])}</div>'
-            f'{refs_html}</div>')
+    if refs:
+        parts += f'<div class="wb-refs">{refs}</div>'
+    else:
+        parts += '<div class="wb-na">오늘 리포트·키워드에서 직접 언급 없음</div>'
+    return f'<div class="wb-refpanel">{parts}</div>'
 
 
 def _render_manage(current):
@@ -364,7 +584,7 @@ def render_watchlist_tab():
         st.markdown(
             '<div class="empty"><div class="ico">⭐</div>'
             '<div class="msg">아직 관심종목이 없어요</div>'
-            '<div class="hint">아래에서 종목을 추가하면 오늘 등락·미니차트와 그 이유가 카드로 떠요</div></div>',
+            '<div class="hint">아래에서 종목을 추가하면 지수 탭과 같은 양식의 차트와 그 이유가 떠요</div></div>',
             unsafe_allow_html=True)
         st.divider()
         _render_manage(wl)
@@ -372,7 +592,7 @@ def render_watchlist_tab():
 
     rows, asof = _build_rows(wl)
 
-    # 요약 띠
+    # 요약 띠 (오늘 기준 — 기간 선택과 무관)
     prices = [r["pct"] for r in rows if r["pct"] is not None]
     n_rpt = sum(len(r["rpt"]) for r in rows)
     n_kw = sum(len(r["kw"]) for r in rows)
@@ -389,13 +609,36 @@ def render_watchlist_tab():
                  f'리포트 언급 <b>{n_rpt}건</b> · 키워드 언급 <b>{n_kw}건</b>')
     st.markdown(f'<div class="wb-strip">{strip}</div>', unsafe_allow_html=True)
 
-    cards = "".join(_card_html(r) for r in rows)
-    st.markdown(f'<div class="wb-list">{cards}</div>', unsafe_allow_html=True)
+    # 공용 기간 선택 (지수 탭과 동일)
+    period_label = st.radio(
+        "조회 기간", list(_PERIODS.keys()), index=3, horizontal=True,
+        key="wb_chart_period", label_visibility="collapsed")
+    is_intraday = (period_label == "1일")
+    days = _PERIODS[period_label]
+
+    # 종목별: [큰 차트 | 근거 패널]
+    for i, r in enumerate(rows):
+        c1, c2 = st.columns([1.7, 1], gap="medium")
+        with c1:
+            if is_intraday:
+                _big_stock_chart_intraday(r)
+            else:
+                _big_stock_chart(r, days)
+        with c2:
+            st.markdown(_refs_html(r), unsafe_allow_html=True)
+        if i < len(rows) - 1:
+            st.markdown('<div class="wb-div"></div>', unsafe_allow_html=True)
 
     asof_txt = f" · 시세 기준 {_fmt_asof(asof)}" if asof else ""
-    st.caption("종목명 클릭=네이버 시세 · ⭐=관심종목 · 근거=오늘 리포트 토픽/키워드에서 이 종목을 짚은 항목 · "
-               "미니차트=오늘(휴장 시 직전 거래일) 흐름" + asof_txt
-               + " · 시세는 yfinance·네이버 기준 약 15분 지연.")
+    if is_intraday:
+        st.caption("당일(휴장 시 직전 거래일) 5분봉 · 전일 종가 대비 등락(회색 점선=전일 종가) · "
+                   "종목명 클릭=네이버 시세 · ⭐=관심종목 · 근거=오늘 리포트/키워드에서 이 종목을 짚은 항목 · "
+                   "yfinance 기준 약 15분 지연이며 일부 누락될 수 있어요." + asof_txt)
+    else:
+        st.caption("차트 위에 마우스를 올리면 해당 시점·값이 십자선으로 표시되고, 가로 드래그로 기간을 확대할 수 있어요 "
+                   "(지수 탭과 동일). · 종목명 클릭=네이버 시세 · ⭐=관심종목 · "
+                   "근거=오늘 리포트/키워드에서 이 종목을 짚은 항목 · "
+                   "일부 종목은 네이버 폴백 시 약 3개월까지만 표시될 수 있어요." + asof_txt)
 
     st.divider()
     _render_manage(wl)
