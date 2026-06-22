@@ -437,14 +437,14 @@ def _phase_from_series(data):
     return f'<div class="re-phase"><b>시장 국면</b>{spans}</div>'
 
 
-# (유형, 배경, 글자색, 단지, 지역, 면적, 가격, 변동, 거래유형, 제외여부, 거래일ISO)
+# (유형, 배경, 글자색, 단지, 지역, 면적, 가격, 변동, 거래유형, 제외여부, 거래일ISO, 세대수)
 _SAMPLE_ANOMALIES = [
-    ("신고가", "#FCEBEB", "#A32D2D", "래미안원베일리", "서초구", "84㎡", "58.0억", "+3.2%", "중개", False, "2026-06-20"),
-    ("신고가", "#FCEBEB", "#A32D2D", "힐스테이트판교엘포레", "성남시", "84㎡", "24.5억", "+2.6%", "중개", False, "2026-06-19"),
-    ("거래량 급증", "#FAEEDA", "#854F0B", "파크리오", "송파구", "전체", "31건/주", "+148%", "-", False, "2026-06-20"),
-    ("급등", "#FCEBEB", "#A32D2D", "광교중흥S클래스", "수원시", "84㎡", "17.8억", "+8.1%", "중개", False, "2026-06-18"),
-    ("신저가", "#E6F1FB", "#0C447C", "상계주공7", "노원구", "59㎡", "6.1억", "-4.0%", "중개", False, "2026-06-19"),
-    ("급락", "#E6F1FB", "#0C447C", "은마", "강남구", "84㎡", "26.0억", "-7.5%", "직거래", True, "2026-06-17"),
+    ("신고가", "#FCEBEB", "#A32D2D", "래미안원베일리", "서초구", "84㎡", "58.0억", "+3.2%", "중개", False, "2026-06-20", 2990),
+    ("신고가", "#FCEBEB", "#A32D2D", "힐스테이트판교엘포레", "성남시", "84㎡", "24.5억", "+2.6%", "중개", False, "2026-06-19", 1185),
+    ("거래량 급증", "#FAEEDA", "#854F0B", "파크리오", "송파구", "전체", "31건/주", "+148%", "-", False, "2026-06-20", 6864),
+    ("급등", "#FCEBEB", "#A32D2D", "광교중흥S클래스", "수원시", "84㎡", "17.8억", "+8.1%", "중개", False, "2026-06-18", 2231),
+    ("신저가", "#E6F1FB", "#0C447C", "상계주공7", "노원구", "59㎡", "6.1억", "-4.0%", "중개", False, "2026-06-19", 2634),
+    ("급락", "#E6F1FB", "#0C447C", "은마", "강남구", "84㎡", "26.0억", "-7.5%", "직거래", True, "2026-06-17", 4424),
 ]
 
 
@@ -1106,15 +1106,17 @@ _WD_KR = ["월", "화", "수", "목", "금", "토", "일"]
 
 
 def _anom_norm(rec):
-    """특이거래 레코드를 11필드로 정규화(구 10필드 스냅샷 호환). 실패 시 None.
-       (유형,배경,글자색,단지,지역,면적,가격,변동,거래유형,제외,거래일ISO|None)"""
+    """특이거래 레코드를 12필드로 정규화(구 10/11필드 스냅샷 호환). 실패 시 None.
+       (유형,배경,글자색,단지,지역,면적,가격,변동,거래유형,제외,거래일ISO|None,세대수|None)"""
     try:
         rec = list(rec)
     except TypeError:
         return None
     if len(rec) < 10:
         return None
-    return tuple(rec[:10]) + (rec[10] if len(rec) >= 11 else None,)
+    return (tuple(rec[:10])
+            + (rec[10] if len(rec) >= 11 else None,)   # 거래일ISO
+            + (rec[11] if len(rec) >= 12 else None,))   # 세대수
 
 
 def _anom_date(d):
@@ -1143,6 +1145,9 @@ def _render_anomalies():
         "정렬", ["최신순", "변동순", "금액순", "유형순"],
         default="최신순", key="re_anom_sort")
     exclude_direct = st.checkbox("직거래(증여추정) 제외", value=True, key="re_excl_direct")
+    only_big = st.checkbox(
+        "1,000세대+ 단지만", value=True, key="re_only_big",
+        help="공동주택 세대수 기준 대단지만 — 소규모 단지 노이즈 제거")
 
     def _pass_region(gu):
         if reg_f == "서울":
@@ -1154,9 +1159,16 @@ def _render_anomalies():
         return True
 
     anoms = [na for na in (_anom_norm(r) for r in fetch_anomalies()) if na]
-    # 지역·직거래 필터까지 적용한 풀(유형 건수 집계용 · 유형 필터는 미적용)
-    pool = [r for r in anoms
-            if not (r[9] and exclude_direct) and _pass_region(r[4])]
+    # 지역·직거래 필터 적용 풀(유형 건수 집계용 · 유형 필터는 미적용)
+    base_pool = [r for r in anoms
+                 if not (r[9] and exclude_direct) and _pass_region(r[4])]
+    # '1,000세대+' 필터: 세대수(인덱스 11)가 1,000 이상인 것만(세대수 미상은 제외)
+    if only_big:
+        pool = [r for r in base_pool
+                if isinstance(r[11], (int, float)) and r[11] >= 1000]
+        hidden = len(base_pool) - len(pool)
+    else:
+        pool, hidden = base_pool, 0
 
     # 유형별 건수 밴드
     _order = ["신고가", "신저가", "거래량 급증", "급등", "급락"]
@@ -1170,6 +1182,9 @@ def _render_anomalies():
         f'<span class="re-stat"><b style="color:{_col[t]}">{cnt[t]}</b>{t}</span>'
         for t in _order)
     st.markdown(f'<div class="re-statband">{chips}</div>', unsafe_allow_html=True)
+    if only_big and hidden:
+        st.caption(f"1,000세대+ 만 표시 · 소규모·세대수 미상 {hidden}건 숨김 "
+                   "(공동주택 단지정보 기준)")
 
     # 유형 필터 적용 → 표시 행
     rows = [r for r in pool
@@ -1200,7 +1215,7 @@ def _render_anomalies():
     grouped = (sort_f == "최신순")
     html = ""
     cur_day = None
-    for typ, bg, fg, apt, gu, area, price, chg, trade, excl, d in rows:
+    for typ, bg, fg, apt, gu, area, price, chg, trade, excl, d, units in rows:
         if grouped:
             dl = _anom_daylabel(d)
             if dl != cur_day:
@@ -1209,6 +1224,8 @@ def _render_anomalies():
         v = _chg_abs(chg)
         chg_cls = "dn" if str(chg).startswith("-") else "up"
         emph = "lv2" if v >= 7 else ("lv1" if v >= 3 else "")
+        unit_s = (f" · {int(units):,}세대"
+                  if isinstance(units, (int, float)) and units else "")
         trade_html = ('<span style="color:#A32D2D">직거래(증여추정·제외)</span>'
                       if trade == "직거래" else f"거래유형 {trade}")
         date_inline = ("" if grouped or not _anom_date(d)
@@ -1218,15 +1235,14 @@ def _render_anomalies():
         html += (f'<div class="re-anom{" excl" if excl else ""}">'
                  f'<span class="re-bdg" style="background:{bg};color:{fg}">{typ}</span>'
                  f'<div style="flex:1"><div class="re-apt">{apt_link} '
-                 f'<span class="re-sub">· {gu} · {area}</span></div>'
+                 f'<span class="re-sub">· {gu} · {area}{unit_s}</span></div>'
                  f'<div class="re-sub">{date_inline}{trade_html}</div></div>'
                  f'<div><div class="re-price">{price}</div>'
                  f'<div class="re-chg {chg_cls} {emph}">{chg}</div></div></div>')
     st.markdown(html, unsafe_allow_html=True)
-    st.caption("신고가/신저가·거래량 급변·급등락. 직거래는 증여 추정으로 기본 제외 "
-               "(국토부 실거래 '거래유형' 기준). 정렬: 최신/변동/금액/유형 · "
-               "최신순은 거래일별 묶음 · 단지명 클릭 시 네이버부동산. "
-               "신고가 판정은 실거래 이력 누적 후 정확해져요.")
+    st.caption("신고가/신저가·거래량 급변·급등락 · 1,000세대+ 대단지 기본 표시 "
+               "(공동주택 단지정보 세대수 기준) · 직거래(증여추정) 기본 제외 · "
+               "최신순은 거래일별 묶음 · 단지명 클릭 시 네이버부동산.")
 
 
 # ── 메인 ────────────────────────────────────────────────────────
