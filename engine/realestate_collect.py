@@ -429,6 +429,7 @@ _KB_URL = {
     "change": f"{_KB_BASE}/prcIndxInxrdcRt",      # 가격지수 증감률
     "trend": f"{_KB_BASE}/maktTrnd",              # 매수우위 등 시장동향
     "jratio": f"{_KB_BASE}/dealCntstTnantRato",   # 전세가격비율
+    "lead50": f"{_KB_BASE}/leadApt50Indx",         # KB선도아파트50지수
 }
 _KB_SIDO = {"서울": "11", "경기": "41"}
 
@@ -515,7 +516,8 @@ def collect_kb_region_jeonse_ratio(월간주간="01"):
 
 
 def _kb_seoul_series(url_key, params, points=60):
-    """KB 응답에서 '서울' 시도행의 값 시계열(최근 points개). 실패 시 []."""
+    """KB 응답에서 '서울' 시도행의 값 시계열(최근 points개). 실패 시 [].
+    (priceIndex·dealCntstTnantRato 등 dataList가 평면 숫자인 엔드포인트용.)"""
     data = _kb_get(_KB_URL[url_key], {**params, "지역코드": _KB_SIDO["서울"]})
     rows = _kb_rows(data)
     if not rows:
@@ -523,6 +525,51 @@ def _kb_seoul_series(url_key, params, points=60):
     pick = next((r for r in rows if r["name"] in ("서울", "서울특별시")), rows[0])
     vals = [v for v in pick["vals"] if v is not None]
     return [round(v, 2) for v in vals[-points:]]
+
+
+# maktTrnd(매수우위·전세수급·전망 등)는 dataList 항목이 dict라 메뉴별 지수 컬럼을 뽑아야 한다.
+_KB_MAKT_COL = {"01": "매수우위지수", "02": "매매거래지수", "03": "전세수급지수",
+                "04": "전세거래지수", "05": "매매상승하락전망지수",
+                "06": "전세상승하락전망지수"}
+
+
+def _kb_maktrnd_series(메뉴코드, 월간주간="02", 지역="서울", points=60):
+    """maktTrnd → 서울 시도행 지수 시계열. dataList 항목(dict)에서 메뉴별 지수만 추출.
+    실패 시 []. (05·06 전망지수는 월간만 제공 → 월간주간='01' 권장.)"""
+    data = _kb_get(_KB_URL["trend"], {"메뉴코드": 메뉴코드, "월간주간구분코드": 월간주간,
+                                      "지역코드": _KB_SIDO.get(지역, "11")})
+    if not data:
+        return []
+    dates = data.get("날짜리스트") or []
+    rows = data.get("데이터리스트") or []
+    if not rows:
+        return []
+    col = _KB_MAKT_COL.get(메뉴코드)
+    pick = next((r for r in rows
+                 if str(r.get("지역명", "")) in ("서울", "서울특별시")), rows[0])
+    out = []
+    for v in (pick.get("dataList") or [])[:len(dates)]:
+        if isinstance(v, dict):
+            v = v.get(col)
+        try:
+            out.append(round(float(v), 2))
+        except (TypeError, ValueError):
+            continue
+    return out[-points:]
+
+
+def _kb_lead50_series(points=60):
+    """KB선도아파트50지수(전국) 시계열. leadApt50Indx 전용 응답('선도50지수리스트')."""
+    data = _kb_get(_KB_URL["lead50"], {})
+    if not data:
+        return []
+    out = []
+    for v in (data.get("선도50지수리스트") or []):
+        try:
+            out.append(round(float(v), 2))
+        except (TypeError, ValueError):
+            continue
+    return out[-points:]
 
 
 # ── 미분양(KOSIS)·금리(ECOS) — 엔진에서 수집(뷰어 라이브 호출 제거) ──
@@ -600,10 +647,26 @@ def collect_indicators():
     except Exception as e:
         print(f"[realestate] KB 전세지수 실패: {e}")
     try:
+        add("lead50", "선도아파트50지수", "전국 · 주간(KB) · 상위 50개 단지", "", "#A35F5A",
+            _kb_lead50_series())
+    except Exception as e:
+        print(f"[realestate] KB 선도50지수 실패: {e}")
+    try:
+        # maktTrnd는 dataList가 dict라 전용 파서 사용(기존 평면 파싱 버그 수정)
         add("buy", "매수우위지수", "서울 · 주간(KB) · 100=중립", "", "#B89A5C",
-            _kb_seoul_series("trend", {"메뉴코드": "01", "월간주간구분코드": "02"}))
+            _kb_maktrnd_series("01", "02"))
     except Exception as e:
         print(f"[realestate] KB 매수우위 실패: {e}")
+    try:
+        add("jsup", "전세수급지수", "서울 · 주간(KB) · 100=균형", "", "#6E8FA8",
+            _kb_maktrnd_series("03", "02"))
+    except Exception as e:
+        print(f"[realestate] KB 전세수급 실패: {e}")
+    try:
+        add("outlook", "매매가격전망지수", "서울 · 월간(KB) · 100=중립", "", "#C2A05A",
+            _kb_maktrnd_series("05", "01"))
+    except Exception as e:
+        print(f"[realestate] KB 매매전망 실패: {e}")
     try:
         add("jr", "전세가율", "서울 · 월간(KB)", "%", "#7E9A83",
             _kb_seoul_series("jratio", {"월간주간구분코드": "01", "매물종별구분": "01"}))
