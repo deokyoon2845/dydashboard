@@ -1381,9 +1381,14 @@ def _run_collection():
         st.session_state.pop(k, None)
 
 
-def _re_can_collect():
+def _re_can_collect(slot: str = "map"):
     """갱신(대량 API 호출)은 소유자 전용. APP_PASSWORD 미설정이면 누구나 가능.
-       리포트 생성 잠금(gen_authed)을 그대로 재사용해 한 번 풀면 둘 다 열린다."""
+       리포트 생성 잠금(gen_authed)을 그대로 재사용해 한 번 풀면 둘 다 열린다.
+
+    slot: 위젯 키 접미사. st.tabs는 모든 탭 본문을 매 런마다 실행하므로
+          지도·분양 탭에서 각각 호출돼도 위젯 키가 겹치지 않도록 호출 위치별로
+          고유값을 넘긴다(StreamlitDuplicateElementKey 방지). 잠금 해제는
+          gen_authed 공유라 어느 탭에서 풀어도 둘 다 열린다."""
     try:
         pw = st.secrets.get("APP_PASSWORD", "")
     except Exception:
@@ -1392,8 +1397,8 @@ def _re_can_collect():
         return True
     with st.expander("🔒 실거래 갱신은 소유자 전용이에요", expanded=False):
         st.caption("둘러보기는 자유롭고, 갱신(공공API 대량 호출)만 소유자 비밀번호가 필요해요.")
-        p = st.text_input("비밀번호", type="password", key="re_pw")
-        if st.button("잠금 해제", key="re_unlock"):
+        p = st.text_input("비밀번호", type="password", key=f"re_pw_{slot}")
+        if st.button("잠금 해제", key=f"re_unlock_{slot}"):
             if p == pw:
                 st.session_state["gen_authed"] = True
                 st.success("잠금 해제됐어요.")
@@ -1416,7 +1421,7 @@ def _render_collect_controls():
         st.caption("수도권 아파트 · 현재 샘플 — 매일 06:30 자동 수집(KB 가격지수·실거래) 후 "
                    "실데이터로 채워집니다.")
 
-    authed = _re_can_collect()
+    authed = _re_can_collect("map")
     col_a, col_b = st.columns([3, 1])
     with col_a:
         do_collect = st.button(
@@ -1490,7 +1495,7 @@ def render_realestate():
         st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
         st.title("분양 단지")
         st.caption("한국부동산원 청약홈 분양정보 · 청약 임박·진행 우선 · 매일 06:30 자동 갱신")
-        if _re_can_collect():
+        if _re_can_collect("sub"):
             if st.button(
                     "🔄 최신 분양정보 불러오기", key="re_sub_refresh",
                     help="매일 06:30 GitHub Actions가 청약홈 분양정보를 수집해 DB에 저장합니다. "
