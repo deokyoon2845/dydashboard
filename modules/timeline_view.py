@@ -15,14 +15,12 @@
 모바일은 최신 날짜가 위로 오도록 역순(reversed)으로 렌더 (데스크톱 지그재그는 오름차순 유지).
 """
 
-import glob
 import html
-import json
-import os
 import re
 
 import streamlit as st
 
+from modules import db
 from modules.indices import fetch_history
 
 _REPORT_DIR = "reports"
@@ -120,15 +118,14 @@ _TL_CSS = """
 
 
 def _reports_signature() -> str:
-    """reports/ 폴더의 (파일명, 수정시각) 시그니처.
-    리포트가 추가·삭제·수정되면 값이 바뀌어 st.cache_data 캐시가 자동 무효화된다."""
-    parts = []
-    for path in sorted(glob.glob(os.path.join(_REPORT_DIR, "*.json"))):
-        try:
-            parts.append(f"{os.path.basename(path)}:{os.path.getmtime(path):.0f}")
-        except OSError:
-            continue
-    return "|".join(parts)
+    """DB 보고서 목록(slug)의 시그니처.
+    보고서가 추가·삭제되면 값이 바뀌어 st.cache_data 캐시가 자동 무효화된다.
+    (저장소가 reports/ 폴더 → Supabase DB로 이전돼, 폴더 시그니처 대신 slug 묶음 사용.)
+    DB 접근 실패 시 빈 문자열 — 무회귀."""
+    try:
+        return "|".join(db.list_slugs())
+    except Exception:
+        return ""
 
 
 def _infer_kind(fname: str, rep: dict) -> str:
@@ -210,37 +207,46 @@ def _index_from_report(rep: dict) -> dict:
 
 @st.cache_data(ttl=600)
 def load_timeline_entries(limit: int, sig: str) -> list:
-    """reports/*.json에서 타임라인 항목 로드. 같은 날짜는 장마감 후(post) 우선, 날짜 오름차순.
-    최근 limit개 날짜만 반환(limit보다 적으면 있는 만큼).
-    sig: _reports_signature() — 캐시 키 전용(함수 안에서는 사용 안 함)."""
-    # 날짜 -> (priority, sort_key, rep, fname) : post 우선, 같으면 최신(HHMM) 우선
+    """DB(reports 테이블)에서 타임라인 항목 로드. 같은 날짜는 장마감 후(post) 우선,
+    날짜 오름차순. 최근 limit개 날짜만 반환(limit보다 적으면 있는 만큼).
+    sig: _reports_signature() — 캐시 키 전용(함수 안에서는 사용 안 함).
+
+    ★저장소 이전(2026-06): 예전엔 reports/*.json을 glob했으나, 보고서는 이제 DB에만
+      안정적으로 쌓인다(엔진은 GitHub Actions 임시 디스크에 쓰고 레포엔 커밋하지 않음).
+      뷰어가 로컬 파일을 보면 'DB엔 있는데 타임라인엔 없는' 날짜가 생긴다(예: 최신 거래일)
+      → 시황·PDF 뷰어와 동일하게 DB로 통일.
+    """
+    try:
+        # 하루 최대 2건(장전·장후)이므로 limit*2 + 여유로 충분히 limit개 날짜를 덮는다.
+        rows = db.list_recent(limit * 2 + 6)
+    except Exception:
+        rows = []
+
+    # 날짜 -> 우선 행 1건. rows는 report_date desc, slug desc(=HHMM 늦은 순=post 먼저)로
+    # 정렬돼 오므로, 각 날짜에서 '처음 만난 행'이 곧 장마감 후 우선 행이다.
     by_date = {}
-    for path in glob.glob(os.path.join(_REPORT_DIR, "*.json")):
-        fname = os.path.basename(path)
-        m = re.search(r"(\d{4}-\d{2}-\d{2})", fname)
-        if not m:
-            continue
-        d = m.group(1)
-        sort_key = re.sub(r"\D", "", fname)
-        try:
-            with open(path, encoding="utf-8") as f:
-                rep = json.load(f)
-        except Exception:
-            continue
-        priority = 1 if _infer_kind(fname, rep) == "post" else 0
-        cur = by_date.get(d)
-        if cur is None or (priority, sort_key) > (cur[0], cur[1]):
-            by_date[d] = (priority, sort_key, rep, fname)
+    for r in rows:
+        d = str(r.get("report_date", "")).strip()
+        if not re.match(r"\d{4}-\d{2}-\d{2}", d):
+            m = re.match(r"(\d{4}-\d{2}-\d{2})", str(r.get("slug", "")))
+            if not m:
+                continue
+            d = m.group(1)
+        if d not in by_date:
+            by_date[d] = r
 
     entries = []
     for d in sorted(by_date.keys())[-limit:]:
-        _, _, rep, fname = by_date[d]
+        r = by_date[d]
+        rep = r.get("data") or {}
+        slug = str(r.get("slug", "")) or d
         mood_raw = str(rep.get("mood", "")).lower()
         label, cls, color = _MOOD_MAP.get(mood_raw, _MOOD_MAP["neutral"])
-        kind = _infer_kind(fname, rep)
+        rk = rep.get("report_kind") or r.get("report_kind")
+        kind = rk if rk in ("pre", "post") else _infer_kind(slug, rep)
         entries.append({
             "date": d,
-            "report": fname,
+            "report": slug,
             "kind": kind,
             "kind_label": "장마감 후" if kind == "post" else "장전",
             "headline": str(rep.get("headline", "")).strip() or "(헤드라인 없음)",
