@@ -384,6 +384,49 @@ _IND_META = {
 # baseline(중립선 100)이 의미 있는 심리지표만 — 매수우위·전세수급·매매전망
 _IND_BASELINE = {"buy": 100, "jsup": 100, "outlook": 100}
 
+# ── 지표 탭 v2: 의미 레이어(사이클·그룹·신호·해석) 메타 ───────────────
+#   g=그룹 · baseline=중립선(없으면 None) · inv=역행(낮을수록 시장 긍정) · interp=한 줄 해석
+_INDV2_GROUPS = {
+    "lead":   {"name": "선행지표", "desc": "먼저 움직인다 — 방향 신호"},
+    "coin":   {"name": "동행지표", "desc": "지금 가격·거래"},
+    "supply": {"name": "수급·심리", "desc": "전세·갭·기대"},
+    "fund":   {"name": "펀더멘털·금융", "desc": "재고·공급·구매력 (역행)"},
+}
+_INDV2_DEF = {
+    "buy":      {"g": "lead", "cad": "week", "baseline": 100, "inv": False,
+                 "interp": "100 넘으면 매수자 우위·과열권. 매수 심리의 선행 신호."},
+    "outlook":  {"g": "lead", "cad": "month", "baseline": 100, "inv": False,
+                 "interp": "100 위 = 상승 기대 우세. 향후 가격 방향의 선행."},
+    "lead50":   {"g": "lead", "cad": "week", "baseline": None, "inv": False,
+                 "interp": "상급지 50단지가 시장을 선도—먼저 반등/하락(매매지수와 강상관)."},
+    "sale":     {"g": "coin", "cad": "week", "baseline": None, "inv": False,
+                 "interp": "실제 매매가 레벨. 시장의 '현재값'."},
+    "jeonse":   {"g": "coin", "cad": "week", "baseline": None, "inv": False,
+                 "interp": "전세가 레벨. 오르면 매매 하방을 받쳐줌."},
+    "jsup":     {"g": "supply", "cad": "week", "baseline": 100, "inv": False,
+                 "interp": "100 위 = 전세 공급부족(수요>공급). 전세·매매 동반 자극."},
+    "jr":       {"g": "supply", "cad": "month", "baseline": None, "inv": False,
+                 "interp": "전세/매매 비율. 높을수록 갭 부담↓·하방 지지↑."},
+    "joutlook": {"g": "supply", "cad": "month", "baseline": 100, "inv": False,
+                 "interp": "전세 상승 기대. 전세 불안의 선행 신호."},
+    "unsold":   {"g": "fund", "cad": "month", "baseline": None, "inv": True,
+                 "interp": "재고. 줄면 수급 양호(상승 신호). ↑는 반대 해석."},
+    "rate":     {"g": "fund", "cad": "month", "baseline": None, "inv": True,
+                 "interp": "조달비용. 내리면 구매력↑(상승 신호). ↑는 반대 해석."},
+}
+# 카드 표시 순서(그룹 보기 내 정렬). 선도50은 선행 보조로 매매전망 뒤에 둠.
+_INDV2_ORDER = ["buy", "outlook", "lead50", "sale", "jeonse",
+                "jsup", "jr", "joutlook", "unsold", "rate"]
+# 연결예정 슬롯 — 데이터 소스 미연결. 가짜 데이터 대신 정직하게 자리만 표시(차트·신호 없음).
+_INDV2_PENDING = [
+    {"k": "volume", "g": "coin", "lab": "실거래량(수도권)",
+     "note": "국토부 실거래 월별 집계 · 엔진 누적 저장 연결 예정"},
+    {"k": "auction", "g": "lead", "lab": "경매 낙찰가율",
+     "note": "법원경매 월간 · 데이터 소스 연결 예정"},
+    {"k": "supply", "g": "fund", "lab": "입주물량(수도권)",
+     "note": "국토부 입주예정 월별 · 연결 예정"},
+]
+
 # 엔진 연결 전(또는 DB 비었을 때) 샘플 — 현재 상승장 반영(가짜로 하락처럼 안 보이게)
 _IND_SAMPLE = [
     {"key": "sale", "label": "매매가격지수", "sub": "서울 · 주간(KB)", "unit": "", "col": "#B65F5A",
@@ -401,6 +444,8 @@ _IND_SAMPLE = [
      "series": [108, 111, 114, 117, 120, 123, 126, 128, 131, 133, 135, 137, 139, 140, 142, 143, 144, 145, 145, 146]},
     {"key": "outlook", "label": "매매가격전망지수", "sub": "서울 · 월간(KB) · 100=중립", "unit": "", "col": "#C2A05A",
      "series": [96, 98, 101, 104, 107, 109, 112, 114, 116, 117, 118, 119]},
+    {"key": "joutlook", "label": "전세가격전망지수", "sub": "서울 · 월간(KB) · 100=중립", "unit": "", "col": "#8AA0B5",
+     "series": [97, 99, 101, 103, 105, 107, 108, 110, 111, 111, 112, 112]},
     {"key": "jr", "label": "전세가율", "sub": "서울 · 월간(KB)", "unit": "%", "col": "#7E9A83",
      "series": [51.4, 51.7, 52.0, 52.3, 52.6, 52.9, 53.1, 53.3, 53.5, 53.7, 53.8, 53.9]},
     {"key": "unsold", "label": "미분양", "sub": "전국 · 월간(KOSIS)", "unit": "만호", "col": "#8A7C9E",
@@ -694,10 +739,10 @@ table.sm td:first-child,table.sm th:first-child{text-align:left}
 .seg button:last-child{border-right:none}.seg button.on{background:#EEF1EC;color:var(--ink);font-weight:700}
 .mapwrap{position:relative;width:100%;border:1px solid var(--line);border-radius:12px;background:#FCFCFA;overflow:hidden}
 #map{display:block;width:100%}
-.dist{stroke:#FCFCFA;stroke-width:0.7;cursor:pointer;transition:fill .45s ease,opacity .25s ease,stroke-width .12s ease}
+.dist{stroke:#ffffff;stroke-width:0.8;cursor:pointer;transition:fill .45s ease,opacity .25s ease,stroke-width .12s ease}
 .dlabel{pointer-events:none;fill:#2f302a;font-family:var(--kfont)}
 #hoverLabel{pointer-events:none;font-family:var(--kfont);font-weight:800;fill:#23241d;opacity:0;transition:opacity .12s ease}
-#border{fill:none;stroke:#6E7A6A;stroke-width:2.2;stroke-linejoin:round;pointer-events:none}
+#border{fill:none;stroke:#AEB7A6;stroke-width:1.6;stroke-linejoin:round;pointer-events:none}
 .tip{position:absolute;pointer-events:none;background:var(--card);border:1px solid var(--line2);border-radius:8px;padding:9px 11px;font-size:12px;min-width:150px;box-shadow:0 6px 22px rgba(52,53,47,.13);opacity:0;transform:translateY(4px);transition:opacity .15s,transform .15s;z-index:5}
 .maprow{display:grid;grid-template-columns:1fr 270px;gap:12px;align-items:start}
 .rail .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:10px}
@@ -715,7 +760,7 @@ table.sm td:first-child,table.sm th:first-child{text-align:left}
 @media(min-width:681px){.heatwrap{display:none}}
 </style></head><body>
 <div class="kpis" id="kpis"></div>
-<table class="sm"><thead><tr><th>권역</th><th>매매(월간)</th><th>전세(월간)</th><th>거래(주)</th><th>전세가율</th></tr></thead><tbody id="regBody"></tbody></table>
+<table class="sm"><thead><tr><th>권역</th><th>매매(월간)</th><th>전세(월간)</th><th>거래(건)</th><th>전세가율</th></tr></thead><tbody id="regBody"></tbody></table>
 <div>
   <div class="seg" id="regionSeg"><button data-r="all" class="on">수도권</button><button data-r="seoul">서울</button><button data-r="gg">경기</button></div>
   <div class="seg" id="metricSeg"><button data-m="mm" class="on">매매 등락</button><button data-m="js">전세 등락</button><button data-m="v">거래량</button><button data-m="jr">전세가율</button></div>
@@ -731,19 +776,19 @@ table.sm td:first-child,table.sm th:first-child{text-align:left}
   </div>
 </div>
 <div class="heatwrap"><div class="heat" id="heatgrid"></div></div>
-<div class="note">데스크탑은 지도, 모바일은 변동률 큰 순 타일 · 색 = 월간 매매지수 변동률 · 빨강=상승, 파랑=하락 · 굵은 선=서울·경기 경계 · 서울25+경기23</div>
+<div class="note">데스크탑은 지도, 모바일은 변동률 큰 순 타일 · 색 = 월간 매매지수 변동률 · 빨강=상승, 파랑=하락 · sage 선=서울·경기 경계 · 서울25+경기23</div>
 <script>
 """
 
 _MAP_SCRIPT = r"""
 const fmt=v=>(v>0?"+":"")+v.toFixed(2)+"%";
 const cls=v=>v>0.005?"up":(v<-0.005?"dn":"");
-function colMM(v){if(v>=0.55)return"#C16C64";if(v>=0.30)return"#D49089";if(v>=0.12)return"#E6BBB6";if(v>-0.02)return"#EFEEE9";if(v>-0.15)return"#C6D4E4";return"#A9C0DA";}
-function colV(v){if(v>=90)return"#7FC4AC";if(v>=60)return"#A6D6C4";if(v>=40)return"#C5E4D8";if(v>=25)return"#DCEFE8";return"#EDF5F1";}
-function colJR(v){if(v>=70)return"#9FB6D2";if(v>=65)return"#B4C7DD";if(v>=60)return"#C8D6E7";if(v>=55)return"#DBE4F0";return"#EAF0F7";}
-const legMM=[["+0.55%+","#C16C64"],["+0.30~","#D49089"],["+0.12~","#E6BBB6"],["\u00b10.02%","#EFEEE9"],["-0.15~","#C6D4E4"],["하락","#A9C0DA"]];
-const legV=[["90건+","#7FC4AC"],["60~90","#A6D6C4"],["40~60","#C5E4D8"],["25~40","#DCEFE8"],["~25","#EDF5F1"]];
-const legJR=[["70%+","#9FB6D2"],["65~70","#B4C7DD"],["60~65","#C8D6E7"],["55~60","#DBE4F0"],["~55","#EAF0F7"]];
+function colMM(v){if(v>=0.30)return"#C16C64";if(v>=0.15)return"#D89089";if(v>=0.05)return"#E9BDB8";if(v>-0.02)return"#EFEEE9";if(v>-0.10)return"#C9D6E5";return"#A9C0DA";}
+function colV(v){if(v>=90)return"#6E9A83";if(v>=60)return"#9BBBA3";if(v>=40)return"#BBD2C0";if(v>=25)return"#D8E6DC";return"#EDF3EE";}
+function colJR(v){if(v>=68)return"#6E8FA8";if(v>=63)return"#92ABC1";if(v>=58)return"#B4C7D8";if(v>=53)return"#D2DEE9";return"#EBF0F5";}
+const legMM=[["+0.30%+","#C16C64"],["+0.15~","#D89089"],["+0.05~","#E9BDB8"],["\u00b10.02%","#EFEEE9"],["-0.10~","#C9D6E5"],["하락","#A9C0DA"]];
+const legV=[["90건+","#6E9A83"],["60~90","#9BBBA3"],["40~60","#BBD2C0"],["25~40","#D8E6DC"],["~25","#EDF3EE"]];
+const legJR=[["68%+","#6E8FA8"],["63~68","#92ABC1"],["58~63","#B4C7D8"],["53~58","#D2DEE9"],["~53","#EBF0F5"]];
 let metric="mm",region="all";
 function fill(d){return metric==="v"?colV(d.v):metric==="jr"?colJR(d.jr):colMM(d[metric]);}
 function avg(a,k){return a.reduce((s,d)=>s+d[k],0)/a.length;}
@@ -767,17 +812,17 @@ function placeLabels(){const cand=D.filter(d=>!(region!=="all"&&d.sd!==region));
     const box=[d.cx-w/2,d.cy-h/2,d.cx+w/2,d.cy+h/2];let ok=true;
     for(const p of placed){if(!(box[2]<p[0]||box[0]>p[2]||box[3]<p[1]||box[1]>p[3])){ok=false;break;}}
     if(!ok)continue;placed.push(box);
-    out.push(`<text class="dlabel" x="${d.cx}" y="${d.cy}" text-anchor="middle" dominant-baseline="middle" font-size="${fs}" font-weight="${d.sd==="seoul"?700:600}" paint-order="stroke" stroke="#FCFCFA" stroke-width="2.8" stroke-linejoin="round">${d.sl}</text>`);}
+    out.push(`<text class="dlabel" x="${d.cx}" y="${d.cy}" text-anchor="middle" dominant-baseline="middle" font-size="${fs}" font-weight="${d.sd==="seoul"?700:600}" paint-order="stroke" stroke="#FCFCFA" stroke-width="1.8" stroke-linejoin="round">${d.sl}</text>`);}
   return out.join("");}
 function drawMap(){const ps=D.map((d,i)=>{const dim=region!=="all"&&d.sd!==region;
     return `<path class="dist" data-i="${i}" d="${d.d}" fill="${fill(d)}" style="opacity:${dim?0.12:1};pointer-events:${dim?"none":"auto"}"></path>`;}).join("");
   document.getElementById("map").innerHTML=`<g id="paths">${ps}</g><path id="border" d="${BORDER}"></path><g id="labels">${placeLabels()}</g>`
-    +`<text id="hoverLabel" text-anchor="middle" dominant-baseline="middle" paint-order="stroke" stroke="#FCFCFA" stroke-width="3.6" stroke-linejoin="round"></text>`;
+    +`<text id="hoverLabel" text-anchor="middle" dominant-baseline="middle" paint-order="stroke" stroke="#FCFCFA" stroke-width="2.4" stroke-linejoin="round"></text>`;
   const wrap=document.getElementById("mapwrap"),tip=document.getElementById("tip"),pg=document.getElementById("paths"),hl=document.getElementById("hoverLabel");
   document.querySelectorAll("#map path.dist").forEach(p=>{
     p.onmouseenter=()=>{const d=D[+p.dataset.i];showTip(d);p.style.stroke="#34352f";p.style.strokeWidth="1.6";pg.appendChild(p);tip.style.opacity="1";tip.style.transform="translateY(0)";
       hl.setAttribute("x",d.cx);hl.setAttribute("y",d.cy);hl.setAttribute("font-size",d.sd==="seoul"?13:15);hl.textContent=d.sl;hl.style.opacity="1";};
-    p.onmouseleave=()=>{p.style.stroke="#FCFCFA";p.style.strokeWidth="0.7";tip.style.opacity="0";tip.style.transform="translateY(4px)";hl.style.opacity="0";};});
+    p.onmouseleave=()=>{p.style.stroke="#ffffff";p.style.strokeWidth="0.8";tip.style.opacity="0";tip.style.transform="translateY(4px)";hl.style.opacity="0";};});
   wrap.onmousemove=e=>{const r=wrap.getBoundingClientRect();let x=e.clientX-r.left+14,y=e.clientY-r.top+14;if(x>r.width-170)x=e.clientX-r.left-164;tip.style.left=x+"px";tip.style.top=y+"px";};}
 function showTip(d){document.getElementById("tip").innerHTML=`<div style="font-weight:700;margin-bottom:5px">${d.n} <span style="font-weight:400;color:#9a9b92">${d.sd==="seoul"?"서울":"경기"}</span></div>
   <div style="color:#9a9b92">매매 <span class="${cls(d.mm)}">${fmt(d.mm)}</span> · 전세 <span class="${cls(d.js)}">${fmt(d.js)}</span></div>
@@ -810,6 +855,192 @@ kpis();regTable();refresh();
 # ── 서브탭 렌더러 ───────────────────────────────────────────────
 def _render_map():
     components.html(_map_component(_merged_regions()), height=1320, scrolling=False)
+
+
+# ── 지도 탭 추이 차트 (코스피·코스닥 양식 · 매매·전세·전세가율 3종) ──────────
+#   증시 '지수' 탭의 대형 차트(_big_index_chart)와 같은 룩: 영역+선 + 호버 십자선.
+#   B안 = 포커스(큰 차트 1개) + 미니카드 3개(클릭 시 위에서 크게). 기간 2020~.
+#   데이터는 지표와 동일한 DB 시계열(sale/jeonse/jr)을 재사용한다(별도 수집 없음).
+#   매매·전세=KB 주간, 전세가율=KB 월간 → 카드마다 '주간/월간' 칩으로 명시(단위 통일).
+_TREND_META = {
+    "sale":   {"cad": "week",  "dp": "idx", "col": "#B65F5A", "sub": "서울 · KB"},
+    "jeonse": {"cad": "week",  "dp": "idx", "col": "#5A7CA0", "sub": "서울 · KB"},
+    "jr":     {"cad": "month", "dp": "pp",  "col": "#6E8FA8", "sub": "서울 · KB"},
+}
+_TREND_ORDER = ["sale", "jeonse", "jr"]
+
+
+def _trend_series_3(data):
+    """지표 시계열(list[{key,label,...,series}])에서 매매·전세·전세가율 3종만
+    추려 추이 차트용 dict 리스트로 변환. 시계열 2개 미만은 제외."""
+    by = {it.get("key"): it for it in (data or [])}
+    out = []
+    for k in _TREND_ORDER:
+        it = by.get(k)
+        if not it:
+            continue
+        series = [float(v) for v in (it.get("series") or []) if v is not None]
+        if len(series) < 2:
+            continue
+        meta = _TREND_META[k]
+        out.append({
+            "k": k,
+            "lab": it.get("label", k),
+            "sub": meta["sub"],
+            "cad": meta["cad"],
+            "dp": meta["dp"],
+            "unit": it.get("unit", ""),
+            "col": it.get("col", meta["col"]),
+            "real": [round(v, 2) for v in series],
+        })
+    return out
+
+
+def _trend_component(inds, asof):
+    import json as _json
+    return (_TREND_HTML
+            .replace("__INDS__", _json.dumps(inds, ensure_ascii=False))
+            .replace("__ASOF__", asof))
+
+
+def _render_trend_charts(data):
+    """지도 탭 하단 추이 섹션. 데이터 없으면 캡션만."""
+    from datetime import date
+    inds = _trend_series_3(data)
+    if not inds:
+        st.caption("추이 데이터가 아직 없어요. 매일 06:30 수집 후 표시됩니다.")
+        return
+    asof = date.today().strftime("%Y-%m-%d")
+    components.html(_trend_component(inds, asof), height=508, scrolling=False)
+    st.caption("매매·전세가격지수(KB 주간) · 전세가율(KB 월간) — 카드를 누르면 위에서 크게 · "
+               "기간 토글 동기화 · 코스피·코스닥 차트와 동일 양식")
+
+
+_TREND_HTML = r'''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
+:root{--bg:#FCFCFA;--card:#fff;--ink:#34352f;--muted:#9a9b92;--line:#ECEDE7;--line2:#DEDED7;
+ --sage:#A7BBA9;--sage2:#7E9A83;--up:#B65F5A;--dn:#5A7CA0;
+ --kfont:'Pretendard',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kfont);font-size:14px;
+ -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.box{padding:2px 1px 6px}
+.top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-bottom:11px}
+.top .cap{font-size:12px;color:var(--muted)}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:8px;overflow:hidden;background:var(--card)}
+.seg button{border:none;background:none;padding:6px 13px;font-size:12px;color:var(--muted);cursor:pointer;
+ border-right:1px solid var(--line);font-family:var(--kfont)}
+.seg button:last-child{border-right:none}
+.seg button.on{background:#EEF1EC;color:var(--ink);font-weight:700}
+.cad{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.02em;border-radius:6px;padding:2px 6px}
+.cad.month{background:#EEF1EC;color:#5E7363}.cad.week{background:#F3EEE6;color:#8A6E45}
+.delta{font-size:12px;font-weight:800;padding:3px 9px;border-radius:7px;white-space:nowrap}
+.delta.up{color:var(--up);background:#FBEEED}.delta.dn{color:var(--dn);background:#EAF0F7}.delta.fl{color:var(--muted);background:#F1F2EC}
+.hero{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:15px 17px 11px;margin-bottom:13px}
+.hero-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:5px}
+.hero-lab{font-size:12.5px;font-weight:600;color:var(--muted);display:flex;gap:7px;align-items:center}
+.hero-val{font-size:30px;font-weight:800;letter-spacing:-.03em;line-height:1;margin-top:3px}
+.hero-val .u{font-size:14px;font-weight:600;color:var(--muted);margin-left:3px}
+.minirow{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.mini{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:10px 12px 7px;cursor:pointer;
+ transition:transform .16s,box-shadow .16s,border-color .16s}
+.mini:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(52,53,47,.08);border-color:var(--sage)}
+.mini.on{border-color:var(--sage2);box-shadow:inset 0 0 0 1.5px var(--sage2)}
+.mini .ml{font-size:11px;font-weight:600;color:var(--muted);display:flex;gap:5px;align-items:center}
+.mini .mv{font-size:16px;font-weight:800;letter-spacing:-.02em;margin:3px 0 4px}
+.mini .mv .u{font-size:9.5px;color:var(--muted);margin-left:1px}
+.mini .delta{font-size:10px;padding:1px 6px}
+.chart{position:relative;width:100%}
+.chart svg{display:block;width:100%;overflow:visible}
+.axis{font-size:9.5px;fill:var(--muted);font-family:var(--kfont)}
+.tip{position:absolute;pointer-events:none;background:#fff;border:1px solid var(--line2);border-radius:8px;
+ padding:6px 9px;font-size:11.5px;box-shadow:0 6px 18px rgba(52,53,47,.13);opacity:0;transform:translateY(3px);
+ transition:opacity .12s,transform .12s;white-space:nowrap;z-index:6}
+.tip b{font-weight:800}.tip .d{color:var(--muted);font-size:10.5px}
+@media(max-width:680px){.minirow{grid-template-columns:repeat(3,1fr)}}
+</style></head><body><div class="box">
+  <div class="top">
+    <div class="cap">KB 가격지수 실데이터 · 마우스 올리면 십자선 · 기간 2020~</div>
+    <div class="seg" id="period">
+      <button data-p="1Y">1년</button><button data-p="3Y">3년</button><button data-p="ALL" class="on">전체</button>
+    </div>
+  </div>
+  <div class="hero">
+    <div class="hero-head">
+      <div><div class="hero-lab" id="hLab"></div><div class="hero-val" id="hVal"></div></div>
+      <div class="delta" id="hDelta"></div>
+    </div>
+    <div class="chart" id="hChart"></div>
+  </div>
+  <div class="minirow" id="miniRow"></div>
+</div>
+<script>
+const IND=__INDS__;
+const ASOF=new Date("__ASOF__T00:00:00");
+const MON=["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
+const DAYS={"1Y":365,"3Y":1095,"ALL":1e9};
+let period="ALL",focusK=IND.length?IND[0].k:null;
+function byK(k){return IND.find(d=>d.k===k);}
+function makeSeries(ind,p){
+ const step=ind.cad==="month"?30:7;
+ const need=p==="ALL"?ind.real.length:Math.min(ind.real.length,Math.round(DAYS[p]/step)+1);
+ const vals=ind.real.slice(-need);
+ return vals.map((v,i)=>({t:new Date(ASOF.getTime()-(vals.length-1-i)*step*86400000),v}));
+}
+function fmtV(ind,v){return (Math.round(v*10)/10).toFixed(1);}
+function deltaTxt(ind,pts){const a=pts[0].v,b=pts[pts.length-1].v;
+ if(ind.dp==="pp"){const d=b-a;return{cls:d>0.05?"up":d<-0.05?"dn":"fl",txt:(d>=0?"+":"")+(Math.round(d*10)/10)+"p"};}
+ const d=(b-a)/a*100;return{cls:d>0.05?"up":d<-0.05?"dn":"fl",txt:(d>=0?"+":"")+(Math.round(d*10)/10)+"%"};}
+function drawChart(host,ind,pts,h,longR){
+ const W=600,PAD={l:4,r:4,t:8,b:18};
+ const xs=i=>PAD.l+i/(pts.length-1)*(W-PAD.l-PAD.r);
+ const lo=Math.min.apply(null,pts.map(p=>p.v)),hi=Math.max.apply(null,pts.map(p=>p.v));
+ const span=(hi-lo)||1;const y0=lo-span*0.12,y1=hi+span*0.12;
+ const ys=v=>PAD.t+(1-(v-y0)/(y1-y0))*(h-PAD.t-PAD.b);
+ const col=ind.col;
+ let path=pts.map((p,i)=>(i?"L":"M")+xs(i).toFixed(1)+" "+ys(p.v).toFixed(1)).join(" ");
+ let area=path+" L"+xs(pts.length-1).toFixed(1)+" "+(h-PAD.b)+" L"+xs(0).toFixed(1)+" "+(h-PAD.b)+" Z";
+ let tk="",last=null;
+ pts.forEach((p,i)=>{const key=longR?p.t.getFullYear():p.t.getMonth();
+  if(key!==last){last=key;const x=xs(i);if(x>12&&x<W-12){
+   const lab=longR?("'"+String(p.t.getFullYear()).slice(2)):MON[p.t.getMonth()];
+   tk+='<text class="axis" x="'+x.toFixed(1)+'" y="'+(h-5)+'" text-anchor="middle">'+lab+'</text>';}}});
+ host.innerHTML='<svg viewBox="0 0 '+W+' '+h+'" preserveAspectRatio="none" style="height:'+h+'px">'
+  +'<path d="'+area+'" fill="'+col+'" opacity="0.11"/>'
+  +'<path d="'+path+'" fill="none" stroke="'+col+'" stroke-width="2" stroke-linejoin="round"/>'
+  +'<line class="vx" x1="0" x2="0" y1="'+PAD.t+'" y2="'+(h-PAD.b)+'" stroke="#B9BBB0" stroke-width="1" stroke-dasharray="3 3" opacity="0"/>'
+  +'<circle class="cp" r="3.4" fill="'+col+'" opacity="0"/>'+tk+'</svg>';
+ const svg=host.querySelector("svg"),vx=host.querySelector(".vx"),cp=host.querySelector(".cp");
+ let tip=host.querySelector(".tip");if(!tip){tip=document.createElement("div");tip.className="tip";host.appendChild(tip);}
+ svg.onmousemove=e=>{const r=svg.getBoundingClientRect();const px=(e.clientX-r.left)/r.width*W;
+  let i=Math.round((px-PAD.l)/((W-PAD.l-PAD.r))*(pts.length-1));i=Math.max(0,Math.min(pts.length-1,i));
+  const x=xs(i),yv=ys(pts[i].v);
+  vx.setAttribute("x1",x);vx.setAttribute("x2",x);vx.setAttribute("opacity","1");
+  cp.setAttribute("cx",x);cp.setAttribute("cy",yv);cp.setAttribute("opacity","1");
+  const d=pts[i].t;tip.innerHTML="<b>"+fmtV(ind,pts[i].v)+ind.unit+"</b> <span class=\"d\">"+d.getFullYear()+"."+String(d.getMonth()+1).padStart(2,"0")+"</span>";
+  tip.style.opacity="1";tip.style.transform="translateY(0)";
+  let tx=(x/W)*r.width+10;if(tx>r.width-110)tx-=120;tip.style.left=tx+"px";tip.style.top=(yv/h*r.height-30)+"px";};
+ svg.onmouseleave=()=>{vx.setAttribute("opacity","0");cp.setAttribute("opacity","0");tip.style.opacity="0";};
+}
+function render(){
+ const longR=period!=="1Y";
+ document.getElementById("miniRow").innerHTML=IND.map(ind=>{const pts=makeSeries(ind,period);const dt=deltaTxt(ind,pts);
+  return '<div class="mini '+(ind.k===focusK?"on":"")+'" data-k="'+ind.k+'"><div class="ml"><span class="cad '+ind.cad+'">'+(ind.cad==="month"?"월간":"주간")+'</span>'+ind.lab+'</div>'
+   +'<div class="mv">'+fmtV(ind,ind.real[ind.real.length-1])+'<span class="u">'+ind.unit+'</span></div>'
+   +'<div class="delta '+dt.cls+'">'+dt.txt+'</div></div>';}).join("");
+ document.querySelectorAll(".mini").forEach(el=>el.onclick=()=>{focusK=el.dataset.k;render();});
+ const ind=byK(focusK);if(!ind)return;const pts=makeSeries(ind,period);const dt=deltaTxt(ind,pts);
+ document.getElementById("hLab").innerHTML='<span class="cad '+ind.cad+'">'+(ind.cad==="month"?"월간":"주간")+'</span>'+ind.lab+' · '+ind.sub;
+ document.getElementById("hVal").innerHTML=fmtV(ind,ind.real[ind.real.length-1])+'<span class="u">'+ind.unit+'</span>';
+ const hd=document.getElementById("hDelta");hd.className="delta "+dt.cls;hd.textContent=dt.txt;
+ drawChart(document.getElementById("hChart"),ind,pts,210,longR);
+}
+document.querySelectorAll("#period button").forEach(b=>b.onclick=()=>{
+ document.querySelectorAll("#period button").forEach(x=>x.classList.remove("on"));b.classList.add("on");period=b.dataset.p;render();});
+render();
+</script></body></html>'''
 
 
 _GROUP_ORDER = [
@@ -862,203 +1093,247 @@ def _market_phase(cards):
 
 
 # ── 지표 추이 차트 (포커스 + 스몰멀티플 · 기간 1M/3M/1Y/5Y) ───────
-_INDCHART_HTML = r'''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+_INDV2_HTML = r'''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
 :root{--bg:#FCFCFA;--card:#fff;--ink:#34352f;--muted:#9a9b92;--line:#ECEDE7;--line2:#DEDED7;
-  --sage:#A7BBA9;--sage2:#7E9A83;--up:#B65F5A;--dn:#5A7CA0;
-  --kfont:'Pretendard',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;}
+ --sage:#A7BBA9;--sage2:#7E9A83;--up:#B65F5A;--dn:#5A7CA0;
+ --kfont:'Pretendard',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;}
 *{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kfont);font-size:14px;
-  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kfont);font-size:14px;-webkit-font-smoothing:antialiased}
 .box{padding:2px 1px 6px}
-.top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
-.top .cap{font-size:12px;color:var(--muted)}
+.cycle{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:15px 17px;margin-bottom:14px}
+.cyc-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:11px}
+.cyc-top .t{font-size:13px;font-weight:800}
+.cyc-top .now{font-size:12px;color:var(--muted)}.cyc-top .now b{color:var(--up)}
+.stages{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:9px}
+.stage{text-align:center;font-size:12px;font-weight:700;color:var(--muted);padding:9px 4px;border-radius:10px;background:#F4F5F0;border:1px solid transparent}
+.stage.on{background:#FBEEED;color:var(--up);border-color:#E7C9C5}
+.stage small{display:block;font-size:9.5px;font-weight:600;color:var(--muted);margin-top:1px}
+.stage.on small{color:#B07A75}
+.cyc-read{font-size:12px;color:var(--muted);line-height:1.5}.cyc-read b{color:var(--ink)}
+.controls{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin:4px 0 13px}
 .seg{display:inline-flex;border:1px solid var(--line2);border-radius:8px;overflow:hidden;background:var(--card)}
-.seg button{border:none;background:none;padding:6px 13px;font-size:12px;color:var(--muted);cursor:pointer;
-  border-right:1px solid var(--line);font-family:var(--kfont)}
-.seg button:last-child{border-right:none}
-.seg button.on{background:#EEF1EC;color:var(--ink);font-weight:700}
-.delta{font-size:12px;font-weight:700;padding:3px 9px;border-radius:7px;white-space:nowrap}
-.delta.up{color:var(--up);background:#FBEEED}.delta.dn{color:var(--dn);background:#EAF0F7}.delta.fl{color:var(--muted);background:#F1F2EC}
-.hero{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:15px 17px 11px;margin-bottom:13px}
-.hero-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:7px}
-.hero-lab{font-size:13px;font-weight:600;color:var(--muted)}
-.hero-val{font-size:29px;font-weight:800;letter-spacing:-.03em;line-height:1}
-.hero-val .u{font-size:15px;font-weight:600;color:var(--muted);margin-left:3px}
-.hero-note{font-size:11.5px;color:var(--muted);margin-top:6px}
-.gtitle{font-size:12px;font-weight:700;color:var(--ink);margin:2px 2px 8px;letter-spacing:.02em}
-.gtitle .s{font-weight:500;color:var(--muted);margin-left:6px}
-.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.scard{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:11px 12px 6px;cursor:pointer;
-  transition:transform .16s,box-shadow .16s,border-color .16s}
-.scard:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(52,53,47,.08);border-color:var(--sage)}
-.scard.on{border-color:var(--sage2);box-shadow:inset 0 0 0 1.5px var(--sage2)}
-.scard-lab{font-size:11.5px;font-weight:600;color:var(--muted)}
-.scard-top{display:flex;align-items:baseline;justify-content:space-between;gap:6px;margin:2px 0 4px}
-.scard-val{font-size:17px;font-weight:800;letter-spacing:-.02em}
-.scard-val .u{font-size:10.5px;font-weight:600;color:var(--muted);margin-left:2px}
-.scard .delta{font-size:10.5px;padding:1px 6px}
-.chart{position:relative;width:100%}
-.chart svg{display:block;width:100%;overflow:visible}
-.axis{font-size:10px;fill:var(--muted);font-family:var(--kfont)}
-.cross{stroke:#B9BBB0;stroke-width:1;stroke-dasharray:3 3;opacity:0;pointer-events:none}
-.tip{position:absolute;pointer-events:none;background:#fff;border:1px solid var(--line2);border-radius:8px;
-  padding:6px 9px;font-size:11.5px;box-shadow:0 6px 18px rgba(52,53,47,.13);opacity:0;transform:translateY(3px);
-  transition:opacity .12s,transform .12s;white-space:nowrap;z-index:5}
+.seg button{border:none;background:none;padding:6px 13px;font-size:12px;color:var(--muted);cursor:pointer;border-right:1px solid var(--line);font-family:var(--kfont)}
+.seg button:last-child{border-right:none}.seg button.on{background:#EEF1EC;color:var(--ink);font-weight:700}
+.hero{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:15px 17px 11px;margin-bottom:15px}
+.hero-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:5px}
+.hero-lab{font-size:12.5px;font-weight:600;color:var(--muted);display:flex;align-items:center;gap:7px}
+.hero-val{font-size:30px;font-weight:800;letter-spacing:-.03em;line-height:1;margin-top:3px}
+.hero-val .u{font-size:14px;font-weight:600;color:var(--muted);margin-left:3px}
+.hero-note{font-size:11.5px;color:var(--muted);margin-top:7px;line-height:1.5}
+.chart{position:relative;width:100%}.chart svg{display:block;width:100%;overflow:visible}
+.axis{font-size:9.5px;fill:var(--muted)}
+.tip{position:absolute;pointer-events:none;background:#fff;border:1px solid var(--line2);border-radius:8px;padding:6px 9px;font-size:11.5px;box-shadow:0 6px 18px rgba(52,53,47,.13);opacity:0;transition:opacity .12s;white-space:nowrap;z-index:6}
 .tip b{font-weight:800}.tip .d{color:var(--muted);font-size:10.5px}
+.ghead{display:flex;align-items:center;gap:9px;margin:16px 2px 9px}
+.ghead .gn{font-size:13px;font-weight:800}.ghead .gd{font-size:11px;color:var(--muted)}
+.ghead .gsig{margin-left:auto;font-size:11px;font-weight:800;padding:2px 9px;border-radius:20px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:11px 12px 8px;cursor:pointer;transition:transform .16s,box-shadow .16s,border-color .16s}
+.card:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(52,53,47,.08);border-color:var(--sage)}
+.card.on{border-color:var(--sage2);box-shadow:inset 0 0 0 1.5px var(--sage2)}
+.card.pend{cursor:default;background:#FAFAF7;border-style:dashed;opacity:.85}
+.card.pend:hover{transform:none;box-shadow:none;border-color:var(--line2)}
+.c-lab{font-size:12px;font-weight:700;color:var(--ink)}
+.c-chips{display:flex;gap:4px;margin-top:3px;flex-wrap:wrap}
+.chip{font-size:9px;font-weight:800;border-radius:5px;padding:1px 5px;letter-spacing:.02em}
+.chip.week{background:#F3EEE6;color:#8A6E45}.chip.month{background:#EEF1EC;color:#5E7363}
+.chip.pend{background:#F1F0EC;color:#8A8576}
+.c-val{font-size:18px;font-weight:800;letter-spacing:-.02em;margin:6px 0 3px}
+.c-val .u{font-size:10px;color:var(--muted);margin-left:1px}.c-val .bl{font-size:9px;color:var(--muted);font-weight:700;margin-left:5px}
+.sig{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:20px;margin-bottom:5px}
+.sig.up{color:var(--up);background:#FBEEED}.sig.dn{color:var(--dn);background:#EAF0F7}.sig.fl{color:var(--muted);background:#F1F2EC}
+.sig .inv{font-size:8.5px;font-weight:700;color:var(--muted);background:#fff;border:1px solid var(--line2);border-radius:4px;padding:0 3px;margin-left:2px}
+.c-spark{width:100%;height:34px;display:block;overflow:visible}
+.c-interp{font-size:10.5px;color:var(--muted);line-height:1.45;margin-top:6px}
+.c-pendnote{font-size:10.5px;color:var(--muted);line-height:1.45;margin-top:10px}
+.gtag{font-size:9px;font-weight:800;color:var(--muted);background:#F4F5F0;border-radius:5px;padding:1px 6px;margin-left:6px}
+.subnote{font-size:11px;color:var(--muted);margin:10px 2px 2px}
+@media(max-width:680px){.grid{grid-template-columns:repeat(2,1fr)}}
 </style></head><body><div class="box">
-  <div class="top">
-    <div class="cap">가격지수 실데이터(KB·KOSIS·ECOS) · 기간 토글이 전체 동기화 · 가용 기간 밖은 추정</div>
-    <div class="seg" id="period">
-      <button data-p="1M">1개월</button><button data-p="3M" class="on">3개월</button>
-      <button data-p="1Y">1년</button><button data-p="5Y">5년</button>
+  <div class="cycle">
+    <div class="cyc-top"><span class="t">부동산 사이클 위치</span>
+      <span class="now">선행·심리 종합 → 현재 <b id="nowStage"></b></span></div>
+    <div class="stages" id="stages"></div>
+    <div class="cyc-read" id="cycRead"></div>
+  </div>
+  <div class="controls">
+    <span style="font-size:11.5px;color:var(--muted)" id="viewDesc"></span>
+    <div style="display:flex;gap:8px">
+      <span class="seg" id="view"><button data-v="group" class="on">기능별 그룹</button><button data-v="signal">신호 강도순</button></span>
+      <span class="seg" id="period"><button data-p="1Y">1년</button><button data-p="3Y">3년</button><button data-p="ALL" class="on">전체</button></span>
     </div>
   </div>
   <div class="hero">
-    <div class="hero-head">
-      <div><div class="hero-lab" id="hLab"></div><div class="hero-val" id="hVal"></div></div>
-      <div class="delta" id="hDelta"></div>
-    </div>
+    <div class="hero-head"><div><div class="hero-lab" id="hLab"></div><div class="hero-val" id="hVal"></div></div>
+      <div class="sig" id="hSig" style="font-size:12px;padding:3px 11px"></div></div>
     <div class="chart" id="hChart"></div>
     <div class="hero-note" id="hNote"></div>
   </div>
-  <div class="gtitle">전체 지표 <span class="s">카드를 누르면 위에서 크게 봅니다</span></div>
-  <div class="grid" id="grid"></div>
+  <div id="body"></div>
 </div>
 <script>
-const IND=__INDS__;
-const PERIOD={"1M":{days:30,n:22,nbar:5,tick:"month"},"3M":{days:92,n:46,nbar:13,tick:"month"},
-  "1Y":{days:365,n:52,nbar:52,tick:"month"},"5Y":{days:1825,n:60,nbar:60,tick:"year"}};
+const IND=__IND__,PEND=__PEND__,G=__G__;
+const ASOF=new Date("__ASOF__T00:00:00");
 const MON=["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
-const PL={"1M":"1개월","3M":"3개월","1Y":"1년","5Y":"5년"};
-function rng(seed){let s=seed>>>0;return()=>{s=(s*1664525+1013904223)>>>0;return s/4294967296;};}
-function hash(str){let h=2166136261;for(const c of str){h^=c.charCodeAt(0);h=Math.imul(h,16777619);}return h>>>0;}
-function series(ind,period){
-  const P=PERIOD[period],end=new Date(2026,5,21);
-  if(ind.real&&!ind.bar){const stepDays=ind.cadence==="month"?30:7;
-    if(ind.real.length*stepDays>=P.days*0.8){
-      const need=Math.max(4,Math.round(P.days/stepDays)+1),vals=ind.real.slice(-need);
-      return vals.map((v,i)=>({t:new Date(end.getTime()-(vals.length-1-i)*stepDays*86400000),v:Math.round(v*100)/100}));}}
-  const N=ind.bar?P.nbar:P.n,r=rng(hash(ind.k+period));
-  const step=P.days/(N-1),start=ind.base-ind.drift;
-  const pts=[];let prev=0;
-  for(let i=0;i<N;i++){const f=i/(N-1);
-    const t=new Date(end.getTime()-(N-1-i)*step*86400000);
-    prev=prev*0.55+(r()-0.5);
-    let v=start+(ind.base-start)*f+prev*ind.vol*(ind.bar?1:1.3);
-    if(ind.bar)v=Math.max(1,Math.round(v));else v=Math.round(v*100)/100;
-    pts.push({t,v});}
-  pts[pts.length-1].v=ind.base;return pts;}
-function ticks(pts,mode){const out=[];let last=null;
-  pts.forEach((p,i)=>{const key=mode==="year"?p.t.getFullYear():p.t.getMonth()+"_"+p.t.getFullYear();
-    if(key!==last){last=key;out.push({i,label:mode==="year"?("'"+String(p.t.getFullYear()).slice(2)):MON[p.t.getMonth()]});}});
-  if(out.length>8){const k=Math.ceil(out.length/7);return out.filter((_,j)=>j%k===0);}return out;}
-function fmtVal(ind,v){return ind.bar?Math.round(v).toLocaleString():(Math.round(v*10)/10).toFixed(1);}
-function deltaTxt(ind,pts){const a=pts[0].v,b=pts[pts.length-1].v;
-  if(ind.dp==="p"){const d=b-a;return{cls:d>0.05?"up":d<-0.05?"dn":"fl",txt:(d>=0?"+":"")+(Math.round(d*10)/10)+"p"};}
-  const d=(b/a-1)*100;return{cls:d>0.05?"up":d<-0.05?"dn":"fl",txt:(d>=0?"+":"")+(Math.round(d*10)/10)+"%"};}
-function chart(host,ind,period,opt){opt=opt||{};const big=opt.big;
-  const pts=series(ind,period),W=opt.W||(big?620:300),H=opt.H||(big?230:66);
-  const padL=big?6:4,padR=big?6:4,padT=big?14:8,padB=big?20:15;
-  const vals=pts.map(p=>p.v);let lo=Math.min(...vals),hi=Math.max(...vals);
-  if(ind.baseline!=null){lo=Math.min(lo,ind.baseline);hi=Math.max(hi,ind.baseline);}
-  const pad=(hi-lo)*0.18||1;lo-=pad;hi+=pad;
-  const x=i=>padL+i/(pts.length-1)*(W-padL-padR);
-  const y=v=>padT+(1-(v-lo)/((hi-lo)||1))*(H-padT-padB);
-  const gid="g"+Math.random().toString(36).slice(2,8);let body="";
-  if(ind.bar){const bw=(W-padL-padR)/pts.length;
-    body=pts.map((p,i)=>{const bh=H-padB-y(p.v);
-      return '<rect x="'+(x(i)-bw*0.36).toFixed(1)+'" y="'+y(p.v).toFixed(1)+'" width="'+(bw*0.72).toFixed(1)+'" height="'+Math.max(0,bh).toFixed(1)+'" rx="1.5" fill="'+ind.col+'" opacity="'+(i===pts.length-1?1:0.55)+'"/>';}).join("");
-  }else{const line=pts.map((p,i)=>x(i).toFixed(1)+","+y(p.v).toFixed(1)).join(" ");
-    const area=padL+","+(H-padB).toFixed(1)+" "+line+" "+(W-padR).toFixed(1)+","+(H-padB).toFixed(1);let base="";
-    if(ind.baseline!=null){const by=y(ind.baseline).toFixed(1);
-      base='<line x1="'+padL+'" y1="'+by+'" x2="'+(W-padR)+'" y2="'+by+'" stroke="#C9CBC2" stroke-width="1" stroke-dasharray="4 4"/>'
-        +'<text class="axis" x="'+(W-padR)+'" y="'+(by-3)+'" text-anchor="end">중립 '+ind.baseline+'</text>';}
-    body='<defs><linearGradient id="'+gid+'" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="'+ind.col+'" stop-opacity="0.16"/><stop offset="1" stop-color="'+ind.col+'" stop-opacity="0"/></linearGradient></defs>'
-      +'<polygon points="'+area+'" fill="url(#'+gid+')"/>'+base
-      +'<polyline points="'+line+'" fill="none" stroke="'+ind.col+'" stroke-width="'+(big?2.2:1.8)+'" stroke-linejoin="round" stroke-linecap="round"/>'
-      +'<circle cx="'+x(pts.length-1).toFixed(1)+'" cy="'+y(ind.base).toFixed(1)+'" r="'+(big?3.2:2.6)+'" fill="'+ind.col+'"/>';}
-  const tk=ticks(pts,PERIOD[period].tick).map(t=>'<text class="axis" x="'+x(t.i).toFixed(1)+'" y="'+(H-4)+'" text-anchor="middle">'+t.label+'</text>'
-    +'<line x1="'+x(t.i).toFixed(1)+'" y1="'+(H-padB+1)+'" x2="'+x(t.i).toFixed(1)+'" y2="'+(H-padB+4)+'" stroke="#C9CBC2" stroke-width="1"/>').join("");
-  host.innerHTML='<div class="chart" style="position:relative"><svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="height:'+H+'px">'
-    +body+'<line class="cross" id="cx" x1="0" y1="'+padT+'" x2="0" y2="'+(H-padB)+'"/>'
-    +'<circle id="cd" r="'+(big?3.6:3)+'" fill="#fff" stroke="'+ind.col+'" stroke-width="2" opacity="0"/>'+tk+'</svg><div class="tip"></div></div>';
-  const root=host.firstElementChild,svg=root.querySelector("svg"),cx=root.querySelector("#cx"),cd=root.querySelector("#cd"),tip=root.querySelector(".tip");
-  function show(i){const p=pts[i];cx.setAttribute("x1",x(i));cx.setAttribute("x2",x(i));cx.style.opacity=1;
-    if(!ind.bar){cd.setAttribute("cx",x(i));cd.setAttribute("cy",y(p.v));cd.style.opacity=1;}
-    const dd=(p.t.getMonth()+1)+"."+String(p.t.getDate()).padStart(2,"0")+(period==="5Y"?(" '"+String(p.t.getFullYear()).slice(2)):"");
-    tip.innerHTML='<span class="d">'+dd+'</span> &nbsp;<b style="color:'+ind.col+'">'+fmtVal(ind,p.v)+'</b><span class="d"> '+ind.unit+'</span>';
-    tip.style.opacity=1;tip.style.transform="translateY(0)";
-    const rb=root.getBoundingClientRect();let lx=(x(i)/W)*rb.width+10;if(lx>rb.width-90)lx-=110;tip.style.left=lx+"px";tip.style.top="0px";}
-  function hide(){cx.style.opacity=0;cd.style.opacity=0;tip.style.opacity=0;tip.style.transform="translateY(3px)";}
-  root.addEventListener("mousemove",e=>{const rb=svg.getBoundingClientRect();const fx=(e.clientX-rb.left)/rb.width*W;
-    let i=Math.round((fx-padL)/((W-padL-padR))*(pts.length-1));i=Math.max(0,Math.min(pts.length-1,i));show(i);});
-  root.addEventListener("mouseleave",hide);}
-let cur=IND[0].k,per="3M";
-function renderHero(){const ind=IND.find(i=>i.k===cur),pts=series(ind,per),d=deltaTxt(ind,pts);
-  document.getElementById("hLab").textContent=ind.lab;
-  document.getElementById("hVal").innerHTML=fmtVal(ind,ind.base)+'<span class="u">'+ind.unit+'</span>';
-  const dd=document.getElementById("hDelta");dd.className="delta "+d.cls;dd.textContent=d.txt+" ("+PL[per]+")";
-  document.getElementById("hNote").textContent=ind.note;
-  chart(document.getElementById("hChart"),ind,per,{big:true});}
-function renderGrid(){
-  document.getElementById("grid").innerHTML=IND.map(i=>{const dd=deltaTxt(i,series(i,per));
-    return '<div class="scard '+(i.k===cur?"on":"")+'" data-k="'+i.k+'"><div class="scard-lab">'+i.short+'</div>'
-      +'<div class="scard-top"><span class="scard-val">'+fmtVal(i,i.base)+'<span class="u">'+i.unit+'</span></span>'
-      +'<span class="delta '+dd.cls+'">'+dd.txt+'</span></div><div id="gc_'+i.k+'"></div></div>';}).join("");
-  IND.forEach(i=>chart(document.getElementById("gc_"+i.k),i,per,{big:false}));
-  document.querySelectorAll(".scard").forEach(c=>c.onclick=()=>{cur=c.dataset.k;renderHero();
-    document.querySelectorAll(".scard").forEach(x=>x.classList.toggle("on",x.dataset.k===cur));});}
-document.querySelectorAll("#period button").forEach(b=>b.onclick=()=>{
-  document.querySelectorAll("#period button").forEach(x=>x.classList.remove("on"));
-  b.classList.add("on");per=b.dataset.p;renderHero();renderGrid();});
-renderHero();renderGrid();
+const DAYS={"1Y":365,"3Y":1095};const GORDER=["lead","coin","supply","fund"];
+let period="ALL",view="group",focusK=IND.length?IND[0].k:null;
+function byK(k){return IND.find(d=>d.k===k);}
+function makeSeries(m,p){const step=m.cad==="month"?30:7;
+ const need=p==="ALL"?m.real.length:Math.min(m.real.length,Math.round(DAYS[p]/step)+1);
+ const vals=m.real.slice(-need);
+ return vals.map((v,i)=>({t:new Date(ASOF.getTime()-(vals.length-1-i)*step*86400000),v}));}
+function fmtV(m,v){const b=Math.abs(m.base||v);if(b>=1000)return Math.round(v).toLocaleString();
+ if(b<10)return (Math.round(v*100)/100).toFixed(2);return (Math.round(v*10)/10).toFixed(1);}
+function signal(m,pts){const a=pts[0].v,b=pts[pts.length-1].v;let dir=(b-a)/Math.abs(a||1);
+ if(m.inv)dir=-dir;
+ if(m.baseline!=null){const lvl=(b-m.baseline)/m.baseline;dir=dir*0.6+lvl*0.8;}
+ const cls=dir>0.012?"up":dir<-0.012?"dn":"fl";
+ return {cls,txt:cls==="up"?"상승 신호":cls==="dn"?"하락 신호":"중립",score:dir};}
+function drawChart(host,m,pts,h,longR){const W=600,P={l:4,r:4,t:8,b:16};
+ const xs=i=>P.l+i/(pts.length-1)*(W-P.l-P.r);
+ let lo=Math.min.apply(null,pts.map(p=>p.v)),hi=Math.max.apply(null,pts.map(p=>p.v));
+ if(m.baseline!=null){lo=Math.min(lo,m.baseline);hi=Math.max(hi,m.baseline);}
+ const sp=(hi-lo)||1;const y0=lo-sp*0.14,y1=hi+sp*0.14;
+ const ys=v=>P.t+(1-(v-y0)/(y1-y0))*(h-P.t-P.b);
+ let path=pts.map((p,i)=>(i?"L":"M")+xs(i).toFixed(1)+" "+ys(p.v).toFixed(1)).join(" ");
+ let area=path+" L"+xs(pts.length-1).toFixed(1)+" "+(h-P.b)+" L"+xs(0).toFixed(1)+" "+(h-P.b)+" Z";
+ let bl="";if(m.baseline!=null){const by=ys(m.baseline).toFixed(1);
+  bl='<line x1="'+P.l+'" y1="'+by+'" x2="'+(W-P.r)+'" y2="'+by+'" stroke="#C9CBC2" stroke-width="1" stroke-dasharray="4 4"/>'
+   +'<text class="axis" x="'+(W-P.r)+'" y="'+(by-3)+'" text-anchor="end">기준 '+m.baseline+'</text>';}
+ let tk="",last=null;pts.forEach((p,i)=>{const key=longR?p.t.getFullYear():p.t.getMonth();
+  if(key!==last){last=key;const x=xs(i);if(x>12&&x<W-12){const lab=longR?("'"+String(p.t.getFullYear()).slice(2)):MON[p.t.getMonth()];
+   tk+='<text class="axis" x="'+x.toFixed(1)+'" y="'+(h-4)+'" text-anchor="middle">'+lab+'</text>';}}});
+ host.innerHTML='<svg viewBox="0 0 '+W+' '+h+'" preserveAspectRatio="none" style="height:'+h+'px">'
+  +'<path d="'+area+'" fill="'+m.col+'" opacity="0.11"/>'+bl
+  +'<path d="'+path+'" fill="none" stroke="'+m.col+'" stroke-width="2" stroke-linejoin="round"/>'
+  +'<line class="vx" x1="0" x2="0" y1="'+P.t+'" y2="'+(h-P.b)+'" stroke="#B9BBB0" stroke-width="1" stroke-dasharray="3 3" opacity="0"/>'
+  +'<circle class="cp" r="3.4" fill="'+m.col+'" opacity="0"/>'+tk+'</svg>';
+ const svg=host.querySelector("svg"),vx=host.querySelector(".vx"),cp=host.querySelector(".cp");
+ let tip=host.querySelector(".tip");if(!tip){tip=document.createElement("div");tip.className="tip";host.appendChild(tip);}
+ svg.onmousemove=e=>{const r=svg.getBoundingClientRect();const px=(e.clientX-r.left)/r.width*W;
+  let i=Math.round((px-P.l)/((W-P.l-P.r))*(pts.length-1));i=Math.max(0,Math.min(pts.length-1,i));
+  const x=xs(i),yv=ys(pts[i].v);vx.setAttribute("x1",x);vx.setAttribute("x2",x);vx.setAttribute("opacity","1");
+  cp.setAttribute("cx",x);cp.setAttribute("cy",yv);cp.setAttribute("opacity","1");const d=pts[i].t;
+  tip.innerHTML="<b>"+fmtV(m,pts[i].v)+m.unit+"</b> <span class='d'>"+d.getFullYear()+"."+String(d.getMonth()+1).padStart(2,"0")+"</span>";
+  tip.style.opacity="1";let tx=(x/W)*r.width+10;if(tx>r.width-110)tx-=120;tip.style.left=tx+"px";tip.style.top=(yv/h*r.height-30)+"px";};
+ svg.onmouseleave=()=>{vx.setAttribute("opacity","0");cp.setAttribute("opacity","0");tip.style.opacity="0";};}
+function sparkSVG(m,pts){const W=200,H=34,P=3;const xs=i=>i/(pts.length-1)*W;
+ let lo=Math.min.apply(null,pts.map(p=>p.v)),hi=Math.max.apply(null,pts.map(p=>p.v));const sp=(hi-lo)||1;
+ const ys=v=>P+(1-(v-lo)/sp)*(H-2*P);
+ const path=pts.map((p,i)=>(i?"L":"M")+xs(i).toFixed(1)+" "+ys(p.v).toFixed(1)).join(" ");
+ const area=path+" L"+W+" "+H+" L0 "+H+" Z";
+ return '<svg class="c-spark" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none"><path d="'+area+'" fill="'+m.col+'" opacity="0.1"/><path d="'+path+'" fill="none" stroke="'+m.col+'" stroke-width="1.7"/></svg>';}
+function cardHTML(m,withTag){const pts=makeSeries(m,period);const s=signal(m,pts);
+ const chips='<span class="chip '+m.cad+'">'+(m.cad==="month"?"월간":"주간")+'</span>';
+ const bl=m.baseline!=null?'<span class="bl">기준 '+m.baseline+'</span>':'';
+ const inv=m.inv?'<span class="inv">역행</span>':'';
+ const gtag=withTag?'<span class="gtag">'+G[m.g].name+'</span>':'';
+ return '<div class="card '+(m.k===focusK?"on":"")+'" data-k="'+m.k+'">'
+  +'<div><div class="c-lab">'+m.lab+gtag+'</div><div class="c-chips">'+chips+'</div></div>'
+  +'<div class="c-val">'+fmtV(m,m.base)+'<span class="u">'+m.unit+'</span>'+bl+'</div>'
+  +'<div class="sig '+s.cls+'">'+(s.cls==="up"?"▲":s.cls==="dn"?"▼":"●")+' '+s.txt+inv+'</div>'
+  +sparkSVG(m,pts)+'<div class="c-interp">'+m.interp+'</div></div>';}
+function pendCardHTML(p){return '<div class="card pend">'
+  +'<div><div class="c-lab">'+p.lab+'</div><div class="c-chips"><span class="chip pend">연결예정</span></div></div>'
+  +'<div class="c-pendnote">'+p.note+'</div></div>';}
+function bindCards(){document.querySelectorAll(".card:not(.pend)").forEach(c=>c.onclick=()=>{focusK=c.dataset.k;renderFocus();
+ document.querySelectorAll(".card:not(.pend)").forEach(x=>x.classList.toggle("on",x.dataset.k===focusK));});}
+function gsig(ms){if(!ms.length)return null;let sc=0;ms.forEach(m=>sc+=signal(m,makeSeries(m,period)).score);sc/=ms.length;
+ const cls=sc>0.02?"up":sc<-0.02?"dn":"fl";return {txt:cls==="up"?"종합 상승":cls==="dn"?"종합 하락":"종합 중립",
+  bg:cls==="up"?"#FBEEED":cls==="dn"?"#EAF0F7":"#F1F2EC",fg:cls==="up"?"#B65F5A":cls==="dn"?"#5A7CA0":"#9a9b92"};}
+function renderBody(){const host=document.getElementById("body");
+ if(view==="group"){let html="";for(const gk of GORDER){const ms=IND.filter(m=>m.g===gk);const ps=PEND.filter(p=>p.g===gk);
+   if(!ms.length&&!ps.length)continue;const gs=gsig(ms);
+   html+='<div class="ghead"><span class="gn">'+G[gk].name+'</span><span class="gd">'+G[gk].desc+'</span>'
+    +(gs?'<span class="gsig" style="background:'+gs.bg+';color:'+gs.fg+'">'+gs.txt+'</span>':'')+'</div>'
+    +'<div class="grid">'+ms.map(m=>cardHTML(m,false)).join("")+ps.map(pendCardHTML).join("")+'</div>';}
+  host.innerHTML=html;
+ }else{const sorted=[...IND].sort((a,b)=>signal(b,makeSeries(b,period)).score-signal(a,makeSeries(a,period)).score);
+  host.innerHTML='<div class="ghead"><span class="gn">신호 강도순</span><span class="gd">강한 호재 → 악재</span></div>'
+   +'<div class="grid">'+sorted.map(m=>cardHTML(m,true)).join("")+'</div>'
+   +(PEND.length?'<div class="subnote">연결예정 '+PEND.length+'종(실거래량·낙찰가율·입주물량)은 그룹 보기에서 확인</div>':'');}
+ bindCards();}
+function renderFocus(){const m=byK(focusK);if(!m)return;const pts=makeSeries(m,period);const s=signal(m,pts);const longR=period!=="1Y";
+ document.getElementById("hLab").innerHTML='<span class="chip '+m.cad+'">'+(m.cad==="month"?"월간":"주간")+'</span>'+m.lab+' · '+m.sub;
+ document.getElementById("hVal").innerHTML=fmtV(m,m.base)+'<span class="u">'+m.unit+'</span>';
+ const hs=document.getElementById("hSig");hs.className="sig "+s.cls;hs.style.fontSize="12px";hs.style.padding="3px 11px";
+ hs.innerHTML=(s.cls==="up"?"▲":s.cls==="dn"?"▼":"●")+' '+s.txt+(m.inv?'<span class="inv">역행</span>':'');
+ document.getElementById("hNote").textContent=m.interp;
+ drawChart(document.getElementById("hChart"),m,pts,210,longR);}
+function renderCycle(){const order=["침체기","회복기","상승기","둔화기"];
+ const subs={"침체기":"가격↓ 거래↓","회복기":"심리·거래 반등","상승기":"가격·심리 강세","둔화기":"상승폭 축소"};
+ const lead=IND.filter(m=>m.g==="lead"||m.k==="jsup");let cur="회복기";
+ if(lead.length){let sc=0;lead.forEach(m=>sc+=signal(m,makeSeries(m,period)).score);sc/=lead.length;
+  cur=sc>0.05?"상승기":sc>0.0?"회복기":sc>-0.05?"둔화기":"침체기";}
+ document.getElementById("nowStage").textContent=cur;
+ document.getElementById("stages").innerHTML=order.map(s=>'<div class="stage '+(s===cur?"on":"")+'">'+s+'<small>'+subs[s]+'</small></div>').join("");
+ document.getElementById("cycRead").innerHTML='선행지표(매수우위·전망·선도50)와 전세수급을 종합해 <b>'+cur+'</b>로 판정. 국면 전환은 매수우위·전망지수가 기준 100을 위아래로 넘을 때 먼저 신호가 나와요.';}
+document.querySelectorAll("#view button").forEach(b=>b.onclick=()=>{document.querySelectorAll("#view button").forEach(x=>x.classList.remove("on"));b.classList.add("on");view=b.dataset.v;
+ document.getElementById("viewDesc").textContent=view==="group"?"기능별로 묶어 의미 파악":"호재·악재 강한 순으로 정렬";renderBody();});
+document.querySelectorAll("#period button").forEach(b=>b.onclick=()=>{document.querySelectorAll("#period button").forEach(x=>x.classList.remove("on"));b.classList.add("on");period=b.dataset.p;renderCycle();renderFocus();renderBody();});
+document.getElementById("viewDesc").textContent="기능별로 묶어 의미 파악";
+renderCycle();renderFocus();renderBody();
 </script></body></html>'''
 
 
-def _indicator_chart_component(inds):
-    """5개 지표(매매·전세지수 / 거래량 / 매수우위 / 낙찰가율) 하이브리드 차트 HTML."""
-    import json as _json
-    return _INDCHART_HTML.replace("__INDS__", _json.dumps(inds, ensure_ascii=False))
-
-
-def _render_indicator_charts(data):
-    """지표 탭 — DB(엔진 06:30 수집) 가격지수 시계열을 하이브리드 차트(포커스+미니)로.
-    추이가 '진짜 데이터'다(예전 라이브 KB 호출·합성 폴백 제거). 데이터 없으면 샘플."""
-    live = data is not _IND_SAMPLE
-    inds = []
-    for it in data:
-        key = it.get("key")
+def _indicators_v2_payload(data):
+    """지표 시계열(list[{key,...,series}]) → 그룹·신호·해석 메타가 붙은 카드 리스트(live)와
+    연결예정 슬롯(pend) 두 가지로 변환. 시계열 2개 미만은 제외."""
+    by = {it.get("key"): it for it in (data or [])}
+    ind = []
+    for k in _INDV2_ORDER:
+        it = by.get(k)
+        if not it:
+            continue
         series = [float(v) for v in (it.get("series") or []) if v is not None]
         if len(series) < 2:
             continue
-        short, cadence, _, dp = _IND_META.get(
-            key, (it.get("label", ""), "week", 100, "%"))
-        d = {
-            "k": key, "lab": it.get("label", short), "short": short,
+        meta = _INDV2_DEF[k]
+        ind.append({
+            "k": k, "g": meta["g"], "lab": it.get("label", k),
+            "sub": it.get("sub", ""), "cad": meta["cad"],
             "unit": it.get("unit", ""), "col": it.get("col", "#7E9A83"),
-            "bar": False, "base": round(series[-1], 2),
-            "drift": 0, "vol": 0, "dp": dp,
-            "real": series, "cadence": cadence,
-            "note": it.get("sub", ""),
-        }
-        if key in _IND_BASELINE:
-            d["baseline"] = _IND_BASELINE[key]
-        inds.append(d)
-    if not inds:
+            "baseline": meta["baseline"], "inv": meta["inv"],
+            "interp": meta["interp"], "base": round(series[-1], 2),
+            "real": [round(v, 2) for v in series],
+        })
+    return ind, _INDV2_PENDING
+
+
+def _indicator_chart_component(ind, pend, asof):
+    import json as _json
+    return (_INDV2_HTML
+            .replace("__IND__", _json.dumps(ind, ensure_ascii=False))
+            .replace("__PEND__", _json.dumps(pend, ensure_ascii=False))
+            .replace("__G__", _json.dumps(_INDV2_GROUPS, ensure_ascii=False))
+            .replace("__ASOF__", asof))
+
+
+def _render_indicator_charts(data):
+    """지표 탭 v2 — 사이클 위치 + 기능별 그룹 + 신호 배지/해석 + 신호강도순 토글.
+    데이터는 엔진(06:30 수집) 가격지수 시계열을 그대로 쓰고, 미연결 항목은 '연결예정'으로 표시."""
+    from datetime import date
+    from math import ceil
+    live = data is not _IND_SAMPLE
+    ind, pend = _indicators_v2_payload(data)
+    if not ind:
         st.caption("지표 데이터가 아직 없어요. 매일 06:30 수집 후 표시됩니다.")
         return
-    # 지표 개수에 맞춰 높이를 동적 계산(3열 그리드 → 행 수). 720 고정은 9종(3행)에서
-    # 하단 미니카드가 잘렸음. 헤더+포커스차트 고정분 + 행당 높이 + 행간격 + 여유.
-    rows = (len(inds) + 2) // 3
-    chart_h = 440 + rows * 132 + max(0, rows - 1) * 10
-    components.html(_indicator_chart_component(inds), height=chart_h, scrolling=False)
+    asof = date.today().strftime("%Y-%m-%d")
+    # 그룹 보기(가장 높은 레이아웃) 기준으로 높이 산정 — 클리핑 방지.
+    rows = sum(ceil((sum(1 for m in ind if m["g"] == g)
+                     + sum(1 for p in pend if p["g"] == g)) / 3)
+               for g in ("lead", "coin", "supply", "fund"))
+    height = 560 + 4 * 38 + rows * 186 + 40
+    components.html(_indicator_chart_component(ind, pend, asof),
+                    height=height, scrolling=False)
     src = ("KB·KOSIS·ECOS 실데이터" if live
            else "샘플(엔진 수집 전 — 06:30 자동 수집 후 실데이터로 교체)")
-    st.caption("매매·전세지수·매수우위·전세가율(KB) · 미분양(KOSIS) · 금리(ECOS) — "
-               f"{src} · 카드를 누르면 위에서 크게 · 기간 토글이 전체 동기화")
+    st.caption("선행/동행/수급·심리/펀더멘털로 그룹핑 · 카드별 신호·해석(역행지표 자동 반전) · "
+               f"사이클 위치는 선행·심리 종합 · {src}")
 
 
 def _render_indicators(cards=None):
@@ -1381,14 +1656,9 @@ def _run_collection():
         st.session_state.pop(k, None)
 
 
-def _re_can_collect(slot: str = "map"):
+def _re_can_collect():
     """갱신(대량 API 호출)은 소유자 전용. APP_PASSWORD 미설정이면 누구나 가능.
-       리포트 생성 잠금(gen_authed)을 그대로 재사용해 한 번 풀면 둘 다 열린다.
-
-    slot: 위젯 키 접미사. st.tabs는 모든 탭 본문을 매 런마다 실행하므로
-          지도·분양 탭에서 각각 호출돼도 위젯 키가 겹치지 않도록 호출 위치별로
-          고유값을 넘긴다(StreamlitDuplicateElementKey 방지). 잠금 해제는
-          gen_authed 공유라 어느 탭에서 풀어도 둘 다 열린다."""
+       리포트 생성 잠금(gen_authed)을 그대로 재사용해 한 번 풀면 둘 다 열린다."""
     try:
         pw = st.secrets.get("APP_PASSWORD", "")
     except Exception:
@@ -1397,8 +1667,8 @@ def _re_can_collect(slot: str = "map"):
         return True
     with st.expander("🔒 실거래 갱신은 소유자 전용이에요", expanded=False):
         st.caption("둘러보기는 자유롭고, 갱신(공공API 대량 호출)만 소유자 비밀번호가 필요해요.")
-        p = st.text_input("비밀번호", type="password", key=f"re_pw_{slot}")
-        if st.button("잠금 해제", key=f"re_unlock_{slot}"):
+        p = st.text_input("비밀번호", type="password", key="re_pw")
+        if st.button("잠금 해제", key="re_unlock"):
             if p == pw:
                 st.session_state["gen_authed"] = True
                 st.success("잠금 해제됐어요.")
@@ -1421,7 +1691,7 @@ def _render_collect_controls():
         st.caption("수도권 아파트 · 현재 샘플 — 매일 06:30 자동 수집(KB 가격지수·실거래) 후 "
                    "실데이터로 채워집니다.")
 
-    authed = _re_can_collect("map")
+    authed = _re_can_collect()
     col_a, col_b = st.columns([3, 1])
     with col_a:
         do_collect = st.button(
@@ -1475,14 +1745,17 @@ def render_realestate():
         st.title("수도권 아파트 가격지도")
         _render_collect_controls()
         _render_map()
+        st.markdown('<div class="re-grp" style="margin-top:6px">수도권 추이'
+                    '<span class="sub">매매·전세가격지수 · 전세가율 (2020~)</span></div>',
+                    unsafe_allow_html=True)
+        _render_trend_charts(_resolved_indicator_series())
 
     with t_ind:
         st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
         st.title("부동산 시장 지표")
-        st.caption("가격지수·심리·공급·금융 추이 · 카드 클릭 시 위에서 크게 · 기간 토글 동기화")
-        _ind_data = _resolved_indicator_series()
-        st.markdown(_phase_from_series(_ind_data), unsafe_allow_html=True)
-        _render_indicator_charts(_ind_data)
+        st.caption("사이클 위치 · 선행/동행/수급·심리/펀더멘털 그룹 · 카드별 신호·해석 · "
+                   "기능별/신호강도순 토글")
+        _render_indicator_charts(_resolved_indicator_series())
 
     with t_anom:
         st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
@@ -1495,7 +1768,7 @@ def render_realestate():
         st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
         st.title("분양 단지")
         st.caption("한국부동산원 청약홈 분양정보 · 청약 임박·진행 우선 · 매일 06:30 자동 갱신")
-        if _re_can_collect("sub"):
+        if _re_can_collect():
             if st.button(
                     "🔄 최신 분양정보 불러오기", key="re_sub_refresh",
                     help="매일 06:30 GitHub Actions가 청약홈 분양정보를 수집해 DB에 저장합니다. "
