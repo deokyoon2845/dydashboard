@@ -31,6 +31,7 @@ self-contained(별도 DB 누적 불필요):
 """
 
 import os
+import re
 import statistics
 from datetime import date, timedelta
 
@@ -700,7 +701,112 @@ def _fmt_eok(manwon):
     return f"{manwon/10000:.1f}억"
 
 
-def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=40):
+# ── 공동주택 세대수 (거래 탭 '1,000세대+' 필터용) ──────────────────
+#   data.go.kr 공동주택 '단지 목록제공'(getSigunguAptList3)으로 시군구 단지→kaptCode,
+#   '기본 정보'(getAphusBassInfoV3)로 세대수(kaptdaCnt). 키는 MOLIT/PUBLIC_DATA 재사용.
+#   ※ 두 서비스 모두 data.go.kr 활용신청 필요(목록 + 기본정보).
+#   매칭 실패/미승인이어도 _KNOWN_UNITS(확실한 대단지)로 보강해 필터가 동작하게 한다.
+_APT_LIST = "apis.data.go.kr/1613000/AptListService3/getSigunguAptList3"
+_APT_INFO = "apis.data.go.kr/1613000/AptBasisInfoServiceV3/getAphusBassInfoV3"
+
+
+def _norm_apt(s):
+    """단지명 정규화(괄호·공백·'아파트' 제거)로 RTMS↔공동주택 매칭률 향상."""
+    s = re.sub(r"\(.*?\)", "", str(s or ""))
+    s = s.replace("아파트", "")
+    return re.sub(r"[\s\-_·.]", "", s).strip().lower()
+
+
+# 확실한 대단지(≥1,000세대) — API 매칭 실패/미승인 시 폴백·보강
+_KNOWN_UNITS = {
+    "헬리오시티": 9510, "가락헬리오시티": 9510, "파크리오": 6864, "잠실엘스": 5678,
+    "리센츠": 5563, "트리지움": 3696, "잠실주공5단지": 3930, "은마": 4424,
+    "올림픽선수기자촌": 5540, "고덕그라시움": 4932, "고덕아르테온": 4057,
+    "고덕래미안힐스테이트": 3658, "마포래미안푸르지오": 3885, "래미안원베일리": 2990,
+    "반포자이": 3410, "래미안퍼스티지": 2444, "개포자이프레지던스": 3375,
+    "디에이치퍼스티어아이파크": 6702, "광교중흥에스클래스": 2231,
+    "힐스테이트판교엘포레": 1185, "상계주공7": 2634, "광교자연앤힐스테이트": 1764,
+    "동탄역시범더샵센트럴시티": 874, "광명아크로리버하임": 1305,
+}
+_KNOWN_UNITS = {_norm_apt(k): v for k, v in _KNOWN_UNITS.items() if v >= 1000}
+
+
+def _dgo_json(host_path, params, timeout=12):
+    """data.go.kr GET(JSON, https→http 폴백). response.body dict 반환, 실패 None."""
+    key = _get_key()
+    if not key:
+        return None
+    q = {"serviceKey": key, "type": "json", "numOfRows": 1000, "pageNo": 1, **params}
+    for scheme in ("https", "http"):
+        try:
+            r = requests.get(f"{scheme}://{host_path}", params=q, timeout=timeout)
+            r.raise_for_status()
+            data = r.json()
+        except Exception:
+            continue
+        return (((data or {}).get("response") or {}).get("body")) or {}
+    return None
+
+
+def _dgo_items(body):
+    it = ((body or {}).get("items") or {})
+    if isinstance(it, dict):
+        it = it.get("item", [])
+    if isinstance(it, dict):
+        it = [it]
+    return it or []
+
+
+def _known_lookup(na):
+    if not na:
+        return None
+    if na in _KNOWN_UNITS:
+        return _KNOWN_UNITS[na]
+    return next((u for n, u in _KNOWN_UNITS.items() if na in n or n in na), None)
+
+
+def _apt_units_map(pairs):
+    """{(시군구, 단지명): 세대수|None}. 공동주택 목록→기본정보 조회 + 폴백 보강."""
+    out = {}
+    by_sgg = {}
+    for sgg, apt in pairs:
+        by_sgg.setdefault(sgg, set()).add(apt)
+    info_cache = {}
+    for sgg, apts in by_sgg.items():
+        codes = SIGUNGU_CODES.get(sgg)
+        name2code = {}
+        if codes:
+            code_list = codes if isinstance(codes, (list, tuple)) else [codes]
+            for sgg_code in code_list:
+                body = _dgo_json(_APT_LIST, {"sigunguCode": str(sgg_code)[:5]})
+                for it in _dgo_items(body):
+                    nm = _norm_apt(it.get("kaptName"))
+                    kc = str(it.get("kaptCode") or "").strip()
+                    if nm and kc:
+                        name2code.setdefault(nm, kc)
+        for apt in apts:
+            na = _norm_apt(apt)
+            units = None
+            kc = name2code.get(na) or next(
+                (c for n, c in name2code.items() if na and (na in n or n in na)), None)
+            if kc:
+                if kc not in info_cache:
+                    b = _dgo_json(_APT_INFO, {"kaptCode": kc})
+                    item = (b or {}).get("item") or {}
+                    if isinstance(item, list):
+                        item = item[0] if item else {}
+                    try:
+                        info_cache[kc] = int(str(item.get("kaptdaCnt")).strip())
+                    except (ValueError, TypeError, AttributeError):
+                        info_cache[kc] = None
+                units = info_cache[kc]
+            if units is None:
+                units = _known_lookup(na)
+            out[(sgg, apt)] = units
+    return out
+
+
+def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=60):
     """특이거래 리스트. 뷰어 fetch_anomalies와 동일한 튜플 형식으로 반환.
        (유형, 배경, 글자색, 단지, 지역, 면적, 가격, 변동, 거래유형, 제외여부, 거래일ISO)"""
     asof = asof or date.today()
@@ -782,4 +888,11 @@ def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=
         seen.add(k); dedup.append(it)
         if len(dedup) >= limit:
             break
-    return dedup
+    # 세대수 부착(거래 탭 '1,000세대+' 필터용) — 실패해도 None으로 진행(폴백 보강)
+    try:
+        pairs = {(it[4], it[3]) for it in dedup}
+        umap = _apt_units_map(pairs)
+    except Exception as e:
+        print(f"[realestate] 세대수 조회 실패(폴백만 적용): {e}")
+        umap = {}
+    return [tuple(it) + (umap.get((it[4], it[3])),) for it in dedup]
