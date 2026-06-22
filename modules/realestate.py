@@ -694,8 +694,7 @@ table.sm td:first-child,table.sm th:first-child{text-align:left}
 .seg button:last-child{border-right:none}.seg button.on{background:#EEF1EC;color:var(--ink);font-weight:700}
 .mapwrap{position:relative;width:100%;border:1px solid var(--line);border-radius:12px;background:#FCFCFA;overflow:hidden}
 #map{display:block;width:100%}
-.dist{stroke:#FCFCFA;stroke-width:0.7;cursor:pointer;transform-box:fill-box;transform-origin:center;transition:fill .45s ease,opacity .25s ease,transform .18s cubic-bezier(.2,.7,.3,1)}
-.dist.zoom{transform:scale(1.14)}
+.dist{stroke:#FCFCFA;stroke-width:0.7;cursor:pointer;transition:fill .45s ease,opacity .25s ease,stroke-width .12s ease}
 .dlabel{pointer-events:none;fill:#2f302a;font-family:var(--kfont)}
 #hoverLabel{pointer-events:none;font-family:var(--kfont);font-weight:800;fill:#23241d;opacity:0;transition:opacity .12s ease}
 #border{fill:none;stroke:#6E7A6A;stroke-width:2.2;stroke-linejoin:round;pointer-events:none}
@@ -776,9 +775,9 @@ function drawMap(){const ps=D.map((d,i)=>{const dim=region!=="all"&&d.sd!==regio
     +`<text id="hoverLabel" text-anchor="middle" dominant-baseline="middle" paint-order="stroke" stroke="#FCFCFA" stroke-width="3.6" stroke-linejoin="round"></text>`;
   const wrap=document.getElementById("mapwrap"),tip=document.getElementById("tip"),pg=document.getElementById("paths"),hl=document.getElementById("hoverLabel");
   document.querySelectorAll("#map path.dist").forEach(p=>{
-    p.onmouseenter=()=>{const d=D[+p.dataset.i];showTip(d);p.style.stroke="#34352f";p.style.strokeWidth="1.6";pg.appendChild(p);p.classList.add("zoom");tip.style.opacity="1";tip.style.transform="translateY(0)";
+    p.onmouseenter=()=>{const d=D[+p.dataset.i];showTip(d);p.style.stroke="#34352f";p.style.strokeWidth="1.6";pg.appendChild(p);tip.style.opacity="1";tip.style.transform="translateY(0)";
       hl.setAttribute("x",d.cx);hl.setAttribute("y",d.cy);hl.setAttribute("font-size",d.sd==="seoul"?13:15);hl.textContent=d.sl;hl.style.opacity="1";};
-    p.onmouseleave=()=>{p.classList.remove("zoom");p.style.stroke="#FCFCFA";p.style.strokeWidth="0.7";tip.style.opacity="0";tip.style.transform="translateY(4px)";hl.style.opacity="0";};});
+    p.onmouseleave=()=>{p.style.stroke="#FCFCFA";p.style.strokeWidth="0.7";tip.style.opacity="0";tip.style.transform="translateY(4px)";hl.style.opacity="0";};});
   wrap.onmousemove=e=>{const r=wrap.getBoundingClientRect();let x=e.clientX-r.left+14,y=e.clientY-r.top+14;if(x>r.width-170)x=e.clientX-r.left-164;tip.style.left=x+"px";tip.style.top=y+"px";};}
 function showTip(d){document.getElementById("tip").innerHTML=`<div style="font-weight:700;margin-bottom:5px">${d.n} <span style="font-weight:400;color:#9a9b92">${d.sd==="seoul"?"서울":"경기"}</span></div>
   <div style="color:#9a9b92">매매 <span class="${cls(d.mm)}">${fmt(d.mm)}</span> · 전세 <span class="${cls(d.js)}">${fmt(d.js)}</span></div>
@@ -1051,7 +1050,11 @@ def _render_indicator_charts(data):
     if not inds:
         st.caption("지표 데이터가 아직 없어요. 매일 06:30 수집 후 표시됩니다.")
         return
-    components.html(_indicator_chart_component(inds), height=720, scrolling=False)
+    # 지표 개수에 맞춰 높이를 동적 계산(3열 그리드 → 행 수). 720 고정은 9종(3행)에서
+    # 하단 미니카드가 잘렸음. 헤더+포커스차트 고정분 + 행당 높이 + 행간격 + 여유.
+    rows = (len(inds) + 2) // 3
+    chart_h = 440 + rows * 132 + max(0, rows - 1) * 10
+    components.html(_indicator_chart_component(inds), height=chart_h, scrolling=False)
     src = ("KB·KOSIS·ECOS 실데이터" if live
            else "샘플(엔진 수집 전 — 06:30 자동 수집 후 실데이터로 교체)")
     st.caption("매매·전세지수·매수우위·전세가율(KB) · 미분양(KOSIS) · 금리(ECOS) — "
@@ -1362,40 +1365,20 @@ def _render_subscriptions():
 
 
 def _run_collection():
-    """국토부 실거래·청약홈 분양 수집 → 세션 저장 + (가능하면) Supabase 스냅샷 저장."""
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
-    from engine.realestate_collect import (collect_region_metrics, collect_anomalies,
-                                           collect_indicators)
-    metrics = collect_region_metrics()
-    anoms = collect_anomalies()
+    """뷰어 '최신 데이터 불러오기' — 라이브 API를 호출하지 않고 DB 스냅샷만 다시 읽는다.
+
+    KB(data-api.kbland.kr)는 Streamlit Cloud IP에서 차단/타임아웃되고, 국토부 대량 호출도
+    뷰어에서는 불안정하다(엔진-우선 원칙). 그래서 실제 수집은 매일 06:30 GitHub Actions가
+    수행해 Supabase(realestate_snapshots)에 채우고, 뷰어는 그 최신 행을 읽기만 한다.
+    이 함수는 스냅샷 캐시를 비워 '방금 06:30/수동 워크플로가 쓴 최신본'을 즉시 반영한다.
+    (예외를 던지지 않는다 — 에러 배너 대신 항상 DB/샘플을 보여준다.)"""
     try:
-        indseries = collect_indicators()
-    except Exception:
-        indseries = None
-    subs = None
-    try:
-        from engine.realestate_subscriptions import collect_subscriptions
-        subs = collect_subscriptions()
-    except Exception:
-        subs = None
-    asof = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")
-    st.session_state["re_metrics"] = metrics
-    st.session_state["re_anoms"] = anoms
-    if indseries:
-        st.session_state["re_indseries"] = indseries
-    if subs:
-        st.session_state["re_subs"] = subs
-    st.session_state["re_asof"] = asof
-    # 영속화: 재부팅 후에도·다른 방문자에게도 실데이터가 보이게
-    try:
-        from modules.db import supabase_configured, save_realestate
-        if supabase_configured():
-            save_realestate(metrics=metrics, anomalies=anoms,
-                            indicators=indseries, subscriptions=subs, asof=asof)
-            _load_re_snapshot.clear()   # 스냅샷 캐시만 무효화
+        _load_re_snapshot.clear()      # 스냅샷 캐시 무효화 → 다음 읽기에서 DB 최신본 로드
     except Exception:
         pass
+    # 직전 세션에 남아 있던 라이브 갱신값을 지워 DB 스냅샷이 그대로 보이게 한다.
+    for k in ("re_metrics", "re_anoms", "re_subs", "re_indseries", "re_asof"):
+        st.session_state.pop(k, None)
 
 
 def _re_can_collect():
@@ -1437,8 +1420,9 @@ def _render_collect_controls():
     col_a, col_b = st.columns([3, 1])
     with col_a:
         do_collect = st.button(
-            "🔄 실거래 데이터 갱신", disabled=not authed,
-            help="국토부 실거래가 API 수집 (수십 초 소요·API 호출이 많아요)",
+            "🔄 최신 데이터 불러오기", disabled=not authed,
+            help="매일 06:30 GitHub Actions가 KB·국토부 데이터를 수집해 DB에 저장합니다. "
+                 "이 버튼은 그 최신본을 즉시 다시 불러옵니다(라이브 API 호출 없음).",
             use_container_width=True)
     with col_b:
         do_diag = st.button(
@@ -1459,13 +1443,10 @@ def _render_collect_controls():
             st.error(f"[{status}] {msg}")
 
     if do_collect:
-        with st.spinner("국토부 실거래 수집 중... (지역 지표 + 특이거래)"):
-            try:
-                _run_collection()
-                st.success("실거래 데이터로 갱신했어요.")
-                st.rerun()
-            except Exception as e:
-                st.warning(f"수집 실패 · {e} — 샘플 데이터로 표시합니다.")
+        with st.spinner("DB에서 최신본 불러오는 중..."):
+            _run_collection()
+        st.success("최신 데이터를 불러왔어요.")
+        st.rerun()
 
 
 def render_realestate():
@@ -1508,7 +1489,17 @@ def render_realestate():
     with t_sub:
         st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
         st.title("분양 단지")
-        st.caption("한국부동산원 청약홈 분양정보 · 청약 임박·진행 우선")
+        st.caption("한국부동산원 청약홈 분양정보 · 청약 임박·진행 우선 · 매일 06:30 자동 갱신")
+        if _re_can_collect():
+            if st.button(
+                    "🔄 최신 분양정보 불러오기", key="re_sub_refresh",
+                    help="매일 06:30 GitHub Actions가 청약홈 분양정보를 수집해 DB에 저장합니다. "
+                         "이 버튼은 그 최신본을 즉시 다시 불러옵니다.",
+                    use_container_width=True):
+                with st.spinner("DB에서 최신 분양정보 불러오는 중..."):
+                    _run_collection()
+                st.success("최신 분양정보를 불러왔어요.")
+                st.rerun()
         _render_subscriptions()
 
     with t_kw:
