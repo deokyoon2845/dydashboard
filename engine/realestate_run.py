@@ -7,13 +7,15 @@ GitHub Actions(.github/workflows/realestate.yml)의 일일 스케줄, 또는 수
 필요 환경변수: SUPABASE_URL, SUPABASE_KEY, MOLIT_API_KEY(또는 PUBLIC_DATA_API_KEY/DATA_GO_KR_KEY)
 """
 
-from engine.realestate_collect import collect_region_metrics, collect_anomalies
+from engine.realestate_collect import (collect_region_metrics, collect_anomalies,
+                                        collect_indicators)
 from modules.db import save_realestate
 
 
 def main():
     metrics = None
     anomalies = None
+    indicators = None
     subscriptions = None
 
     try:
@@ -21,6 +23,12 @@ def main():
         print(f"[realestate] 지역 지표 {len(metrics)}개 수집")
     except Exception as e:
         print(f"[realestate] 지역 지표 수집 실패: {e}")
+
+    try:
+        indicators = collect_indicators()
+        print(f"[realestate] 지표 시계열 {len(indicators)}종 수집")
+    except Exception as e:
+        print(f"[realestate] 지표 시계열 수집 실패: {e}")
 
     try:
         anomalies = collect_anomalies()
@@ -35,11 +43,11 @@ def main():
     except Exception as e:
         print(f"[realestate] 분양 수집 실패: {e}")
 
-    if not metrics and not anomalies and not subscriptions:
+    if not metrics and not anomalies and not subscriptions and not indicators:
         raise SystemExit("[realestate] 수집 결과가 비어 저장하지 않습니다 (키/네트워크 확인).")
 
     asof_date = save_realestate(metrics=metrics, anomalies=anomalies,
-                                subscriptions=subscriptions)
+                                indicators=indicators, subscriptions=subscriptions)
     print(f"[realestate] Supabase 저장 완료: asof_date={asof_date}")
 
 
