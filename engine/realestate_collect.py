@@ -637,13 +637,13 @@ def collect_indicators():
     try:
         add("sale", "매매가격지수", "서울 · 주간(KB)", "", "#B65F5A",
             _kb_seoul_series("index", {"월간주간구분코드": "02", "매물종별구분": "01",
-                                       "매매전세코드": "01"}))
+                                       "매매전세코드": "01"}, points=400))
     except Exception as e:
         print(f"[realestate] KB 매매지수 실패: {e}")
     try:
         add("jeonse", "전세가격지수", "서울 · 주간(KB)", "", "#5A7CA0",
             _kb_seoul_series("index", {"월간주간구분코드": "02", "매물종별구분": "01",
-                                       "매매전세코드": "02"}))
+                                       "매매전세코드": "02"}, points=400))
     except Exception as e:
         print(f"[realestate] KB 전세지수 실패: {e}")
     try:
@@ -668,8 +668,14 @@ def collect_indicators():
     except Exception as e:
         print(f"[realestate] KB 매매전망 실패: {e}")
     try:
+        add("joutlook", "전세가격전망지수", "서울 · 월간(KB) · 100=중립", "", "#8AA0B5",
+            _kb_maktrnd_series("06", "01"))
+    except Exception as e:
+        print(f"[realestate] KB 전세전망 실패: {e}")
+    try:
         add("jr", "전세가율", "서울 · 월간(KB)", "%", "#7E9A83",
-            _kb_seoul_series("jratio", {"월간주간구분코드": "01", "매물종별구분": "01"}))
+            _kb_seoul_series("jratio", {"월간주간구분코드": "01", "매물종별구분": "01"},
+                             points=84))
     except Exception as e:
         print(f"[realestate] KB 전세가율 실패: {e}")
     try:
