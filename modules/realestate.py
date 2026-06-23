@@ -535,14 +535,14 @@ def _phase_from_series(data):
     return f'<div class="re-phase"><b>시장 국면</b>{spans}</div>'
 
 
-# (유형, 배경, 글자색, 단지, 지역, 면적, 가격, 변동, 거래유형, 제외여부, 거래일ISO, 세대수)
+# (유형,배경,글자색,단지,지역,면적,가격,변동,거래유형,제외,거래일ISO,세대수,빈도,신호강도%)
 _SAMPLE_ANOMALIES = [
-    ("신고가", "#FCEBEB", "#A32D2D", "래미안원베일리", "서초구", "84㎡", "58.0억", "+3.2%", "중개", False, "2026-06-20", 2990),
-    ("신고가", "#FCEBEB", "#A32D2D", "힐스테이트판교엘포레", "성남시", "84㎡", "24.5억", "+2.6%", "중개", False, "2026-06-19", 1185),
-    ("거래량 급증", "#FAEEDA", "#854F0B", "파크리오", "송파구", "전체", "31건/주", "+148%", "-", False, "2026-06-20", 6864),
-    ("급등", "#FCEBEB", "#A32D2D", "광교중흥S클래스", "수원시", "84㎡", "17.8억", "+8.1%", "중개", False, "2026-06-18", 2231),
-    ("신저가", "#E6F1FB", "#0C447C", "상계주공7", "노원구", "59㎡", "6.1억", "-4.0%", "중개", False, "2026-06-19", 2634),
-    ("급락", "#E6F1FB", "#0C447C", "은마", "강남구", "84㎡", "26.0억", "-7.5%", "직거래", True, "2026-06-17", 4424),
+    ("신고가", "#FCEBEB", "#A32D2D", "래미안원베일리", "서초구", "84㎡", "58.0억", "+3.2%", "중개", False, "2026-06-20", 2990, 18, 3.2),
+    ("신고가", "#FCEBEB", "#A32D2D", "힐스테이트판교엘포레", "성남시", "84㎡", "24.5억", "+2.6%", "중개", False, "2026-06-19", 1185, 14, 2.6),
+    ("거래량 급증", "#FAEEDA", "#854F0B", "파크리오", "송파구", "전체", "12건/4주", "+148%", "-", False, "2026-06-20", 6864, 40, 148.0),
+    ("급등", "#FCEBEB", "#A32D2D", "광교중흥S클래스", "수원시", "84㎡", "17.8억", "+8.1%", "중개", False, "2026-06-18", 2231, 16, 8.1),
+    ("신저가", "#E6F1FB", "#0C447C", "상계주공7", "노원구", "59㎡", "6.1억", "-4.0%", "중개", False, "2026-06-19", 2634, 22, 4.0),
+    ("급락", "#E6F1FB", "#0C447C", "은마", "강남구", "84㎡", "26.0억", "-7.5%", "직거래", True, "2026-06-17", 4424, 20, 7.5),
 ]
 
 
@@ -555,6 +555,31 @@ def fetch_anomalies():
     if snap and snap.get("anomalies"):
         return snap["anomalies"]
     return _SAMPLE_ANOMALIES
+
+
+# ── 주목 단지(거래 활발·상승 + 네이버 검색관심도) ────────────────────────
+_SAMPLE_HOT = [
+    {"apt": "파크리오", "gu": "송파구", "sd": "seoul", "recent": 14, "prev": 6,
+     "vol_chg": 133, "price_eok": "24.8억", "chg": 2.1, "area": "84㎡", "freq": 40, "search": 100},
+    {"apt": "헬리오시티", "gu": "송파구", "sd": "seoul", "recent": 12, "prev": 7,
+     "vol_chg": 71, "price_eok": "23.5억", "chg": 1.6, "area": "84㎡", "freq": 51, "search": 92},
+    {"apt": "잠실엘스", "gu": "송파구", "sd": "seoul", "recent": 9, "prev": 5,
+     "vol_chg": 80, "price_eok": "27.0억", "chg": 2.4, "area": "84㎡", "freq": 33, "search": 81},
+    {"apt": "래미안원베일리", "gu": "서초구", "sd": "seoul", "recent": 7, "prev": 3,
+     "vol_chg": 133, "price_eok": "58.0억", "chg": 3.2, "area": "84㎡", "freq": 18, "search": 88},
+    {"apt": "고덕그라시움", "gu": "강동구", "sd": "seoul", "recent": 8, "prev": 6,
+     "vol_chg": 33, "price_eok": "17.2억", "chg": 0.9, "area": "84㎡", "freq": 29, "search": 64},
+    {"apt": "광교중흥S클래스", "gu": "수원시", "sd": "gg", "recent": 6, "prev": 4,
+     "vol_chg": 50, "price_eok": "17.8억", "chg": 1.4, "area": "84㎡", "freq": 16, "search": 55},
+]
+
+
+def fetch_hot_complexes():
+    """주목 단지 리스트. 세션/DB metrics의 '_hot' → 샘플 폴백."""
+    m = _resolved_metrics()
+    if isinstance(m, dict) and m.get("_hot"):
+        return m["_hot"]
+    return _SAMPLE_HOT
 
 
 # ── 분양 단지 (청약홈 분양정보 — 현재 샘플 · 폴백) ───────────────
@@ -675,6 +700,25 @@ _RE_CSS = """
 .re-daygroup{font-size:11.5px;font-weight:700;color:var(--muted,#9a9b92);margin:12px 2px 6px;
   display:flex;align-items:center;gap:8px;}
 .re-daygroup::after{content:"";flex:1;height:1px;background:var(--line,#ECEDE7);}
+/* 상승압력 게이지 */
+.re-press{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px;font-size:11.5px;color:var(--muted,#9a9b92);}
+.re-press .lab b{color:var(--ink,#34352f);font-weight:800;}
+.re-press .bar{flex:1;min-width:120px;height:9px;border-radius:5px;overflow:hidden;
+  background:linear-gradient(90deg,#E6F1FB,#EFEEE9 50%,#FCEBEB);position:relative;}
+.re-press .bar i{display:block;height:100%;background:#B65F5A;opacity:.55;}
+.re-press .nums b{font-weight:800;}
+/* 주목 단지 보드 */
+.re-hotwrap{display:flex;flex-direction:column;gap:7px;margin-bottom:6px;}
+.re-hot{display:flex;align-items:center;gap:11px;background:var(--card,#fff);
+  border:1px solid var(--line,#ECEDE7);border-radius:12px;padding:10px 13px;}
+.re-hot-rk{flex:none;width:22px;height:22px;border-radius:7px;background:#F2F5F0;color:#5d6258;
+  font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;}
+.re-hot-r{text-align:right;min-width:70px;}
+.re-hot-si{flex:none;width:78px;display:flex;align-items:center;gap:6px;}
+.re-hot-si .bar{flex:1;height:8px;border-radius:4px;background:#EEF1EC;overflow:hidden;}
+.re-hot-si .bar i{display:block;height:100%;background:var(--sage-deep,#7E9A83);}
+.re-hot-si .v{font-size:11px;font-weight:800;color:#5d6258;width:22px;text-align:right;}
+.re-hot-si.dim{color:#C4C6BD;font-size:12px;justify-content:center;}
 .re-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
 .re-chip{font-size:12px;color:var(--pill-ink,#5d6258);background:var(--pill-bg,#F1F2EC);
   border:1px solid var(--line,#ECEDE7);border-radius:999px;padding:4px 12px;}
@@ -1551,8 +1595,9 @@ _WD_KR = ["월", "화", "수", "목", "금", "토", "일"]
 
 
 def _anom_norm(rec):
-    """특이거래 레코드를 12필드로 정규화(구 10/11필드 스냅샷 호환). 실패 시 None.
-       (유형,배경,글자색,단지,지역,면적,가격,변동,거래유형,제외,거래일ISO|None,세대수|None)"""
+    """특이거래 레코드를 14필드로 정규화(구 10/11/12필드 스냅샷 호환). 실패 시 None.
+       (유형,배경,글자색,단지,지역,면적,가격,변동,거래유형,제외,거래일ISO|None,
+        세대수|None, 빈도|None, 신호강도%|None)"""
     try:
         rec = list(rec)
     except TypeError:
@@ -1561,7 +1606,9 @@ def _anom_norm(rec):
         return None
     return (tuple(rec[:10])
             + (rec[10] if len(rec) >= 11 else None,)   # 거래일ISO
-            + (rec[11] if len(rec) >= 12 else None,))   # 세대수
+            + (rec[11] if len(rec) >= 12 else None,)    # 세대수
+            + (rec[12] if len(rec) >= 13 else None,)    # 빈도(12개월 거래수)
+            + (rec[13] if len(rec) >= 14 else None,))   # 신호강도%(sigstr)
 
 
 def _anom_date(d):
@@ -1579,7 +1626,55 @@ def _anom_daylabel(d):
     return f"{dt.month:02d}.{dt.day:02d} ({_WD_KR[dt.weekday()]})" if dt else "날짜 미상"
 
 
+_ANOM_PRESETS = {
+    "느슨": {"freq": 5, "jump": 7.0, "margin": 0.3, "surge": 80, "days": 45},
+    "표준": {"freq": 8, "jump": 10.0, "margin": 1.0, "surge": 150, "days": 30},
+    "엄격": {"freq": 14, "jump": 13.0, "margin": 2.0, "surge": 200, "days": 21},
+}
+
+
+def _render_hot_complexes():
+    """주목 단지 보드 — 거래 활발·상승(국토부 실거래) + 네이버 검색관심도(데이터랩)."""
+    hot = [h for h in (fetch_hot_complexes() or []) if isinstance(h, dict)]
+    if not hot:
+        return
+    st.markdown('<div class="re-grp">주목 단지<span class="sub">거래 활발·상승 + '
+                '네이버 검색관심도</span></div>', unsafe_allow_html=True)
+    has_search = any(isinstance(h.get("search"), (int, float)) for h in hot)
+    body = ""
+    for i, h in enumerate(hot[:12], 1):
+        sd = "서울" if h.get("sd") == "seoul" else "경기"
+        chg = h.get("chg") or 0
+        chg_cls = "up" if chg >= 0 else "dn"
+        vol = h.get("vol_chg") or 0
+        vol_cls = "up" if vol >= 0 else "dn"
+        sval = h.get("search")
+        si = (f'<div class="re-hot-si"><span class="bar">'
+              f'<i style="width:{max(0, min(100, int(sval)))}%"></i></span>'
+              f'<span class="v">{int(sval)}</span></div>'
+              if isinstance(sval, (int, float)) else '<div class="re-hot-si dim">–</div>')
+        apt = h.get("apt", "")
+        apt_link = (f'<a href="{_naver_land_url(apt)}" target="_blank" '
+                    f'rel="noopener">{apt}</a>')
+        body += (f'<div class="re-hot"><span class="re-hot-rk">{i}</span>'
+                 f'<div style="flex:1"><div class="re-apt">{apt_link} '
+                 f'<span class="re-sub">· {sd} {h.get("gu","")} · {h.get("area","")}</span></div>'
+                 f'<div class="re-sub">최근 {h.get("recent",0)}건 '
+                 f'<span class="{vol_cls}">({"+" if vol>=0 else ""}{vol}%)</span> · '
+                 f'1년 {h.get("freq",0)}건</div></div>'
+                 f'<div class="re-hot-r"><div class="re-price">{h.get("price_eok","-")}</div>'
+                 f'<div class="re-chg {chg_cls}">{"+" if chg>=0 else ""}{chg}%</div></div>{si}</div>')
+    st.markdown(f'<div class="re-hotwrap">{body}</div>', unsafe_allow_html=True)
+    st.caption(("거래 활발·상승 단지 · 네이버 데이터랩 검색관심도(0~100, 상대값)"
+                if has_search else
+                "거래 활발·상승 단지 · 검색관심도는 네이버 키 연결 시 표시")
+               + " · 호갱노노·아실 등 인기리스트는 공식 API 부재·약관으로 미사용 · "
+               "단지명 클릭 시 네이버부동산.")
+
+
 def _render_anomalies():
+    from datetime import date as _date
+    today = _date.today()
     typ_f = st.segmented_control(
         "유형", ["전체", "신고가", "신저가", "거래량 급증", "급등", "급락"],
         default="전체", key="re_anom_type")
@@ -1589,10 +1684,11 @@ def _render_anomalies():
     sort_f = st.segmented_control(
         "정렬", ["최신순", "변동순", "금액순", "유형순"],
         default="최신순", key="re_anom_sort")
+    sens_f = st.segmented_control(
+        "민감도", ["느슨", "표준", "엄격"], default="표준", key="re_anom_sens",
+        help="소형단지(거래빈도) 컷·신호강도·표시기간을 한 번에 조절 — 너무 많/적으면 바꿔보세요")
     exclude_direct = st.checkbox("직거래(증여추정) 제외", value=True, key="re_excl_direct")
-    only_big = st.checkbox(
-        "1,000세대+ 단지만", value=True, key="re_only_big",
-        help="공동주택 세대수 기준 대단지만 — 소규모 단지 노이즈 제거")
+    P = _ANOM_PRESETS.get(sens_f or "표준", _ANOM_PRESETS["표준"])
 
     def _pass_region(gu):
         if reg_f == "서울":
@@ -1603,17 +1699,27 @@ def _render_anomalies():
             return any(n in gu for n in _GANGNAM3)
         return True
 
+    def _pass_preset(r):
+        typ, d, freq, sig = r[0], r[10], r[12], r[13]
+        if isinstance(freq, (int, float)) and freq < P["freq"]:   # 소형/저유동 컷
+            return False
+        dt = _anom_date(d)                                        # 표시 기간 컷
+        if dt and (today - dt).days > P["days"]:
+            return False
+        if isinstance(sig, (int, float)):                        # 유형별 신호강도 컷
+            if typ in ("급등", "급락") and sig < P["jump"]:
+                return False
+            if typ in ("신고가", "신저가") and sig < P["margin"]:
+                return False
+            if typ == "거래량 급증" and sig < P["surge"]:
+                return False
+        return True
+
     anoms = [na for na in (_anom_norm(r) for r in fetch_anomalies()) if na]
-    # 지역·직거래 필터 적용 풀(유형 건수 집계용 · 유형 필터는 미적용)
+    # 지역·직거래 → 민감도 프리셋(빈도·기간·신호강도) 순으로 좁힌다(유형 필터는 밴드 뒤)
     base_pool = [r for r in anoms
                  if not (r[9] and exclude_direct) and _pass_region(r[4])]
-    # '1,000세대+' 필터: 세대수(인덱스 11)가 1,000 이상인 것만(세대수 미상은 제외)
-    if only_big:
-        pool = [r for r in base_pool
-                if isinstance(r[11], (int, float)) and r[11] >= 1000]
-        hidden = len(base_pool) - len(pool)
-    else:
-        pool, hidden = base_pool, 0
+    pool = [r for r in base_pool if _pass_preset(r)]
 
     # 유형별 건수 밴드
     _order = ["신고가", "신저가", "거래량 급증", "급등", "급락"]
@@ -1627,9 +1733,18 @@ def _render_anomalies():
         f'<span class="re-stat"><b style="color:{_col[t]}">{cnt[t]}</b>{t}</span>'
         for t in _order)
     st.markdown(f'<div class="re-statband">{chips}</div>', unsafe_allow_html=True)
-    if only_big and hidden:
-        st.caption(f"1,000세대+ 만 표시 · 소규모·세대수 미상 {hidden}건 숨김 "
-                   "(공동주택 단지정보 기준)")
+
+    # 상승압력 게이지: 신고가 vs 신저가 비율 (시장 방향 한눈에)
+    up_n, dn_n = cnt["신고가"], cnt["신저가"]
+    if up_n + dn_n:
+        up_p = round(up_n / (up_n + dn_n) * 100)
+        label = ("상승 우세" if up_p >= 60 else "하락 우세" if up_p <= 40 else "혼조")
+        st.markdown(
+            f'<div class="re-press"><span class="lab">상승압력 <b>{label}</b></span>'
+            f'<span class="bar"><i style="width:{up_p}%"></i></span>'
+            f'<span class="nums"><b style="color:#B65F5A">신고가 {up_n}</b> · '
+            f'<b style="color:#5A7CA0">신저가 {dn_n}</b></span></div>',
+            unsafe_allow_html=True)
 
     # 유형 필터 적용 → 표시 행
     rows = [r for r in pool
@@ -1660,7 +1775,7 @@ def _render_anomalies():
     grouped = (sort_f == "최신순")
     html = ""
     cur_day = None
-    for typ, bg, fg, apt, gu, area, price, chg, trade, excl, d, units in rows:
+    for typ, bg, fg, apt, gu, area, price, chg, trade, excl, d, units, freq, sig in rows:
         if grouped:
             dl = _anom_daylabel(d)
             if dl != cur_day:
@@ -1671,6 +1786,8 @@ def _render_anomalies():
         emph = "lv2" if v >= 7 else ("lv1" if v >= 3 else "")
         unit_s = (f" · {int(units):,}세대"
                   if isinstance(units, (int, float)) and units else "")
+        freq_s = (f" · 1년 {int(freq)}건"
+                  if isinstance(freq, (int, float)) and freq else "")
         trade_html = ('<span style="color:#A32D2D">직거래(증여추정·제외)</span>'
                       if trade == "직거래" else f"거래유형 {trade}")
         date_inline = ("" if grouped or not _anom_date(d)
@@ -1680,14 +1797,14 @@ def _render_anomalies():
         html += (f'<div class="re-anom{" excl" if excl else ""}">'
                  f'<span class="re-bdg" style="background:{bg};color:{fg}">{typ}</span>'
                  f'<div style="flex:1"><div class="re-apt">{apt_link} '
-                 f'<span class="re-sub">· {gu} · {area}{unit_s}</span></div>'
+                 f'<span class="re-sub">· {gu} · {area}{unit_s}{freq_s}</span></div>'
                  f'<div class="re-sub">{date_inline}{trade_html}</div></div>'
                  f'<div><div class="re-price">{price}</div>'
                  f'<div class="re-chg {chg_cls} {emph}">{chg}</div></div></div>')
     st.markdown(html, unsafe_allow_html=True)
-    st.caption("신고가/신저가·거래량 급변·급등락 · 1,000세대+ 대단지 기본 표시 "
-               "(공동주택 단지정보 세대수 기준) · 직거래(증여추정) 기본 제외 · "
-               "최신순은 거래일별 묶음 · 단지명 클릭 시 네이버부동산.")
+    st.caption("소형·저유동 단지는 거래빈도 컷으로 제외(세대수 미의존) · 신고가=최근 1년 최고 "
+               "초과 · 급등락=직전 동일면적 거래 대비 · 거래량 급증=최근 4주 vs 평균 · "
+               "민감도로 양 조절 · 직거래(증여추정) 기본 제외 · 단지명 클릭 시 네이버부동산.")
 
 
 # ── 메인 ────────────────────────────────────────────────────────
@@ -1929,9 +2046,13 @@ def render_realestate():
 
     with t_anom:
         st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
-        st.title("특이거래")
-        st.caption("신고가·신저가·급등락·거래량 급증 · 국토부 실거래 기준 · "
-                   "직거래(증여추정) 기본 제외")
+        st.title("거래 동향")
+        st.caption("주목 단지(거래 활발·상승 + 검색관심도) · 특이거래(신고가·급등락·거래량) · "
+                   "국토부 실거래 기준 · 직거래(증여추정) 기본 제외")
+        _render_hot_complexes()
+        st.markdown('<div class="re-grp" style="margin-top:14px">특이거래'
+                    '<span class="sub">신고가·신저가·급등락·거래량 급증</span></div>',
+                    unsafe_allow_html=True)
         _render_anomalies()
 
     with t_sub:
