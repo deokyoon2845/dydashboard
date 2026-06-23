@@ -49,9 +49,13 @@ _TL_CSS = """
 .tl-card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:9px 10px;
   color:inherit; transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease; }
 .tl-card.tl-latest { border-color:#C2410C; border-width:1.5px; }
-/* ★ 데스크톱 지그재그 카드만 폭 20% 확대 — 양옆 빈 셀로 확장, 노드 중앙 정렬은 유지.
+/* ★ 데스크톱 지그재그 카드 폭 확대 — 양옆 빈 셀로 확장, 헤드라인·요약이 1줄에 들어오도록.
+   같은 row에서 카드는 한 칸 건너 배치(빈 div 교차)되므로 폭 175%까지 키워도 인접 카드와
+   겹치지 않는다(인접 카드 중심거리 2컬럼). 양끝 카드만 컨테이너 밖으로 새지 않게 정렬 보정.
    (모바일 .tl-mobile 카드는 .tl-row 밖이라 영향 없음) */
-.tl-row .tl-card { box-sizing:border-box; width:120%; justify-self:center; }
+.tl-row .tl-card { box-sizing:border-box; width:175%; justify-self:center; }
+.tl-row .tl-card.tl-edge-l { justify-self:start; }   /* 첫(가장 과거) 카드: 왼쪽 정렬 */
+.tl-row .tl-card.tl-edge-r { justify-self:end; }     /* 마지막(최신) 카드: 오른쪽 정렬 */
 /* 마우스 올리면 살짝 떠오르는 입체 효과 (클릭 동작 없음) */
 .tl-card:hover { transform:translateY(-3px); box-shadow:0 6px 18px rgba(0,0,0,.10); border-color:var(--sage-deep,#7E9A83); }
 .tl-card, .tl-card * { text-decoration:none; }
@@ -348,10 +352,13 @@ def _idx_line_html(rec: dict) -> str:
     return f'<div class="tl-idx">{" · ".join(items)}</div>'
 
 
-def _card_html(e: dict, idx_rec, latest: bool, mobile: bool = False, order: int = 0) -> str:
+def _card_html(e: dict, idx_rec, latest: bool, mobile: bool = False, order: int = 0,
+               edge: str = "") -> str:
     secs = "".join(f"<li>{html.escape(s)}</li>" for s in e["sections"])
     secs_html = f'<ul class="tl-secs">{secs}</ul>' if secs else ""
     latest_cls = " tl-latest" if latest else ""
+    # 데스크톱 지그재그에서 첫·마지막 카드는 폭 확장 시 컨테이너 밖으로 새지 않게 정렬 보정
+    edge_cls = f" tl-edge-{edge}" if (edge and not mobile) else ""
     latest_tag = " · 최신" if latest else ""
     dot = f' style="--dot:{e["mood_color"]}"' if mobile else f' style="--i:{order}"'
     kind_tag = f'<span class="tl-kind">{e.get("kind_label", "")}</span>' if e.get("kind_label") else ""
@@ -360,7 +367,7 @@ def _card_html(e: dict, idx_rec, latest: bool, mobile: bool = False, order: int 
              f'<div class="tl-hl">{html.escape(e["headline"])}</div>'
              f'{secs_html}'
              f'<span class="tl-md {e["mood_cls"]}">{e["mood_label"]}</span>{kind_tag}')
-    return f'<div class="tl-card{latest_cls}"{dot}>{inner}</div>'
+    return f'<div class="tl-card{latest_cls}{edge_cls}"{dot}>{inner}</div>'
 
 
 def _svg_html(entries: list) -> str:
@@ -422,7 +429,9 @@ def render_timeline():
     for i, e in enumerate(entries):
         # 외부 지수 데이터(map)가 그 날짜를 못 주면 보고서 자체 종가(idx_self)로 폴백
         idx_rec = idx_map.get(e["date"]) or e.get("idx_self")
-        card = _card_html(e, idx_rec, i == last_i, order=i)
+        # 첫(가장 과거)·마지막(최신) 카드는 폭 확장 시 화면 밖으로 새지 않게 정렬 보정
+        edge = "l" if i == 0 else ("r" if i == last_i else "")
+        card = _card_html(e, idx_rec, i == last_i, order=i, edge=edge)
         if i % 2 == 1:
             top_cells.append(card)
             bottom_cells.append("<div></div>")
