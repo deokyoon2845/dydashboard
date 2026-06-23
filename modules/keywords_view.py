@@ -117,6 +117,44 @@ def _archive_dates():
     return out
 
 
+# ── 키워드 소스: Supabase(누적) 우선, 미구성 시 파일 폴백 ──────
+
+def _kw_source() -> str:
+    """'db' 또는 'file'. Supabase가 구성돼 있으면 누적 DB를 우선 사용."""
+    try:
+        from modules import db
+        if db.supabase_configured():
+            return "db"
+    except Exception:
+        pass
+    return "file"
+
+
+def _kw_dates():
+    """[(날짜문자열, picker값)] 최신순. picker값은 DB면 'YYYY-MM-DD', 파일이면 경로문자열."""
+    if _kw_source() == "db":
+        try:
+            from modules import db
+            return [(d, d) for d in db.list_keyword_dates()]
+        except Exception:
+            pass
+    return [(f"{d:%Y-%m-%d}", str(f)) for d, f in _archive_dates()]
+
+
+def _kw_load(picker_value):
+    """picker값(날짜문자열 또는 파일경로)으로 키워드 dict({generated, items, ...}) 로드."""
+    if _kw_source() == "db":
+        try:
+            from modules import db
+            return (db.load_keywords_by_date(picker_value) if picker_value
+                    else db.load_keywords_latest())
+        except Exception:
+            pass
+    if picker_value and Path(picker_value).exists():
+        return _load(Path(picker_value))
+    return _load(KW_PATH)
+
+
 def _norm_name(s: str) -> str:
     return "".join(str(s).split()).casefold()
 
@@ -222,18 +260,18 @@ def render_keywords():
         else:
             st.warning(f"갱신 실패 · {res.get('reason')}")
 
-    # 아카이브 날짜 선택
-    archive = _archive_dates()
-    data, when = None, ""
-    if archive:
-        labels = {str(f): (f"{d:%Y-%m-%d}" + (" (오늘)" if d == date.today() else ""))
-                  for d, f in archive}
-        opts = [str(f) for _, f in archive]
+    # 날짜 선택 — Supabase 누적 데이터 우선(없으면 파일 아카이브)
+    dates = _kw_dates()
+    data = None
+    if dates:
+        today_s = date.today().strftime("%Y-%m-%d")
+        labels = {pv: (ds + (" (오늘)" if ds == today_s else "")) for ds, pv in dates}
+        opts = [pv for _, pv in dates]
         pick = st.selectbox("날짜 선택", options=opts,
-                            format_func=lambda s: labels[s], key="kw_date")
-        data = _load(Path(pick))
+                            format_func=lambda s: labels.get(s, s), key="kw_date")
+        data = _kw_load(pick)
     else:
-        data = _load(KW_PATH)
+        data = _kw_load(None)
 
     if not data or not data.get("items"):
         st.markdown(
