@@ -165,39 +165,68 @@ def _dedupe_events(parsed, n_articles, limit=MAX_KEYWORDS):
 
 # ── 연속 등장 / NEW 배지 ─────────────────────────────────────
 
-def _compute_streaks(today_keywords, now):
+def _norm_kw(k) -> str:
+    return str(k).lower().replace(" ", "")
+
+
+def _past_keyword_sets(now, back_days: int = 35) -> dict:
+    """{date객체: set(정규화 키워드)} — 오늘 이전 날짜들의 키워드 집합.
+
+    ★우선 Supabase(keywords 테이블)에서 읽는다(영속·누적). DB가 비었거나 실패하면
+    예전 방식인 파일 아카이브로 폴백한다. 휘발성 디스크 탓에 끊기던 streak/NEW를 복구.
+    """
+    from datetime import date as _date
+    out = {}
+
+    # 1) DB 우선
+    try:
+        from modules import db
+        for row in db.load_recent_keywords(limit=back_days + 5):
+            ds = str(row.get("kw_date", ""))
+            try:
+                y, m, d = ds.split("-")
+                dt = _date(int(y), int(m), int(d))
+            except ValueError:
+                continue
+            out[dt] = {_norm_kw(it.get("keyword", "")) for it in (row.get("items") or [])}
+    except Exception:
+        out = {}
+
+    # 2) 파일 폴백 (DB가 아무 것도 못 줄 때만)
+    if not out and KW_ARCHIVE_DIR.exists():
+        for f in KW_ARCHIVE_DIR.glob("*.json"):
+            try:
+                y, m, d = f.stem.split("-")
+                dt = _date(int(y), int(m), int(d))
+                past = json.loads(f.read_text(encoding="utf-8"))
+                out[dt] = {_norm_kw(it.get("keyword", "")) for it in past.get("items", [])}
+            except Exception:
+                continue
+    return out
+
+
+def _compute_streaks(today_keywords, now, past_sets: dict):
     """오늘 키워드별 '연속 등장 일수' 계산.
-    아카이브의 직전 날짜들을 거슬러 올라가며, 키워드가 연속으로 나타난 날 수를 셈."""
+    직전 날짜부터 거슬러 올라가며 키워드가 연속으로 나타난 날 수를 셈.
+    해당 날짜 데이터가 없으면(주말·휴장) 연속을 끊지 않고 건너뜀."""
     from datetime import timedelta
 
-    def _norm(k):
-        return k.lower().replace(" ", "")
+    consecutive_days = {k: 1 for k in today_keywords}   # 오늘 포함 최소 1
+    if not past_sets:
+        return consecutive_days
 
-    streaks = {k: 1 for k in today_keywords}        # 오늘 포함 최소 1
-
-    if not KW_ARCHIVE_DIR.exists():
-        return streaks
-
-    # 직전 날짜부터 최대 30일 거슬러 올라감
-    consecutive_days = {k: 1 for k in today_keywords}
     still_alive = set(today_keywords)
     cur = now.date()
     for back in range(1, 31):
         if not still_alive:
             break
         d = cur - timedelta(days=back)
-        f = KW_ARCHIVE_DIR / f"{d:%Y-%m-%d}.json"
-        if not f.exists():
-            # 해당 날짜 데이터가 없으면 연속 끊김으로 보지 않고 건너뜀(주말·휴장 고려)
-            continue
-        try:
-            past = json.loads(f.read_text(encoding="utf-8"))
-            past_set = {_norm(it.get("keyword", "")) for it in past.get("items", [])}
-        except Exception:
+        past_set = past_sets.get(d)
+        if past_set is None:           # 그 날 데이터 없음 → 건너뜀
             continue
         ended = set()
         for k in still_alive:
-            if _norm(k) in past_set:
+            if _norm_kw(k) in past_set:
                 consecutive_days[k] += 1
             else:
                 ended.add(k)
@@ -206,20 +235,10 @@ def _compute_streaks(today_keywords, now):
     return consecutive_days
 
 
-def _has_prev_archive(now) -> bool:
-    """오늘 이전 날짜의 키워드 아카이브가 하나라도 있는지 (NEW 배지 오발동 방지)."""
-    if not KW_ARCHIVE_DIR.exists():
-        return False
+def _has_prev_keywords(now, past_sets: dict) -> bool:
+    """오늘 이전 날짜의 키워드 기록이 하나라도 있는지 (NEW 배지 오발동 방지)."""
     today = now.date()
-    for f in KW_ARCHIVE_DIR.glob("*.json"):
-        try:
-            y, m, d = f.stem.split("-")
-            from datetime import date as _date
-            if _date(int(y), int(m), int(d)) < today:
-                return True
-        except ValueError:
-            continue
-    return False
+    return any(d < today for d in past_sets)
 
 
 def build_today_keywords() -> dict:
@@ -342,22 +361,33 @@ def build_today_keywords() -> dict:
 
     now = datetime.now(KST)
 
-    # 연속 등장(streak) 계산 — 아카이브의 직전 날짜들과 비교
-    streaks = _compute_streaks([it["keyword"] for it in items], now)
-    prev_exists = _has_prev_archive(now)
+    # 연속 등장(streak) 계산 — DB의 과거 키워드(없으면 파일)와 비교
+    past_sets = _past_keyword_sets(now)
+    streaks = _compute_streaks([it["keyword"] for it in items], now, past_sets)
+    prev_exists = _has_prev_keywords(now, past_sets)
     for it in items:
         it["streak"] = streaks.get(it["keyword"], 1)
-        # NEW: 과거 아카이브가 존재하는데 오늘 처음(연속 1일) 등장한 키워드
+        # NEW: 과거 기록이 존재하는데 오늘 처음(연속 1일) 등장한 키워드
         it["is_new"] = bool(prev_exists and it["streak"] <= 1)
 
     payload = {"generated": now.isoformat(), "items": items}
-    KW_PATH.parent.mkdir(exist_ok=True)
-    KW_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # 날짜별 아카이브 저장
-    KW_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
-    (KW_ARCHIVE_DIR / f"{now:%Y-%m-%d}.json").write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    # 파일 저장 (로컬 디버깅·하위호환). Streamlit Cloud에선 휘발성이라 영속성은 DB가 담당.
+    try:
+        KW_PATH.parent.mkdir(exist_ok=True)
+        KW_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        KW_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+        (KW_ARCHIVE_DIR / f"{now:%Y-%m-%d}.json").write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as e:
+        print(f"[keywords] 파일 저장 건너뜀: {e}")
+
+    # ★DB 저장 (영속·누적) — 시황 보고서처럼 날짜별로 쌓인다. 뷰어는 여기서 읽는다.
+    try:
+        from modules import db
+        db.save_keywords(items, generated=payload["generated"], kw_date=f"{now:%Y-%m-%d}")
+    except Exception as e:
+        print(f"[keywords] DB 저장 실패(파일은 저장됨): {e}")
 
     cost = estimate_cost_usd(MODEL, resp.usage.input_tokens, resp.usage.output_tokens)
     append_usage({
