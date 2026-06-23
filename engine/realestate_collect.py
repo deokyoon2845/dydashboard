@@ -101,12 +101,20 @@ _SEOUL = {n for n in SIGUNGU_CODES if n.endswith("구")}
 WINDOW_DAYS = 7        # 주간 비교 창(최근 N일 vs 그 전 N일)
 JR_DAYS = 60           # 전세가율 산정 창(표본 확보용으로 더 길게)
 MIN_N = 3              # 등락 계산 최소 표본
-ANOM_MONTHS = 6        # 특이거래 판정 윈도우(개월)
+ANOM_MONTHS = 12       # 특이거래 판정 윈도우(개월) — 신고가=최근12개월 최고 기준
 # 실거래량(지표 탭) 월별 시계열 조회 개월 — 코드 60개×개월수만큼 국토부 호출.
 # 늘리면 추세가 길어지지만 API 쿼터·수집시간이 비례해 늘어난다(보수적으로 24).
 _APT_VOLUME_MONTHS = 24
 JUMP_PCT = 7.0         # 급등/급락 임계(직전 거래 대비 %)
 VOL_SURGE = 2.0        # 거래량 급증 배수(최근주 vs 윈도우 주평균)
+# 특이거래 '생성(엔진)'은 가장 느슨하게 슈퍼셋으로 만들고, 뷰어가 프리셋(느슨/표준/엄격)으로
+# 좁힌다. 소형/저유동 단지는 '후보 컷(거래빈도)'으로 생성 단계에서 제외한다(세대수 API 비의존).
+ANOM_GEN = {"freq": 5,        # 최근 12개월 단지 매매건수 ≥ (소형/저유동 제외)
+            "jump": 7.0,      # 급등/급락 직전거래 대비 % ≥
+            "margin": 0.3,    # 신고가/신저가: 직전 최고/최저 초과 마진 % ≥
+            "surge": 100.0,   # 거래량 급증 surge% ≥ (×2.0 ≈ +100%)
+            "surge_n": 3,     # 거래량 급증 최근 4주 절대건수 ≥
+            "days": 45}       # 표시 후보 기간(최근 N일 신고분, 신고지연 흡수)
 
 _DIAG_CODE = "11680"   # 진단용 시험 호출 시군구(강남구 — 거래가 늘 있는 편)
 
@@ -1091,15 +1099,21 @@ def _apt_units_map(pairs):
     return out
 
 
-def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=60):
-    """특이거래 리스트. 뷰어 fetch_anomalies와 동일한 튜플 형식으로 반환.
-       (유형, 배경, 글자색, 단지, 지역, 면적, 가격, 변동, 거래유형, 제외여부, 거래일ISO)"""
+def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=150):
+    """특이거래 리스트(느슨 슈퍼셋 — 뷰어가 프리셋으로 좁힘).
+    소형/저유동 단지는 '거래빈도 컷'으로 생성 단계에서 제외(세대수 API 비의존).
+    반환 14-튜플:
+      (유형, 배경, 글자색, 단지, 지역, 면적, 가격, 변동, 거래유형, 제외, 거래일ISO,
+       세대수|None, 빈도(12개월 거래수), 신호강도%(신고가=마진/급등=변동/거래량=surge))
+    [호환] 과거 11/12-튜플 스냅샷도 뷰어 _anom_norm이 그대로 정규화한다."""
     asof = asof or date.today()
     _preflight(asof)
     key = _get_key()
     yms = _months_back(asof, months)
-    recent0 = asof - timedelta(days=WINDOW_DAYS - 1)
-    prev_weeks = max((months * 30) / WINDOW_DAYS - 1, 1)
+    gen = ANOM_GEN
+    recent0 = asof - timedelta(days=gen["days"] - 1)     # 표시 후보 기간
+    recent4w0 = asof - timedelta(days=27)                 # 거래량 급증용 최근 4주
+    other_weeks = max((months * 30 - 28) / 7.0, 1)        # 4주 외 기간의 주 수
     stats = {"ok": 0, "fail": 0, "rows": 0, "calls": 0, "empty200": 0,
              "http": {}, "last_err": ""}
 
@@ -1112,72 +1126,203 @@ def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=
         if not rows:
             continue
 
+        # 단지별 12개월 거래수(유동성/규모 프록시 — 소형 제외용 컷)
+        freq = {}
+        for r in rows:
+            freq[r["apt"]] = freq.get(r["apt"], 0) + 1
+
+        # ── 신고가/신저가·급등/급락 (단지·면적 그룹) ──
         groups = {}
         for r in rows:
-            gkey = (r["apt"], round(r["area"]))
-            groups.setdefault(gkey, []).append(r)
-
+            groups.setdefault((r["apt"], round(r["area"])), []).append(r)
         for (apt, area), grp in groups.items():
+            f = freq.get(apt, 0)
+            if f < gen["freq"]:           # 소형/저유동 단지 제외(후보 컷)
+                continue
             grp.sort(key=lambda r: r["date"])
             recent = [r for r in grp if r["date"] >= recent0]
             if not recent:
                 continue
-            prices = [r["price"] for r in grp]
-            hi, lo = max(prices), min(prices)
-
             for r in recent:
                 if exclude_direct and r["direct"]:
                     continue
-                area_s = f"{round(area)}㎡"
-                base = (apt, name, area_s, _fmt_eok(r["price"]))
-                if len(grp) >= 2 and r["price"] >= hi:
-                    items.append(("신고가", *_BG["신고가"], *base, "신고", r["trade"] or "-", r["direct"], r["date"].isoformat()))
-                elif len(grp) >= 2 and r["price"] <= lo:
-                    items.append(("신저가", *_BG["신저가"], *base, "신저", r["trade"] or "-", r["direct"], r["date"].isoformat()))
+                base = (apt, name, f"{round(area)}㎡", _fmt_eok(r["price"]))
+                prior = [g["price"] for g in grp if g["date"] < r["date"]]
+                # 신고가/신저가: 직전까지 최고/최저를 '마진' 초과해야 인정(상승장 노이즈 컷)
+                if len(prior) >= 2:
+                    p_hi, p_lo = max(prior), min(prior)
+                    if r["price"] > p_hi:
+                        mg = (r["price"] / p_hi - 1) * 100
+                        if mg >= gen["margin"]:
+                            items.append(("신고가", *_BG["신고가"], *base, "신고",
+                                          r["trade"] or "-", r["direct"],
+                                          r["date"].isoformat(), None, f, round(mg, 2)))
+                    elif r["price"] < p_lo:
+                        mg = (1 - r["price"] / p_lo) * 100
+                        if mg >= gen["margin"]:
+                            items.append(("신저가", *_BG["신저가"], *base, "신저",
+                                          r["trade"] or "-", r["direct"],
+                                          r["date"].isoformat(), None, f, round(mg, 2)))
+                # 급등/급락: 동일면적 '직전 거래' 대비, 비교거래가 6개월 이내일 때만
                 idx = grp.index(r)
                 if idx > 0:
-                    prev_p = grp[idx - 1]["price"]
-                    if prev_p:
-                        dpct = (r["price"] / prev_p - 1) * 100
-                        if dpct >= JUMP_PCT:
-                            items.append(("급등", *_BG["급등"], *base, f"+{dpct:.1f}%", r["trade"] or "-", r["direct"], r["date"].isoformat()))
-                        elif dpct <= -JUMP_PCT:
-                            items.append(("급락", *_BG["급락"], *base, f"{dpct:.1f}%", r["trade"] or "-", r["direct"], r["date"].isoformat()))
+                    prev = grp[idx - 1]
+                    if prev["price"] and (r["date"] - prev["date"]).days <= 183:
+                        dpct = (r["price"] / prev["price"] - 1) * 100
+                        if dpct >= gen["jump"]:
+                            items.append(("급등", *_BG["급등"], *base, f"+{dpct:.1f}%",
+                                          r["trade"] or "-", r["direct"],
+                                          r["date"].isoformat(), None, f, round(abs(dpct), 2)))
+                        elif dpct <= -gen["jump"]:
+                            items.append(("급락", *_BG["급락"], *base, f"{dpct:.1f}%",
+                                          r["trade"] or "-", r["direct"],
+                                          r["date"].isoformat(), None, f, round(abs(dpct), 2)))
 
-        apt_recent, apt_total = {}, {}
+        # ── 거래량 급증 (단지 단위, 최근 4주 vs 그 외 기간 주평균) ──
+        rc4, total = {}, {}
         for r in rows:
-            apt_total[r["apt"]] = apt_total.get(r["apt"], 0) + 1
-            if r["date"] >= recent0:
-                apt_recent[r["apt"]] = apt_recent.get(r["apt"], 0) + 1
-        for apt, rc in apt_recent.items():
-            avg_wk = apt_total[apt] / prev_weeks
-            if avg_wk > 0 and rc >= 3 and rc >= VOL_SURGE * avg_wk:
+            total[r["apt"]] = total.get(r["apt"], 0) + 1
+            if r["date"] >= recent4w0:
+                rc4[r["apt"]] = rc4.get(r["apt"], 0) + 1
+        for apt, c4 in rc4.items():
+            if freq.get(apt, 0) < gen["freq"]:
+                continue
+            base_wk = (total[apt] - c4) / other_weeks
+            cur_wk = c4 / 4.0
+            if base_wk > 0 and c4 >= gen["surge_n"] and cur_wk >= (gen["surge"] / 100 + 1) * base_wk:
+                surge = (cur_wk / base_wk - 1) * 100
                 items.append(("거래량 급증", *_BG["거래량 급증"], apt, name, "전체",
-                              f"{rc}건/주", f"+{round((rc/avg_wk-1)*100)}%", "-", False, asof.isoformat()))
+                              f"{c4}건/4주", f"+{round(surge)}%", "-", False,
+                              asof.isoformat(), None, freq.get(apt, 0), round(surge, 2)))
 
     if stats["rows"] == 0:
         raise RuntimeError("특이거래 판정용 실거래를 한 건도 받지 못했어요." + _zero_hint(stats))
 
-    def _mag(it):
-        chg = it[7]
-        try:
-            return abs(float(chg.replace("%", "").replace("+", "").replace("건/주", "")))
-        except ValueError:
-            return 999
-    items.sort(key=_mag, reverse=True)
+    # 신호강도(sigstr=인덱스 13) 큰 순 → 중복 제거 → 상한
+    items.sort(key=lambda it: (it[13] if len(it) > 13 and it[13] is not None else 0),
+               reverse=True)
     seen, dedup = set(), []
     for it in items:
         k = (it[0], it[3], it[5])
         if k in seen:
             continue
-        seen.add(k); dedup.append(it)
+        seen.add(k)
+        dedup.append(tuple(it))
         if len(dedup) >= limit:
             break
-    # 세대수 부착(거래 탭 '1,000세대+' 필터용) — 실패해도 None으로 진행(폴백 보강)
+    return dedup
+
+
+# ════════════════════════════════════════════════════════════════
+#  주목 단지(거래 활발·상승) — A: 국토부 실거래 기반 / B: 네이버 데이터랩 검색관심도
+#  · 약관-clean: 호갱노노·아실·네이버부동산 '인기 리스트'는 공식 API 부재·차단·약관 이슈로 미사용.
+#  · A 랭킹: 최근(≈30일) 거래 활발 + 가격 상승 단지. 우리 RTMS 데이터만 사용(안정).
+#  · B 오버레이: openapi datalab/search(공식)로 후보 단지명 상대 검색관심도(0~100).
+# ════════════════════════════════════════════════════════════════
+HOT_MONTHS = 3          # 주목 단지 산정 윈도우(개월) — 특이거래보다 가볍게
+HOT_MIN_FREQ = 6        # 후보 컷: 윈도우 내 단지 거래 ≥ (소형 제외)
+HOT_RECENT_DAYS = 30    # '최근' 거래 정의(신고지연 흡수)
+
+
+def _datalab_interest(names, ref="부동산", months=3):
+    """단지명 리스트 → {단지명: 검색관심도 0~100}. 네이버 데이터랩 통합검색어 트렌드(공식).
+    1콜 5그룹 제한 → (기준어 1 + 단지 4)씩 배치, 기준어로 정규화해 배치 간 비교 가능하게.
+    키(NAVER_CLIENT_ID/SECRET) 없거나 실패하면 {} (B 생략 → A만 표시)."""
+    cid = os.environ.get("NAVER_CLIENT_ID")
+    csec = os.environ.get("NAVER_CLIENT_SECRET")
+    if not (cid and csec) or not names:
+        return {}
+    import json as _json
+    end = date.today()
+    start = end - timedelta(days=months * 31)
+    url = "https://openapi.naver.com/v1/datalab/search"
+    hdr = {"X-Naver-Client-Id": cid, "X-Naver-Client-Secret": csec,
+           "Content-Type": "application/json"}
+    raw = {}
+    for i in range(0, len(names), 4):
+        batch = names[i:i + 4]
+        groups = [{"groupName": "_ref", "keywords": [ref]}]
+        groups += [{"groupName": n, "keywords": [n]} for n in batch]
+        body = _json.dumps({"startDate": start.isoformat(), "endDate": end.isoformat(),
+                            "timeUnit": "month", "keywordGroups": groups},
+                           ensure_ascii=False).encode("utf-8")
+        try:
+            r = requests.post(url, headers=hdr, data=body, timeout=12)
+            r.raise_for_status()
+            res = (r.json() or {}).get("results", [])
+        except Exception as e:
+            print(f"[realestate] 데이터랩 호출 실패(배치 생략): {e}")
+            continue
+        means = {}
+        for g in res:
+            vals = [d.get("ratio", 0) for d in (g.get("data") or [])]
+            means[g.get("title")] = (sum(vals) / len(vals)) if vals else 0.0
+        ref_m = means.get("_ref", 0) or 1e-9
+        for n in batch:
+            raw[n] = means.get(n, 0.0) / ref_m       # 기준어 대비 상대값(배치 간 비교 가능)
+    if not raw:
+        return {}
+    mx = max(raw.values()) or 1e-9
+    return {n: round(v / mx * 100) for n, v in raw.items()}      # 0~100 정규화
+
+
+def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=24, exclude_direct=True,
+                          with_search=True):
+    """주목 단지 리스트(딕셔너리 배열). 최근 거래 활발 + 상승 단지 랭킹 + (옵션)검색관심도.
+    반환 [{apt,gu,sd,recent,prev,vol_chg,price,price_eok,chg,area,freq,search}] (search=0~100|None).
+    KB/세대수 비의존 — 국토부 실거래만. 표본 0이면 []."""
+    asof = asof or date.today()
     try:
-        pairs = {(it[4], it[3]) for it in dedup}
-        umap = _apt_units_map(pairs)
+        _preflight(asof)
     except Exception as e:
-        print(f"[realestate] 세대수 조회 실패(폴백만 적용): {e}")
-        umap = {}
-    return [tuple(it) + (umap.get((it[4], it[3])),) for it in dedup]
+        print(f"[realestate] 주목단지 preflight 실패(생략): {e}")
+        return []
+    key = _get_key()
+    yms = _months_back(asof, months)
+    recent0 = asof - timedelta(days=HOT_RECENT_DAYS - 1)
+    seoul_gu = _seoul_gu_names()
+    stats = {"ok": 0, "fail": 0, "rows": 0, "calls": 0, "empty200": 0,
+             "http": {}, "last_err": ""}
+    agg = {}
+    for name, codes in SIGUNGU_CODES.items():
+        rows = []
+        for code in codes:
+            for ym in yms:
+                rows += _fetch(key, code, ym, "매매", stats)
+        if exclude_direct:
+            rows = [r for r in rows if not r["direct"]]
+        per = {}
+        for r in rows:
+            per.setdefault(r["apt"], []).append(r)
+        for apt, rs in per.items():
+            rec = [r for r in rs if r["date"] >= recent0]
+            if len(rs) < HOT_MIN_FREQ or len(rec) < 2:        # 소형/저활동 제외
+                continue
+            prev = [r for r in rs if r["date"] < recent0]
+            rec_ppa = statistics.median([r["ppa"] for r in rec])
+            prev_ppa = statistics.median([r["ppa"] for r in prev]) if prev else rec_ppa
+            chg = round((rec_ppa / prev_ppa - 1) * 100, 1) if prev_ppa else 0.0
+            med_price = statistics.median([r["price"] for r in rec])
+            area = round(statistics.median([r["area"] for r in rec]))
+            agg[(name, apt)] = {
+                "apt": apt, "gu": name,
+                "sd": "seoul" if name in seoul_gu else "gg",
+                "recent": len(rec), "prev": len(prev),
+                "vol_chg": round((len(rec) / max(len(prev), 1) - 1) * 100),
+                "price": med_price, "price_eok": _fmt_eok(med_price),
+                "chg": chg, "area": f"{area}㎡", "freq": len(rs), "search": None,
+            }
+    if not agg:
+        return []
+    # 랭킹: 최근 거래수 우선 + 상승률 가점
+    ranked = sorted(agg.values(),
+                    key=lambda d: (d["recent"], d["chg"]), reverse=True)[:top]
+    # B: 검색관심도 오버레이(공식 데이터랩) — 키 없으면 자동 생략
+    if with_search:
+        try:
+            si = _datalab_interest([d["apt"] for d in ranked])
+            for d in ranked:
+                d["search"] = si.get(d["apt"])
+        except Exception as e:
+            print(f"[realestate] 검색관심도 생략: {e}")
+    return ranked
