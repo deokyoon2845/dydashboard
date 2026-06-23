@@ -2,12 +2,18 @@
 
 엔드포인트: api.odcloud.kr ApplyhomeInfoDetailSvc/getAPTLttotPblancDetail
   · 응답: {"data":[{...}], "totalCount":..., ...}, 날짜는 'YYYY-MM-DD'
-  · 주요 필드: PBLANC_NO(공고), HOUSE_NM(주택명), SUBSCRPT_AREA_CODE_NM(공급지역=서울/경기/인천…),
+  · 주요 필드: PBLANC_NO(공고번호), HOUSE_MANAGE_NO(주택관리번호), PBLANC_URL(청약홈 공고 URL),
+    HOUSE_NM(주택명), SUBSCRPT_AREA_CODE_NM(공급지역=서울/경기/인천…),
     HSSPLY_ADRES(공급위치), HOUSE_DTL_SECD_NM/HOUSE_SECD_NM(유형), TOT_SUPLY_HSHLDCO(공급세대),
     RCEPT_BGNDE/RCEPT_ENDDE(청약접수 시작/종료), MVN_PREARNGE_YM(입주예정월)
 
-뷰어(modules/realestate.py)의 fetch_subscriptions와 같은 9-튜플 형식으로 반환한다:
-  (단지명, 시군구, 주소, 유형, 공급세대, 청약시작'MM.DD', 청약종료'MM.DD', 입주예정'YY.MM', seoul|gg)
+뷰어(modules/realestate.py)의 fetch_subscriptions와 같은 10-튜플 형식으로 반환한다:
+  (단지명, 시군구, 주소, 유형, 공급세대, 청약시작'MM.DD', 청약종료'MM.DD', 입주예정'YY.MM',
+   seoul|gg, 청약홈공고URL)
+  ※ 10번째 url은 카드 클릭 시 청약홈 해당 공고로 이동시키는 링크. PBLANC_URL(청약홈 주소)이
+    있으면 그대로, 없으면 주택관리번호+공고번호로 상세뷰 URL을 합성. 둘 다 없으면 빈 문자열
+    (뷰어가 청약홈 APT 분양정보 목록으로 폴백).
+  [호환] 과거 9-튜플 스냅샷도 뷰어가 그대로 렌더한다(url 없음 → 목록 폴백).
 
 키: 실거래와 동일한 공공데이터포털 키(MOLIT_API_KEY 등)를 그대로 쓴다
     (같은 계정으로 '청약홈 분양정보 조회 서비스' 활용신청만 되어 있으면 됨).
@@ -86,6 +92,29 @@ def _movein(s):
     """'YYYYMM' / 'YYYY-MM' / 'YYYY.MM' → 'YY.MM'."""
     d = "".join(ch for ch in str(s) if ch.isdigit())
     return f"{d[2:4]}.{d[4:6]}" if len(d) >= 6 else ""
+
+
+# 청약홈 APT 분양공고 상세뷰. 주택관리번호+공고번호로 직접 이동한다.
+APPLYHOME_DETAIL = ("https://www.applyhome.co.kr/ai/aia/"
+                    "selectAPTLttotPblancDetailView.do")
+
+
+def _sub_url(rec):
+    """레코드 → 청약홈 해당 공고 URL.
+       1) PBLANC_URL이 청약홈(applyhome) 주소면 그대로
+       2) 주택관리번호(HOUSE_MANAGE_NO)+공고번호(PBLANC_NO)로 상세뷰 합성
+       3) PBLANC_URL이 일반 http면 그대로(폴백)
+       4) 없으면 '' (뷰어가 청약홈 목록으로 폴백)."""
+    direct = _g(rec, "PBLANC_URL")
+    if direct.startswith("http") and "applyhome" in direct:
+        return direct
+    hmn = _g(rec, "HOUSE_MANAGE_NO")
+    pno = _g(rec, "PBLANC_NO")
+    if hmn and pno:
+        return f"{APPLYHOME_DETAIL}?houseManageNo={hmn}&pblancNo={pno}"
+    if direct.startswith("http"):
+        return direct
+    return ""
 
 
 def _parse_date(s):
@@ -191,10 +220,11 @@ def collect_subscriptions(asof=None, regions=("서울", "경기"), recent_days=3
         start_s = _mmdd(_g(rec, "RCEPT_BGNDE", "SUBSCRPT_RCEPT_BGNDE", "RCRIT_PBLANC_DE"))
         end_s = _mmdd(_g(rec, "RCEPT_ENDDE", "SUBSCRPT_RCEPT_ENDDE"))
         mv = _movein(_g(rec, "MVN_PREARNGE_YM"))
-        out.append((nm, gu, addr, typ, units, start_s, end_s, mv, sd, end_d))
+        url = _sub_url(rec)
+        out.append((nm, gu, addr, typ, units, start_s, end_s, mv, sd, url, end_d))
 
     out.sort(key=lambda x: x[-1])          # 청약종료 가까운 순
-    return [t[:-1] for t in out[:limit]]   # end_d 제거 → 9-튜플
+    return [t[:-1] for t in out[:limit]]   # end_d 제거 → 10-튜플(…, url)
 
 
 if __name__ == "__main__":
