@@ -533,6 +533,9 @@ _SAMPLE_SUBS = [
     ("화성동탄 OO리슈빌", "화성시", "경기 화성시 동탄2", "민영", 614, "05.19", "05.21", "27.08", "gg"),
 ]
 
+# 청약홈 APT 분양정보 목록 — 개별 공고 url이 없을 때(샘플·구 스냅샷) 폴백 이동지.
+_APPLYHOME_LIST = "https://www.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do"
+
 
 def fetch_subscriptions():
     """분양 단지 리스트. 세션(직전 갱신)→DB 스냅샷→내장 샘플 폴백.
@@ -649,8 +652,12 @@ _RE_CSS = """
 .re-delta.up{color:var(--up,#B65F5A);} .re-delta.dn{color:var(--down,#5A7CA0);} .re-delta.fl{color:var(--muted,#9a9b92);}
 .re-base{font-size:10.5px;font-weight:500;color:var(--muted,#9a9b92);margin-left:6px;}
 .re-sub-card{display:flex;align-items:flex-start;gap:11px;background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);
-  border-radius:12px;padding:11px 14px;margin-bottom:8px;transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease;}
+  border-radius:12px;padding:11px 14px;margin-bottom:8px;text-decoration:none;color:inherit;cursor:pointer;
+  transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease;}
 .re-sub-card:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(52,53,47,.07);border-color:var(--sage,#A7BBA9);}
+.re-sub-go{align-self:center;margin-left:8px;color:#CFD1C8;font-size:13px;font-weight:800;flex:none;
+  transition:color .15s ease,transform .15s ease;}
+.re-sub-card:hover .re-sub-go{color:var(--sage-deep,#7E9A83);transform:translateX(2px);}
 .re-sub-bdg{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:6px;flex:none;margin-top:1px;}
 .re-sub-nm{font-weight:700;color:var(--ink,#34352f);}
 .re-sub-meta{font-size:12px;color:var(--muted,#9a9b92);margin-top:2px;}
@@ -660,7 +667,12 @@ _RE_CSS = """
 .re-hl-sec span{font-weight:500;color:var(--muted,#9a9b92);margin-left:6px;}
 .re-hl{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:2px 0 14px;}
 .re-hl-card{position:relative;background:linear-gradient(180deg,#FBF6EE,#fff);border:1px solid #EBE2D2;
-  border-radius:14px;padding:12px 14px;}
+  border-radius:14px;padding:12px 14px;display:block;text-decoration:none;color:inherit;cursor:pointer;
+  transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease;}
+.re-hl-card:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(138,109,59,.13);border-color:#D8C49A;}
+.re-hl-go{position:absolute;right:12px;bottom:11px;color:#C9B78F;font-size:13px;font-weight:800;
+  transition:color .15s ease,transform .15s ease;}
+.re-hl-card:hover .re-hl-go{color:#8A6D3B;transform:translateX(2px);}
 .re-hl-dday{position:absolute;top:11px;right:12px;background:var(--up,#B65F5A);color:#fff;
   font-size:11px;font-weight:800;border-radius:7px;padding:2px 8px;}
 .re-hl-nm{font-size:14px;font-weight:800;color:var(--ink,#34352f);margin-bottom:2px;padding-right:62px;}
@@ -1559,9 +1571,10 @@ def _render_subscriptions():
     items = []
     for row in subs:
         try:
-            nm, gu, addr, typ, nse, s, e, mv, sd = row
+            nm, gu, addr, typ, nse, s, e, mv, sd = row[:9]
         except (ValueError, TypeError):
             continue
+        url = row[9] if len(row) > 9 else ""   # 10-튜플=청약홈 공고, 9-튜플=폴백
         if region in rmap and sd != rmap[region]:
             continue
         status, order = _sub_status(s, e)
@@ -1569,7 +1582,8 @@ def _render_subscriptions():
         items.append({"order": order, "s": s, "e": e, "sdt": sdt, "edt": edt,
                       "status": status, "dday": _sub_dday(sdt, edt, status),
                       "nm": nm, "gu": gu, "addr": addr, "typ": typ,
-                      "nse": nse, "mv": mv, "sd": sd})
+                      "nse": nse, "mv": mv, "sd": sd,
+                      "url": (url or _APPLYHOME_LIST)})
     items.sort(key=lambda x: (x["order"], x["s"]))
     if not items:
         st.caption("해당 지역 분양 단지가 없어요.")
@@ -1594,10 +1608,12 @@ def _render_subscriptions():
         cards = ""
         for it in hot[:3]:
             reg_kr = "서울" if it["sd"] == "seoul" else "경기"
-            cards += (f'<div class="re-hl-card"><span class="re-hl-dday">{it["dday"]}</span>'
+            cards += (f'<a class="re-hl-card" href="{it["url"]}" target="_blank" rel="noopener">'
+                      f'<span class="re-hl-dday">{it["dday"]}</span>'
                       f'<div class="re-hl-nm">{it["nm"]}</div>'
                       f'<div class="re-hl-meta">{reg_kr} {it["gu"]} · {it["typ"]} · {_units(it["nse"])}</div>'
-                      f'<div class="re-hl-when">청약 {it["s"]}~{it["e"]} · 입주 {it["mv"]}</div></div>')
+                      f'<div class="re-hl-when">청약 {it["s"]}~{it["e"]} · 입주 {it["mv"]}</div>'
+                      f'<span class="re-hl-go">↗</span></a>')
         st.markdown('<div class="re-hl-sec">청약 임박 <span>진행 중 · 7일 내 시작</span></div>',
                     unsafe_allow_html=True)
         st.markdown(f'<div class="re-hl">{cards}</div>', unsafe_allow_html=True)
@@ -1632,19 +1648,22 @@ def _render_subscriptions():
     for it in items:
         bg, fg = bdg[it["status"]]
         reg_kr = "서울" if it["sd"] == "seoul" else "경기"
-        html += (f'<div class="re-sub-card">'
+        html += (f'<a class="re-sub-card" href="{it["url"]}" target="_blank" rel="noopener">'
                  f'<span class="re-sub-bdg" style="background:{bg};color:{fg}">{it["dday"]}</span>'
                  f'<div style="flex:1"><div class="re-sub-nm">{it["nm"]}</div>'
                  f'<div class="re-sub-meta">{reg_kr} {it["gu"]} · {it["typ"]} · '
                  f'{_units(it["nse"])} · {it["addr"]}</div></div>'
-                 f'<div class="re-sub-r"><b>청약 {it["s"]}~{it["e"]}</b>입주 {it["mv"]}</div></div>')
+                 f'<div class="re-sub-r"><b>청약 {it["s"]}~{it["e"]}</b>입주 {it["mv"]}</div>'
+                 f'<span class="re-sub-go">↗</span></a>')
     st.markdown(html, unsafe_allow_html=True)
     if live:
         st.caption("소스: 한국부동산원 청약홈 분양정보(data.go.kr) — 실데이터. "
+                   "카드를 누르면 청약홈 해당 공고로 이동해요. "
                    "D-day는 청약 시작일(예정)·마감일(진행 중) 기준 자동 계산. 진행/임박 우선.")
     else:
         st.caption("소스: 한국부동산원 청약홈 분양정보(data.go.kr) — 현재 샘플. "
                    "‘갱신’ 누르면 실데이터(청약홈 분양정보 활용신청 필요). "
+                   "카드를 누르면 청약홈 공고 목록으로 이동(샘플이라 개별 공고 링크 없음). "
                    "D-day는 청약 시작·마감일 기준 자동 계산.")
 
 
