@@ -1656,15 +1656,25 @@ def _run_collection():
         st.session_state.pop(k, None)
 
 
-def _re_can_collect():
-    """갱신(대량 API 호출)은 소유자 전용. APP_PASSWORD 미설정이면 누구나 가능.
-       리포트 생성 잠금(gen_authed)을 그대로 재사용해 한 번 풀면 둘 다 열린다."""
+def _re_authed():
+    """소유자 인증 여부만 판단 — 위젯을 그리지 않는다(여러 탭에서 안전하게 호출).
+       APP_PASSWORD 미설정이면 누구나 가능. 리포트 잠금(gen_authed)을 공유한다."""
     try:
         pw = st.secrets.get("APP_PASSWORD", "")
     except Exception:
         pw = ""
-    if not pw or st.session_state.get("gen_authed"):
-        return True
+    return (not pw) or bool(st.session_state.get("gen_authed"))
+
+
+def _re_render_lock_gate():
+    """비밀번호 잠금 UI를 '한 번만' 렌더(지도 탭 전용). 이미 인증됐으면 아무것도 안 그린다.
+       위젯(key=re_pw/re_unlock)이 여러 탭에서 중복 생성되던 DuplicateElementKey를 방지."""
+    if _re_authed():
+        return
+    try:
+        pw = st.secrets.get("APP_PASSWORD", "")
+    except Exception:
+        pw = ""
     with st.expander("🔒 실거래 갱신은 소유자 전용이에요", expanded=False):
         st.caption("둘러보기는 자유롭고, 갱신(공공API 대량 호출)만 소유자 비밀번호가 필요해요.")
         p = st.text_input("비밀번호", type="password", key="re_pw")
@@ -1675,7 +1685,6 @@ def _re_can_collect():
                 st.rerun()
             else:
                 st.error("비밀번호가 일치하지 않아요.")
-    return False
 
 
 def _render_collect_controls():
@@ -1691,7 +1700,8 @@ def _render_collect_controls():
         st.caption("수도권 아파트 · 현재 샘플 — 매일 06:30 자동 수집(KB 가격지수·실거래) 후 "
                    "실데이터로 채워집니다.")
 
-    authed = _re_can_collect()
+    _re_render_lock_gate()
+    authed = _re_authed()
     col_a, col_b = st.columns([3, 1])
     with col_a:
         do_collect = st.button(
@@ -1768,7 +1778,7 @@ def render_realestate():
         st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
         st.title("분양 단지")
         st.caption("한국부동산원 청약홈 분양정보 · 청약 임박·진행 우선 · 매일 06:30 자동 갱신")
-        if _re_can_collect():
+        if _re_authed():
             if st.button(
                     "🔄 최신 분양정보 불러오기", key="re_sub_refresh",
                     help="매일 06:30 GitHub Actions가 청약홈 분양정보를 수집해 DB에 저장합니다. "
