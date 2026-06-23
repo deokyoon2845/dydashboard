@@ -102,6 +102,9 @@ WINDOW_DAYS = 7        # 주간 비교 창(최근 N일 vs 그 전 N일)
 JR_DAYS = 60           # 전세가율 산정 창(표본 확보용으로 더 길게)
 MIN_N = 3              # 등락 계산 최소 표본
 ANOM_MONTHS = 6        # 특이거래 판정 윈도우(개월)
+# 실거래량(지표 탭) 월별 시계열 조회 개월 — 코드 60개×개월수만큼 국토부 호출.
+# 늘리면 추세가 길어지지만 API 쿼터·수집시간이 비례해 늘어난다(보수적으로 24).
+_APT_VOLUME_MONTHS = 24
 JUMP_PCT = 7.0         # 급등/급락 임계(직전 거래 대비 %)
 VOL_SURGE = 2.0        # 거래량 급증 배수(최근주 vs 윈도우 주평균)
 
@@ -587,8 +590,10 @@ def _collect_mortgage_rate(points=18):
     if not key:
         return []
     end = date.today().strftime("%Y%m")
-    start = f"{int(end[:4]) - 2}{end[4:]}"
-    url = (f"https://ecos.bok.or.kr/api/StatisticSearch/{key}/json/kr/1/60/"
+    # points만큼 거슬러 갈 수 있도록 시작월을 충분히(최대 points+12개월 ≒ years) 잡는다.
+    back_years = max(2, (points + 12) // 12)
+    start = f"{int(end[:4]) - back_years}{end[4:]}"
+    url = (f"https://ecos.bok.or.kr/api/StatisticSearch/{key}/json/kr/1/200/"
            f"722Y001/M/{start}/{end}/BECABA03")
     r = requests.get(url, timeout=10)
     rows = (r.json().get("StatisticSearch", {}) or {}).get("row", []) or []
@@ -648,28 +653,28 @@ def collect_indicators():
         print(f"[realestate] KB 전세지수 실패: {e}")
     try:
         add("lead50", "선도아파트50지수", "전국 · 주간(KB) · 상위 50개 단지", "", "#A35F5A",
-            _kb_lead50_series())
+            _kb_lead50_series(points=400))
     except Exception as e:
         print(f"[realestate] KB 선도50지수 실패: {e}")
     try:
         # maktTrnd는 dataList가 dict라 전용 파서 사용(기존 평면 파싱 버그 수정)
         add("buy", "매수우위지수", "서울 · 주간(KB) · 100=중립", "", "#B89A5C",
-            _kb_maktrnd_series("01", "02"))
+            _kb_maktrnd_series("01", "02", points=400))
     except Exception as e:
         print(f"[realestate] KB 매수우위 실패: {e}")
     try:
         add("jsup", "전세수급지수", "서울 · 주간(KB) · 100=균형", "", "#6E8FA8",
-            _kb_maktrnd_series("03", "02"))
+            _kb_maktrnd_series("03", "02", points=400))
     except Exception as e:
         print(f"[realestate] KB 전세수급 실패: {e}")
     try:
         add("outlook", "매매가격전망지수", "서울 · 월간(KB) · 100=중립", "", "#C2A05A",
-            _kb_maktrnd_series("05", "01"))
+            _kb_maktrnd_series("05", "01", points=84))
     except Exception as e:
         print(f"[realestate] KB 매매전망 실패: {e}")
     try:
         add("joutlook", "전세가격전망지수", "서울 · 월간(KB) · 100=중립", "", "#8AA0B5",
-            _kb_maktrnd_series("06", "01"))
+            _kb_maktrnd_series("06", "01", points=84))
     except Exception as e:
         print(f"[realestate] KB 전세전망 실패: {e}")
     try:
@@ -680,18 +685,59 @@ def collect_indicators():
         print(f"[realestate] KB 전세가율 실패: {e}")
     try:
         add("unsold", "미분양", "전국 · 월간(KOSIS)", "만호", "#8A7C9E",
-            _collect_kosis_unsold())
+            _collect_kosis_unsold(points=84))
     except Exception as e:
         print(f"[realestate] KOSIS 미분양 실패: {e}")
     try:
         add("rate", "주담대 금리", "월간(한은 ECOS)", "%", "#9a9b92",
-            _collect_mortgage_rate())
+            _collect_mortgage_rate(points=84))
     except Exception as e:
         print(f"[realestate] ECOS 금리 실패: {e}")
+    try:
+        # 실거래량(수도권 아파트 매매 '건수') 월별 시계열 — 검증된 국토부 _fetch 재사용.
+        # 호출량이 커서 기본 24개월(_APT_VOLUME_MONTHS)만. 실패/0건은 자동 생략(연결예정 유지).
+        add("volume", "실거래량(수도권)", "월간 · 국토부 실거래(아파트 매매)", "건", "#7E9A83",
+            _collect_apt_volume_series(months=_APT_VOLUME_MONTHS))
+    except Exception as e:
+        print(f"[realestate] 실거래량 시계열 실패: {e}")
     return inds
 
 
 # ── 거래량 (국토부 실거래 '건수' — 가격 median 아님, 노이즈 무관) ──
+def _collect_apt_volume_series(asof=None, months=24, exclude_direct=True):
+    """수도권 아파트 매매 '건수'의 월별 시계열(최근 months개월, 과거→현재).
+    검증된 국토부 _fetch 경로를 그대로 재사용한다. 코드 60개 × months개월을 조회하므로
+    호출량이 크다(=months를 무리하게 키우면 API 쿼터/시간 부담). 실패·전수 0건이면 []
+    → 뷰어는 '연결예정' 슬롯을 유지(가짜 데이터 없음).
+    신고 지연(약 30일)으로 '현재월'은 과소집계라 마지막 미완월은 제외한다."""
+    asof = asof or date.today()
+    try:
+        _preflight(asof)
+    except Exception as e:
+        print(f"[realestate] 실거래량시계열 preflight 실패(생략): {e}")
+        return []
+    key = _get_key()
+    yms = _months_back(asof, months)            # 과거→현재
+    counts = {ym: 0 for ym in yms}
+    stats = {"ok": 0, "fail": 0, "rows": 0, "calls": 0, "empty200": 0,
+             "http": {}, "last_err": ""}
+    for name, codes in SIGUNGU_CODES.items():
+        for code in codes:
+            for ym in yms:
+                rows = _fetch(key, code, ym, "매매", stats)
+                if exclude_direct:
+                    rows = [r for r in rows if not r["direct"]]
+                counts[ym] += len(rows)
+    cur_ym = asof.strftime("%Y%m")
+    series = [counts[ym] for ym in yms if ym != cur_ym]   # 미완 현재월 제외
+    # 전수 0건(키 미승인/차단 등)이면 빈 리스트로 — 0으로 채운 '가짜 추세' 방지
+    if not any(v > 0 for v in series):
+        print(f"[realestate] 실거래량 전수 0건 — 생략."
+              f" calls={stats['calls']} http={stats.get('http')}")
+        return []
+    return series
+
+
 def _collect_rtms_volume(asof, exclude_direct=True):
     """시군구별 주간 거래량(v)·전주비(vc). 실패 시 {} (거래량만 비고 가격지수엔 무영향)."""
     try:
