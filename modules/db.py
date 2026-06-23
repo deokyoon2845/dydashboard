@@ -31,6 +31,19 @@
 
   (※ 이미 테이블이 있으면 분양용 컬럼만 한 번 추가)
     alter table realestate_snapshots add column if not exists subscriptions jsonb;
+
+- 오늘의 키워드는 keywords 테이블에 날짜(kw_date)별로 upsert 되어 '시황 보고서처럼' 누적된다.
+  (기존엔 data/keywords_archive/*.json 파일에 저장 → Streamlit Cloud 휘발성 디스크라
+   reboot 때 사라져 누적이 끊겼다. 영속 저장소인 DB로 이전해 항상 보존된다.)
+  뷰어는 날짜별로 골라 읽고, 엔진은 streak(연속 등장) 계산에 최근 행들을 읽는다.
+  (※ 최초 1회 아래 SQL로 테이블을 만들어야 함)
+
+    create table if not exists keywords (
+      kw_date    date primary key,
+      generated  text,
+      items      jsonb not null default '[]'::jsonb,
+      updated_at timestamptz default now()
+    );
 """
 import os
 import re
@@ -42,6 +55,7 @@ TABLE = "reports"
 WL_TABLE = "watchlist"
 WL_ID = 1
 RE_TABLE = "realestate_snapshots"
+KW_TABLE = "keywords"
 _CLIENT: Client | None = None
 
 
@@ -223,3 +237,68 @@ def load_realestate() -> dict | None:
            .limit(1)
            .execute())
     return res.data[0] if res.data else None
+
+
+# ── 오늘의 키워드: 읽기·쓰기 ──────────────────────────────────
+# keywords 테이블에 날짜(kw_date)별로 키워드 묶음을 upsert. 시황 보고서처럼 매일 누적.
+# items 는 뷰어가 그대로 그리는 형식의 dict 배열
+#   [{keyword, category, weight, stocks[], news[], streak, is_new}, ...]
+
+def save_keywords(items: list, generated: str | None = None,
+                  kw_date: str | None = None) -> str:
+    """오늘의 키워드를 DB에 저장(upsert, kw_date 단일행). kw_date 미지정 시 generated에서 유도."""
+    now = datetime.now()
+    generated = generated or now.isoformat()
+    if not kw_date:
+        m = re.search(r"(\d{4}-\d{2}-\d{2})", str(generated))
+        kw_date = m.group(1) if m else now.strftime("%Y-%m-%d")
+    row = {
+        "kw_date": kw_date,
+        "generated": str(generated),
+        "items": items or [],
+        "updated_at": now.isoformat(),
+    }
+    _client().table(KW_TABLE).upsert(row, on_conflict="kw_date").execute()
+    return kw_date
+
+
+def load_keywords_latest() -> dict | None:
+    """가장 최신 키워드 1행을 반환. 행이 없으면 None.
+       반환 dict: {'kw_date','generated','items'}."""
+    res = (_client().table(KW_TABLE)
+           .select("kw_date,generated,items")
+           .order("kw_date", desc=True)
+           .limit(1)
+           .execute())
+    return res.data[0] if res.data else None
+
+
+def load_keywords_by_date(kw_date: str) -> dict | None:
+    """특정 날짜(YYYY-MM-DD)의 키워드 1행을 반환. 없으면 None."""
+    res = (_client().table(KW_TABLE)
+           .select("kw_date,generated,items")
+           .eq("kw_date", kw_date)
+           .limit(1)
+           .execute())
+    return res.data[0] if res.data else None
+
+
+def list_keyword_dates(limit: int = 90) -> list[str]:
+    """키워드가 저장된 날짜 목록을 최신순으로 반환(YYYY-MM-DD)."""
+    res = (_client().table(KW_TABLE)
+           .select("kw_date")
+           .order("kw_date", desc=True)
+           .limit(limit)
+           .execute())
+    return [r["kw_date"] for r in (res.data or [])]
+
+
+def load_recent_keywords(limit: int = 40) -> list[dict]:
+    """최근 키워드 행들을 최신순으로 반환(streak·NEW 계산용).
+       각 행: {'kw_date','generated','items'}."""
+    res = (_client().table(KW_TABLE)
+           .select("kw_date,generated,items")
+           .order("kw_date", desc=True)
+           .limit(limit)
+           .execute())
+    return res.data or []
