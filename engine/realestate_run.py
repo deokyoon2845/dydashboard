@@ -24,6 +24,16 @@ def main():
     except Exception as e:
         print(f"[realestate] 지역 지표 수집 실패: {e}")
 
+    # 주목 단지(거래 활발·상승 + 검색관심도) — metrics 페이로드에 '_hot'으로 실어 보냄(스키마 무변경)
+    if isinstance(metrics, dict):
+        try:
+            from engine.realestate_collect import collect_hot_complexes
+            hot = collect_hot_complexes()
+            metrics["_hot"] = hot
+            print(f"[realestate] 주목 단지 {len(hot)}개 수집")
+        except Exception as e:
+            print(f"[realestate] 주목 단지 수집 실패(생략): {e}")
+
     try:
         indicators = collect_indicators()
         print(f"[realestate] 지표 시계열 {len(indicators)}종 수집")
