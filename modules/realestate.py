@@ -403,6 +403,8 @@ _INDV2_DEF = {
                  "interp": "실제 매매가 레벨. 시장의 '현재값'."},
     "jeonse":   {"g": "coin", "cad": "week", "baseline": None, "inv": False,
                  "interp": "전세가 레벨. 오르면 매매 하방을 받쳐줌."},
+    "volume":   {"g": "coin", "cad": "month", "baseline": None, "inv": False,
+                 "interp": "월별 아파트 매매 건수. 시장의 체온—거래가 살아나면 추세가 강해짐."},
     "jsup":     {"g": "supply", "cad": "week", "baseline": 100, "inv": False,
                  "interp": "100 위 = 전세 공급부족(수요>공급). 전세·매매 동반 자극."},
     "jr":       {"g": "supply", "cad": "month", "baseline": None, "inv": False,
@@ -415,12 +417,12 @@ _INDV2_DEF = {
                  "interp": "조달비용. 내리면 구매력↑(상승 신호). ↑는 반대 해석."},
 }
 # 카드 표시 순서(그룹 보기 내 정렬). 선도50은 선행 보조로 매매전망 뒤에 둠.
-_INDV2_ORDER = ["buy", "outlook", "lead50", "sale", "jeonse",
+_INDV2_ORDER = ["buy", "outlook", "lead50", "sale", "jeonse", "volume",
                 "jsup", "jr", "joutlook", "unsold", "rate"]
 # 연결예정 슬롯 — 데이터 소스 미연결. 가짜 데이터 대신 정직하게 자리만 표시(차트·신호 없음).
 _INDV2_PENDING = [
     {"k": "volume", "g": "coin", "lab": "실거래량(수도권)",
-     "note": "국토부 실거래 월별 집계 · 엔진 누적 저장 연결 예정"},
+     "note": "국토부 실거래 월별 집계 · 다음 자동수집(06:30)부터 채워집니다(최근 24개월)"},
     {"k": "auction", "g": "lead", "lab": "경매 낙찰가율",
      "note": "법원경매 월간 · 데이터 소스 연결 예정"},
     {"k": "supply", "g": "fund", "lab": "입주물량(수도권)",
@@ -435,6 +437,10 @@ _IND_SAMPLE = [
     {"key": "jeonse", "label": "전세가격지수", "sub": "서울 · 주간(KB)", "unit": "", "col": "#5A7CA0",
      "series": [95.0, 95.2, 95.4, 95.6, 95.8, 96.0, 96.1, 96.3, 96.4, 96.6,
                 96.7, 96.8, 96.9, 97.0, 97.1, 97.2, 97.3, 97.3, 97.4, 97.4]},
+    {"key": "volume", "label": "실거래량(수도권)", "sub": "월간 · 국토부 실거래(아파트 매매)", "unit": "건", "col": "#7E9A83",
+     "series": [4120, 3980, 4310, 4760, 5210, 4890, 4530, 4180, 3960, 4340,
+                4720, 5180, 5460, 5120, 4880, 4610, 4290, 4050, 4480, 4920,
+                5240, 5080, 4760, 4530]},
     {"key": "lead50", "label": "선도아파트50지수", "sub": "전국 · 주간(KB) · 상위 50개 단지", "unit": "", "col": "#A35F5A",
      "series": [94.8, 95.2, 95.7, 96.2, 96.6, 97.1, 97.6, 98.0, 98.5, 98.9,
                 99.3, 99.8, 100.2, 100.5, 100.9, 101.2, 101.5, 101.8, 102.0, 102.2]},
@@ -1254,7 +1260,7 @@ function renderBody(){const host=document.getElementById("body");
  }else{const sorted=[...IND].sort((a,b)=>signal(b,makeSeries(b,period)).score-signal(a,makeSeries(a,period)).score);
   host.innerHTML='<div class="ghead"><span class="gn">신호 강도순</span><span class="gd">강한 호재 → 악재</span></div>'
    +'<div class="grid">'+sorted.map(m=>cardHTML(m,true)).join("")+'</div>'
-   +(PEND.length?'<div class="subnote">연결예정 '+PEND.length+'종(실거래량·낙찰가율·입주물량)은 그룹 보기에서 확인</div>':'');}
+   +(PEND.length?'<div class="subnote">연결예정 '+PEND.length+'종('+PEND.map(p=>p.lab).join("·")+')은 그룹 보기에서 확인</div>':'');}
  bindCards();}
 function renderFocus(){const m=byK(focusK);if(!m)return;const pts=makeSeries(m,period);const s=signal(m,pts);const longR=period!=="1Y";
  document.getElementById("hLab").innerHTML='<span class="chip '+m.cad+'">'+(m.cad==="month"?"월간":"주간")+'</span>'+m.lab+' · '+m.sub;
@@ -1300,7 +1306,10 @@ def _indicators_v2_payload(data):
             "interp": meta["interp"], "base": round(series[-1], 2),
             "real": [round(v, 2) for v in series],
         })
-    return ind, _INDV2_PENDING
+    # 연결예정 슬롯은 '아직 수집 안 된' 것만 표시(실데이터가 들어오면 자동으로 라이브 전환).
+    live_keys = {d["k"] for d in ind}
+    pend = [p for p in _INDV2_PENDING if p["k"] not in live_keys]
+    return ind, pend
 
 
 def _indicator_chart_component(ind, pend, asof):
