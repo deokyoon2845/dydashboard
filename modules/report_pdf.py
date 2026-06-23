@@ -926,3 +926,201 @@ def render_reports_manage():
             st.session_state["rpt_picked_path"] = None
             st.rerun()
     _render_delete_ui(files)
+
+
+# ── PDF 생성 (reportlab 내장 CJK 폰트로 한글 렌더, 별도 폰트파일 불필요) ──────
+#   여기에 build_pdf가 없어서 다운로드 버튼이 항상 "PDF 생성 불가"로 빠졌었다.
+#   reportlab의 UnicodeCIDFont(HYGothic/HYSMyeongJo)는 한글을 폰트파일 없이 렌더한다.
+#   reportlab CID 폰트는 이모지를 지원하지 않으므로 본문엔 이모지를 넣지 않는다.
+
+from io import BytesIO
+
+_PDF_FONT = "HYGothic-Medium"        # 고딕 (본문)
+_PDF_FONT_SERIF = "HYSMyeongJo-Medium"  # 명조 (제목·헤드라인)
+_PDF_FONTS_READY = False
+
+
+def _ensure_pdf_fonts():
+    global _PDF_FONTS_READY
+    if _PDF_FONTS_READY:
+        return
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+    for f in (_PDF_FONT, _PDF_FONT_SERIF):
+        try:
+            pdfmetrics.registerFont(UnicodeCIDFont(f))
+        except Exception:
+            pass
+    _PDF_FONTS_READY = True
+
+
+def _pdf_esc(s) -> str:
+    """reportlab Paragraph용 텍스트 이스케이프 (내가 직접 넣는 <b>/<font>는 보존)."""
+    return html.escape(str(s or ""), quote=False)
+
+
+def _pdf_plain(s) -> str:
+    """혹시 섞인 HTML 태그 제거 + 엔티티 해제 (sections body 등이 HTML일 때 대비)."""
+    s = re.sub(r"<[^>]+>", "", str(s or ""))
+    return html.unescape(s).strip()
+
+
+def build_pdf(data: dict) -> bytes:
+    """보고서 dict → PDF(bytes). 신형(topics)·구형(sections) 스키마 모두 지원."""
+    _ensure_pdf_fonts()
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, HRFlowable)
+
+    data = data or {}
+    INK = colors.HexColor("#34352f")
+    SAGE = colors.HexColor("#7E9A83")
+    MUTED = colors.HexColor("#9a9b92")
+    LINE = colors.HexColor("#ECEDE7")
+
+    F, FS = _PDF_FONT, _PDF_FONT_SERIF
+    st_date = ParagraphStyle("d", fontName=FS, fontSize=11, textColor=SAGE, leading=14)
+    st_title = ParagraphStyle("t", fontName=FS, fontSize=20, textColor=INK, leading=25, spaceAfter=2)
+    st_kind = ParagraphStyle("k", fontName=F, fontSize=9.5, textColor=MUTED, leading=13)
+    st_head = ParagraphStyle("h", fontName=FS, fontSize=14.5, textColor=INK, leading=20,
+                             spaceBefore=6, spaceAfter=4)
+    st_grp = ParagraphStyle("g", fontName=F, fontSize=11.5, textColor=SAGE, leading=15,
+                            spaceBefore=13, spaceAfter=4)
+    st_tptitle = ParagraphStyle("tt", fontName=F, fontSize=11.5, textColor=INK, leading=16,
+                                spaceBefore=5)
+    st_body = ParagraphStyle("b", fontName=F, fontSize=9.5, textColor=INK, leading=15)
+    st_lab = ParagraphStyle("l", fontName=F, fontSize=8.5, textColor=MUTED, leading=12, spaceBefore=3)
+    st_small = ParagraphStyle("s", fontName=F, fontSize=8.5, textColor=MUTED, leading=12)
+
+    flow = []
+    def P(text, style):
+        flow.append(Paragraph(text, style))
+    def SP(h=4):
+        flow.append(Spacer(1, h))
+    def RULE():
+        flow.append(HRFlowable(width="100%", thickness=0.6, color=LINE,
+                               spaceBefore=6, spaceAfter=6))
+
+    # ── 헤더 ──
+    gen = str(data.get("generated_at", "")).strip()
+    since = str(data.get("analysis_since", "")).strip()
+    until = str(data.get("analysis_until", "")).strip()
+    kind = data.get("report_kind") or ""
+    kind_ko = {"pre": "장전 보고서", "post": "장마감 후 보고서"}.get(kind, "보고서")
+    mood = data.get("mood", "neutral")
+    mood_ko = MOOD_KO.get(mood, mood)
+
+    if gen:
+        P(_pdf_esc(gen[:16]), st_date)
+    P("전략·시황 보고서", st_title)
+    sub = f"{kind_ko} · 분위기 {mood_ko}"
+    if since and until:
+        sub += f" · 분석 {since} ~ {until}"
+    n = data.get("messages_count", 0)
+    if n:
+        sub += f" · {n}개 메시지"
+    P(_pdf_esc(sub), st_kind)
+    RULE()
+
+    headline = _pdf_plain(data.get("headline", ""))
+    if headline:
+        P(_pdf_esc(headline), st_head)
+    snap = _pdf_plain(data.get("snapshot_line", ""))
+    if snap:
+        P(_pdf_esc(snap), st_small)
+
+    # ── 본문: 신형(topics) vs 구형(sections) ──
+    topics = data.get("topics") or []
+    if topics:
+        P("주요 주제", st_grp)
+        for i, tp in enumerate(topics, 1):
+            if not isinstance(tp, dict):
+                continue
+            title = _pdf_plain(tp.get("title", ""))
+            if not title:
+                continue
+            imp = tp.get("importance", "")
+            imp_tag = (f'  <font color="#9a9b92" size="8">중요도 {_pdf_esc(str(imp))}</font>'
+                       if str(imp) else "")
+            P(f"{i}. {_pdf_esc(title)}{imp_tag}", st_tptitle)
+            fact = _pdf_plain(tp.get("fact", ""))
+            if fact:
+                P(_pdf_esc(fact), st_body)
+            mv = tp.get("market_view") or {}
+            cons = _pdf_plain(mv.get("consensus", ""))
+            diss = _pdf_plain(mv.get("dissent", ""))
+            if cons:
+                P(f'<font color="#7E9A83">합의</font> · {_pdf_esc(cons)}', st_body)
+            if diss:
+                P(f'<font color="#B65F5A">이견</font> · {_pdf_esc(diss)}', st_body)
+            metrics = _pdf_plain(tp.get("metrics", ""))
+            if metrics:
+                P(f'정량 · {_pdf_esc(metrics)}', st_body)
+            impl = _pdf_plain(tp.get("implication", ""))
+            if impl:
+                P(f'<b>시사점</b> · {_pdf_esc(impl)}', st_body)
+            stocks = [_pdf_esc(str(s).strip()) for s in (tp.get("stocks") or []) if str(s).strip()]
+            if stocks:
+                P(f'<font color="#5d6258">관련 종목: {", ".join(stocks)}</font>', st_small)
+    else:
+        kt = _pdf_plain(data.get("key_takeaway", ""))
+        if kt:
+            P("핵심", st_grp)
+            P(_pdf_esc(kt), st_body)
+        secs = data.get("sections") or []
+        if secs:
+            P("섹션", st_grp)
+            for sec in secs:
+                if not isinstance(sec, dict):
+                    continue
+                t = _pdf_plain(sec.get("title", ""))
+                b = _pdf_plain(sec.get("body", ""))
+                if t:
+                    P(f'<b>{_pdf_esc(t)}</b>', st_tptitle)
+                if b:
+                    P(_pdf_esc(b), st_body)
+
+    # ── 전망(outlook) ──
+    ol = data.get("outlook") or {}
+    if kind == "pre":
+        pre_items = [_pdf_plain(x) for x in (ol.get("pre") or []) if str(x).strip()]
+        if pre_items:
+            P("오늘 볼 것", st_grp)
+            for x in pre_items:
+                P(f"· {_pdf_esc(x)}", st_body)
+    else:
+        post = ol.get("post") or {}
+        rev = _pdf_plain(post.get("review", ""))
+        tom = _pdf_plain(post.get("tomorrow", ""))
+        if rev or tom:
+            P("결산 · 내일", st_grp)
+            if rev:
+                P(f'<b>장전 점검</b> · {_pdf_esc(rev)}', st_body)
+            if tom:
+                P(f'<b>내일 가설</b> · {_pdf_esc(tom)}', st_body)
+
+    # ── 변화 추적 ──
+    ch = data.get("change_tracking") or {}
+    new = [_pdf_plain(x) for x in (ch.get("new") or []) if str(x).strip()]
+    cont = [_pdf_plain(x) for x in (ch.get("continuing") or []) if str(x).strip()]
+    if new or cont:
+        P("변화 추적", st_grp)
+        if new:
+            P("오늘 새로 등장", st_lab)
+            for x in new:
+                P(f"· {_pdf_esc(x)}", st_body)
+        if cont:
+            P("어제에 이어 지속", st_lab)
+            for x in cont:
+                P(f"· {_pdf_esc(x)}", st_body)
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=18 * mm, rightMargin=18 * mm,
+        topMargin=16 * mm, bottomMargin=16 * mm,
+        title="전략·시황 보고서")
+    doc.build(flow)
+    return buf.getvalue()
