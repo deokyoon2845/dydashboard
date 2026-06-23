@@ -771,6 +771,164 @@ def _collect_rtms_volume(asof, exclude_direct=True):
     return out
 
 
+# ── 권역 레벨 (강남3구·서울·경기·수도권) — KB 주간 가격지수 레벨 + 주간 등락 ──
+#   priceIndex(레벨)를 시도코드(서울11/경기41)로 호출하면 시도 + 하위 구/시 행이 함께 온다.
+#   → 서울·경기 시도, 강남/서초/송파 구 시계열을 한 번에 뽑아 권역 레벨을 만든다.
+#   강남3구 = 3개 구 평균, 수도권 = 서울·경기 거래량 가중 블렌드(전용 KB코드 가정 없이 정직하게).
+_GROUP_GU3 = ["강남구", "서초구", "송파구"]
+_GROUP_KEYS = ["gn3", "seoul", "gg", "all"]
+_GROUP_NAME = {"gn3": "강남3구", "seoul": "서울", "gg": "경기", "all": "수도권"}
+
+
+def _kb_index_byname(me_code, 월간주간, sido_code, points=200):
+    """priceIndex(레벨) → {KB지역명: [series]} (해당 시도 + 하위 구/시). 실패 시 {}."""
+    try:
+        data = _kb_get(_KB_URL["index"], {
+            "월간주간구분코드": 월간주간, "매물종별구분": "01",
+            "매매전세코드": me_code, "지역코드": sido_code})
+    except Exception:
+        return {}
+    out = {}
+    for r in _kb_rows(data):
+        vals = [v for v in r["vals"] if v is not None]
+        if vals:
+            out[r["name"]] = [round(v, 2) for v in vals[-points:]]
+    return out
+
+
+def _pick_series(byname, *cands):
+    """{지역명:series}에서 후보명을 포함관계로 찾아 첫 매칭 시계열. 없으면 []."""
+    for c in cands:
+        if c in byname:
+            return byname[c]
+    for c in cands:
+        for k, v in byname.items():
+            if c in k or k in c:
+                return v
+    return []
+
+
+def _avg_series(serieses):
+    """여러 시계열을 최근(뒤)에서 정렬해 elementwise 평균. 빈 입력 → []."""
+    ss = [s for s in serieses if s]
+    if not ss:
+        return []
+    n = min(len(s) for s in ss)
+    if n == 0:
+        return []
+    cols = zip(*[s[-n:] for s in ss])
+    return [round(sum(c) / len(c), 2) for c in cols]
+
+
+def _blend_series(a, b, wa, wb):
+    """두 시계열 가중 블렌드(최근 정렬). 한쪽만 있으면 그쪽."""
+    a = [v for v in (a or []) if v is not None]
+    b = [v for v in (b or []) if v is not None]
+    if not a or not b:
+        return a or b
+    n = min(len(a), len(b))
+    a, b = a[-n:], b[-n:]
+    tot = (wa + wb) or 1
+    return [round((x * wa + y * wb) / tot, 2) for x, y in zip(a, b)]
+
+
+def _wk_change(series):
+    """주간 등락 % = (마지막-직전)/직전×100. 표본 부족이면 0.0."""
+    s = [v for v in (series or []) if v is not None]
+    if len(s) < 2 or not s[-2]:
+        return 0.0
+    return round((s[-1] / s[-2] - 1) * 100, 2)
+
+
+def _seoul_gu_names():
+    """SIGUNGU_CODES에서 서울(코드 11…) 시군구명 집합."""
+    return {n for n, codes in SIGUNGU_CODES.items()
+            if any(str(c).startswith("11") for c in codes)}
+
+
+def _agg_v_vc_jr(metrics, names):
+    """시군구 metrics에서 names 그룹의 (거래량 합, 전주비%, 전세가율 v가중평균)."""
+    v_now = 0.0
+    v_prev = 0.0
+    jr_num = 0.0
+    jr_den = 0.0
+    for n in names:
+        m = metrics.get(n) or {}
+        v = m.get("v") or 0
+        vc = m.get("vc") or 0
+        v_now += v
+        denom = 1 + vc / 100.0
+        v_prev += (v / denom) if denom else v
+        jr = m.get("jr")
+        if jr is not None:
+            w = v or 1
+            jr_num += jr * w
+            jr_den += w
+    vc_agg = round((v_now / v_prev - 1) * 100) if v_prev else 0
+    jr_agg = round(jr_num / jr_den, 1) if jr_den else None
+    return int(v_now), vc_agg, jr_agg
+
+
+def collect_region_levels(asof=None, metrics=None, points=200):
+    """강남3구·서울·경기·수도권의 매매·전세 지수 레벨 + 주간 등락 + 전세가율 + 거래량.
+
+    반환 {'asof', 'groups':{k:{name,sale,sale_wk,jeonse,jeonse_wk,jr,v,vc}},
+          'trend':{k:{sale:[...],jeonse:[...]}}}  (k ∈ gn3/seoul/gg/all)
+    metrics(시군구 dict)가 있으면 v/vc/jr 집계에 재사용. KB 레벨을 못 받으면 None.
+    """
+    asof = asof or date.today()
+    metrics = metrics or {}
+
+    su_sale = _kb_index_byname("01", "02", _KB_SIDO["서울"], points)
+    su_jeon = _kb_index_byname("02", "02", _KB_SIDO["서울"], points)
+    gg_sale = _kb_index_byname("01", "02", _KB_SIDO["경기"], points)
+    gg_jeon = _kb_index_byname("02", "02", _KB_SIDO["경기"], points)
+    if not (su_sale and gg_sale):
+        return None
+
+    seoul_sale = _pick_series(su_sale, "서울", "서울특별시")
+    seoul_jeon = _pick_series(su_jeon, "서울", "서울특별시")
+    gg_sale_s = _pick_series(gg_sale, "경기", "경기도")
+    gg_jeon_s = _pick_series(gg_jeon, "경기", "경기도")
+    gn3_sale = _avg_series([_pick_series(su_sale, g) for g in _GROUP_GU3])
+    gn3_jeon = _avg_series([_pick_series(su_jeon, g) for g in _GROUP_GU3])
+
+    seoul_gu = _seoul_gu_names()
+    gg_si = set(SIGUNGU_CODES) - seoul_gu
+    v_seoul = _agg_v_vc_jr(metrics, seoul_gu)[0]
+    v_gg = _agg_v_vc_jr(metrics, gg_si)[0]
+    ws, wg = (v_seoul or 1), (v_gg or 1)
+    all_sale = _blend_series(seoul_sale, gg_sale_s, ws, wg)
+    all_jeon = _blend_series(seoul_jeon, gg_jeon_s, ws, wg)
+
+    series = {
+        "gn3": (gn3_sale, gn3_jeon, _GROUP_GU3),
+        "seoul": (seoul_sale, seoul_jeon, seoul_gu),
+        "gg": (gg_sale_s, gg_jeon_s, gg_si),
+        "all": (all_sale, all_jeon, set(SIGUNGU_CODES)),
+    }
+    groups, trend = {}, {}
+    for k in _GROUP_KEYS:
+        s_sale, s_jeon, names = series[k]
+        if not s_sale:
+            continue
+        v, vc, jr = _agg_v_vc_jr(metrics, names)
+        groups[k] = {
+            "name": _GROUP_NAME[k],
+            "sale": s_sale[-1] if s_sale else None,
+            "sale_wk": _wk_change(s_sale),
+            "jeonse": s_jeon[-1] if s_jeon else None,
+            "jeonse_wk": _wk_change(s_jeon),
+            "jr": jr,
+            "v": v,
+            "vc": vc,
+        }
+        trend[k] = {"sale": s_sale, "jeonse": s_jeon}
+    if not groups:
+        return None
+    return {"asof": asof.strftime("%Y-%m-%d"), "groups": groups, "trend": trend}
+
+
 # ── 지역 지표 (지도) — KB 가격지수(mm/js/jr) + 실거래 건수(v/vc) ──
 def collect_region_metrics(asof=None, exclude_direct=True):
     """지역명 -> {'mm','js','v','vc','jr'}.
@@ -803,6 +961,18 @@ def collect_region_metrics(asof=None, exclude_direct=True):
             "v": vol.get(name, {}).get("v", 0),
             "vc": vol.get(name, {}).get("vc", 0),
         }
+
+    # ── 권역(강남3구·서울·경기·수도권) 지수 레벨 + 주간 등락 + 추이 ──
+    #   DB 스키마 변경 없이 metrics 페이로드에 네임스페이스 키('_groups','_trend')로 실어 보낸다.
+    #   (뷰어 _merged_regions는 시군구명만 .get() 하므로 '_'-키는 무시된다. 호환 안전.)
+    try:
+        lv = collect_region_levels(asof, metrics=result)
+        if lv:
+            result["_groups"] = lv["groups"]
+            result["_trend"] = lv["trend"]
+            result["_asof"] = lv["asof"]
+    except Exception as e:
+        print(f"[realestate] 권역 레벨 수집 실패(생략): {e}")
     return result
 
 
