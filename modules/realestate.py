@@ -26,6 +26,7 @@ TODO(다음 단계):
   - 서울 확대/인셋(라벨 더 키우기) — mockup 승인 후 별도 적용
 """
 
+import copy
 import json
 
 import streamlit as st
@@ -112,13 +113,67 @@ _GROUP_SAMPLE = {
 
 
 def fetch_region_levels():
-    """권역 레벨·추이 (groups, trend) 튜플. 세션/DB metrics의 '_groups'/'_trend' → 샘플 폴백."""
+    """권역+시군구 레벨·추이 (groups, trend) 튜플.
+    세션/DB metrics의 '_groups'/'_trend'(엔진 실데이터) → 샘플 폴백.
+    엔진이 시군구(children)를 안 실어 보낸 경우 지도 샘플에서 시군구를 합성해 채운다."""
     m = _resolved_metrics()
     if isinstance(m, dict):
         g, t = m.get("_groups"), m.get("_trend")
         if g and t:
-            return g, t
-    return _GROUP_SAMPLE, _TREND_SAMPLE
+            return _augment_sigungu(g, t)
+    return _augment_sigungu(_GROUP_SAMPLE, _TREND_SAMPLE)
+
+
+_GU3 = ["강남구", "서초구", "송파구"]
+
+
+def _augment_sigungu(groups, trend):
+    """권역 groups/trend에 시군구(서울 구·경기 시) 레벨·추이를 보강.
+    엔진이 이미 children을 실었으면(실데이터) 그대로 반환. 아니면 지도 샘플(_merged_regions의
+    주간Δ·거래·전세가율)에서 결정적으로 합성해 아코디언이 폴백 상태에서도 동작하게 한다.
+    레벨은 권역 샘플 대비 결정적 오프셋(지역 간 비교용 아님 — 데모/폴백 가독성용)."""
+    if any("children" in (groups.get(k) or {}) for k in ("seoul", "gg")):
+        return groups, trend
+    g = copy.deepcopy(dict(groups))
+    t = copy.deepcopy(dict(trend))
+    try:
+        regions = _merged_regions()
+    except Exception:
+        regions = []
+    seoul_ch, gg_ch = [], []
+    for d in regions:
+        name, sd = d.get("n"), d.get("sd")
+        if not name or sd not in ("seoul", "gg") or name in g:
+            continue
+        parent = "seoul" if sd == "seoul" else "gg"
+        base = (g.get(parent) or {}).get("sale") or 100.0
+        jbase = (g.get(parent) or {}).get("jeonse") or 96.0
+        off = ((sum(ord(c) for c in name) % 21) - 10) * 0.45
+        sale = round(base + off, 2)
+        jeon = round(jbase + off * 0.7, 2)
+        g[name] = {"name": name, "sale": sale, "sale_wk": d.get("mm", 0.0),
+                   "jeonse": jeon, "jeonse_wk": d.get("js", 0.0),
+                   "jr": d.get("jr"), "v": d.get("v", 0), "vc": d.get("vc", 0),
+                   "leaf": True}
+        t[name] = {"sale": _sample_ramp(sale - 3.0, sale),
+                   "jeonse": _sample_ramp(jeon - 2.2, jeon)}
+        (seoul_ch if parent == "seoul" else gg_ch).append(name)
+
+    def _by_sale(n):
+        s = g.get(n, {}).get("sale")
+        return s if s is not None else -1.0
+    seoul_ch.sort(key=_by_sale, reverse=True)
+    gg_ch.sort(key=_by_sale, reverse=True)
+    gn3_ch = sorted([n for n in _GU3 if n in g], key=_by_sale, reverse=True)
+    if "gn3" in g:
+        g["gn3"]["children"] = gn3_ch
+    if "seoul" in g:
+        g["seoul"]["children"] = seoul_ch
+    if "gg" in g:
+        g["gg"]["children"] = gg_ch
+    if "all" in g:
+        g["all"]["children"] = []
+    return g, t
 
 
 # ── 지표 (그룹 · 델타 · 기준선) ─────────────────────────────────
@@ -814,9 +869,12 @@ def _map_component(regions, groups, trend):
     g_json = json.dumps(groups, ensure_ascii=False, separators=(",", ":"))
     t_json = json.dumps(trend, ensure_ascii=False, separators=(",", ":"))
     border_json = json.dumps(_BORDER)
+    from datetime import date as _date
+    asof_json = json.dumps(_date.today().isoformat())
     return (_MAP_HEAD
             + "const D=" + d_json + ";\nconst G=" + g_json
-            + ";\nconst T=" + t_json + ";\nconst BORDER=" + border_json + ";"
+            + ";\nconst T=" + t_json + ";\nconst BORDER=" + border_json
+            + ";\nconst ASOF=" + asof_json + ";"
             + _MAP_SCRIPT)
 
 
@@ -840,7 +898,12 @@ body{margin:0;background:transparent;color:var(--ink);font-family:var(--kfont);f
 .seg button:last-child{border-right:none}
 .seg button.on{background:#EEF1EC;color:var(--ink);font-weight:700}
 /* 권역×지표 매트릭스 표 */
-table.mx{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:13px}
+table.mx{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:0}
+/* 권역 펼침(서울 25개 구 등) 시 표만 내부 스크롤 — iframe 전체 높이는 고정 유지 */
+.mxscroll{max-height:336px;overflow-y:auto;border:1px solid var(--line);border-radius:11px;margin-bottom:13px}
+.mxscroll::-webkit-scrollbar{width:8px}
+.mxscroll::-webkit-scrollbar-thumb{background:#E2E3DC;border-radius:6px}
+table.mx thead th{position:sticky;top:0;background:var(--card);z-index:2}
 table.mx th{font-size:11px;color:var(--muted);font-weight:600;text-align:left;padding:6px 8px}
 table.mx td{padding:9px 8px;border-top:1px solid var(--line);vertical-align:middle}
 table.mx tr.row{cursor:pointer;transition:background .12s ease}
@@ -861,7 +924,7 @@ table.mx tr.on td:first-child{box-shadow:inset 3px 0 0 var(--sage)}
 .p-read .big{font-size:22px;font-weight:800;letter-spacing:-.02em}
 .p-read .sm{font-size:15px;font-weight:800}
 .chartwrap{position:relative;width:100%}
-#trChart{display:block;width:100%;height:120px}
+#trChart{display:block;width:100%;height:auto}
 .vtip{position:absolute;pointer-events:none;background:var(--card);border:1px solid var(--line2);border-radius:7px;
   padding:6px 9px;font-size:11px;opacity:0;transition:opacity .12s;white-space:nowrap;box-shadow:0 4px 14px rgba(52,53,47,.12);z-index:6}
 /* 전체폭 지도 + 상단 오버레이 */
@@ -891,18 +954,37 @@ table.mx tr.on td:first-child{box-shadow:inset 3px 0 0 var(--sage)}
 .tile{border:1px solid var(--line);border-radius:10px;padding:8px 9px;position:relative;background:var(--card)}
 .tile .tn{font-size:12px;font-weight:700}.tile .tv{font-size:14px;font-weight:800;letter-spacing:-.02em;margin-top:2px}
 .tile .tsd{position:absolute;top:7px;right:8px;font-size:9px;color:var(--muted);font-weight:700}
+/* 계층 아코디언 표 */
+.car{display:inline-block;width:14px;color:var(--muted);font-size:10px;cursor:pointer;user-select:none;text-align:center}
+.car:hover{color:var(--ink)}
+table.mx tr.childrow td{border-top:1px solid #F4F5EF}
+td.child{padding-left:24px !important;font-weight:600;font-size:12.5px;color:#5f5e5a}
+td.child .cdot{color:#CDCEC4;margin-right:7px}
+.sparse{display:inline-block;margin-left:5px;font-size:9px;color:#86877f;background:#F1EFE8;border-radius:5px;padding:1px 5px;font-weight:700;vertical-align:1px}
+.lv.vlow{color:#B7B8AE}
+/* 완성형 추이 차트 축 + 각주 */
+.axt{fill:var(--muted);font-size:10px;font-family:var(--kfont)}
+.axtitle{fill:#6f706a;font-size:10.5px;font-family:var(--kfont)}
+.fn{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:10px 13px;font-size:10.8px;
+  color:#5f5e5a;line-height:1.65;margin-bottom:13px}
+.fn b{color:var(--ink);font-weight:700}
+.fn .warn{color:var(--up)}
 @media(max-width:680px){.mapwrap{height:420px}.heatwrap{display:block;margin-top:12px}.p-read .big{font-size:19px}}
 </style></head><body>
 <div class="hd">
   <div><div class="h1">수도권 가격 지도</div><div class="hsub" id="hdSub"></div></div>
   <div class="seg" id="periodSeg"><button data-p="1y">1년</button><button data-p="3y" class="on">3년</button><button data-p="all">전체</button></div>
 </div>
-<table class="mx"><thead><tr><th style="width:17%">권역</th><th>매매지수</th><th>전세지수</th><th>거래(건)</th><th>전세가율</th></tr></thead><tbody id="mxBody"></tbody></table>
+<div class="mxscroll"><table class="mx"><thead><tr><th style="width:22%">지역</th><th>매매지수</th><th>전세지수</th><th>거래(건)</th><th>전세가율</th></tr></thead><tbody id="mxBody"></tbody></table></div>
 <div class="panel">
   <div class="p-h"><span class="p-t" id="trTitle"></span>
     <span class="p-lg"><i><span class="dot" style="background:#B65F5A"></span>매매</i><i><span class="dot" style="background:#5A7CA0"></span>전세</i></span></div>
   <div class="p-read" id="trRead"></div>
-  <div class="chartwrap"><svg id="trChart" viewBox="0 0 620 120" preserveAspectRatio="none"></svg><div class="vtip" id="vtip"></div></div>
+  <div class="chartwrap"><svg id="trChart" viewBox="0 0 620 200" role="img" aria-label="가격지수 추이 차트"></svg><div class="vtip" id="vtip"></div></div>
+</div>
+<div class="fn">
+  <b>매매지수·전세지수란?</b> KB부동산 주간 아파트 가격지수. <b>2022년 1월 10일 = 100.0</b> 기준, 그 시점 대비 현재 매매(전세) 가격 수준을 시가총액 방식으로 지수화한 값입니다(예: 104.2 = 기준시점보다 4.2% 높음). · <b>거래(건)</b> 국토부 실거래 주간 신고 건수 · <b>전세가율</b> 매매가 대비 전세가 비율(KB 월간).
+  <span class="warn">※ 지역마다 기준시점 가격수준이 달라, 지수 레벨로 지역 간 가격을 직접 비교할 수는 없습니다(은평 104 &gt; 영등포 101 이라고 은평이 더 비싼 게 아님). 같은 지역의 시간 변화·등락률 비교에 사용하세요.</span>
 </div>
 <div class="mapwrap" id="mapwrap">
   <div class="ovl"><div class="leg" id="legend"></div>
@@ -918,8 +1000,8 @@ table.mx tr.on td:first-child{box-shadow:inset 3px 0 0 var(--sage)}
 _MAP_SCRIPT = r"""
 const GK=["gn3","seoul","gg","all"];
 const GN3=["강남구","서초구","송파구"];
-const REST={mm:"sale",js:"jeonse"};
 let region="seoul", metric="mm", period="3y";
+let expanded={};
 
 const fmtP=v=>(v>0?"+":"")+(v||0).toFixed(2)+"%";
 const fmtL=v=>v==null?"-":(+v).toFixed(1);
@@ -935,48 +1017,89 @@ function spark(series,col,w,h){const s=(series||[]).slice(-40);if(s.length<2)ret
   const pts=s.map((v,i)=>`${(i/(s.length-1)*w).toFixed(1)},${(h-2-(v-mn)/r*(h-4)).toFixed(1)}`).join(" ");
   return `<svg class="spk" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.5"/></svg>`;}
 
+function isLeaf(k){return !GK.includes(k);}
+function rowHTML(g,k,child){
+  const on=k===region?" on":"";
+  const mc=cls(g.sale_wk),jc=cls(g.jeonse_wk),vc=cls((g.vc||0)/100);
+  const tk=T[k]||{};
+  const kids=g.children&&g.children.length;
+  const car=kids?`<span class="car" data-exp="${k}">${expanded[k]?"▾":"▸"}</span>`
+                :(child?`<span class="cdot">·</span>`:`<span class="car"></span>`);
+  const vNum=g.v||0, low=child&&vNum<15;
+  const sparse=low?`<span class="sparse">표본 적음</span>`:"";
+  return `<tr class="row${child?" childrow":""}${on}" data-k="${k}">
+    <td class="${child?"child":"rg"}">${car}${g.name}</td>
+    <td><span class="lv">${fmtL(g.sale)}</span><span class="dl ${mc}">${fmtP(g.sale_wk)}</span>${child?"":spark(tk.sale,"#B65F5A",46,16)}</td>
+    <td><span class="lv">${fmtL(g.jeonse)}</span><span class="dl ${jc}">${fmtP(g.jeonse_wk)}</span></td>
+    <td><span class="lv${low?" vlow":""}">${vNum.toLocaleString()}</span><span class="dl ${vc}">${(g.vc||0)>0?"+":""}${g.vc||0}%</span>${sparse}</td>
+    <td><span class="lv">${g.jr==null?"-":g.jr+"%"}</span></td></tr>`;
+}
 function renderTable(){
-  document.getElementById("mxBody").innerHTML=GK.map(k=>{const g=G[k];if(!g)return"";
-    const tk=(T[k]||{});const on=k===region?" on":"";
-    const mc=cls(g.sale_wk),jc=cls(g.jeonse_wk),vc=cls(g.vc/100);
-    return `<tr class="row${on}" data-k="${k}">
-      <td class="rg">${g.name}</td>
-      <td><span class="lv">${fmtL(g.sale)}</span><span class="dl ${mc}">${fmtP(g.sale_wk)}</span>${spark(tk.sale,"#B65F5A",46,16)}</td>
-      <td><span class="lv">${fmtL(g.jeonse)}</span><span class="dl ${jc}">${fmtP(g.jeonse_wk)}</span></td>
-      <td><span class="lv">${(g.v||0).toLocaleString()}</span><span class="dl ${vc}">${g.vc>0?"+":""}${g.vc||0}%</span></td>
-      <td><span class="lv">${g.jr==null?"-":g.jr+"%"}</span></td></tr>`;}).join("");
-  document.querySelectorAll("#mxBody tr.row").forEach(tr=>tr.onclick=()=>{region=tr.dataset.k;refresh();});}
+  let html="";
+  GK.forEach(k=>{const g=G[k];if(!g)return;
+    html+=rowHTML(g,k,false);
+    if(expanded[k]&&g.children){g.children.forEach(cn=>{const cg=G[cn];if(cg)html+=rowHTML(cg,cn,true);});}});
+  const body=document.getElementById("mxBody");body.innerHTML=html;
+  body.querySelectorAll(".car[data-exp]").forEach(c=>c.onclick=e=>{
+    e.stopPropagation();const k=c.dataset.exp;expanded[k]=!expanded[k];renderTable();});
+  body.querySelectorAll("tr.row").forEach(tr=>tr.onclick=()=>{const k=tr.dataset.k;region=k;
+    if(!isLeaf(k)&&G[k].children&&G[k].children.length)expanded[k]=true;refresh();});}
 
 function sliceP(arr){const n=periodN();return (arr||[]).slice(-n);}
+function niceTicks(mn,mx){const span=(mx-mn)||1,raw=span/3;
+  const mag=Math.pow(10,Math.floor(Math.log10(raw)));
+  const cands=[1,2,2.5,5,10].map(m=>m*mag);
+  const step=cands.find(c=>c>=raw)||cands[cands.length-1];
+  const lo=Math.ceil(mn/step)*step,ts=[];
+  for(let v=lo;v<=mx+1e-9&&ts.length<6;v+=step)ts.push(+v.toFixed(2));
+  return ts.length?ts:[mn,mx];}
+const _ASOF=new Date(ASOF+"T00:00:00");
+function tickDate(i,n){const d=new Date(_ASOF);d.setDate(d.getDate()-(n-1-i)*7);return d;}
+function fmtMon(d){return "'"+String(d.getFullYear()).slice(2)+"."+(d.getMonth()+1);}
+
 function renderTrend(){const g=G[region]||{};const tk=T[region]||{};
   const sale=sliceP(tk.sale),jeon=sliceP(tk.jeonse);
   document.getElementById("trTitle").textContent=(g.name||"")+" 가격지수 추이";
   document.getElementById("trRead").innerHTML=
-    `<div><span style="font-size:11px;color:#9a9b92">매매</span> <span class="big">${fmtL(g.sale)}</span> <span class="${cls(g.sale_wk)}" style="font-weight:800;font-size:12.5px">${g.sale_wk>=0?"▲":"▼"} ${fmtP(g.sale_wk)}</span></div>`
+    `<div><span style="font-size:11px;color:#9a9b92">매매</span> <span class="big">${fmtL(g.sale)}</span> <span class="${cls(g.sale_wk)}" style="font-weight:800;font-size:12.5px">${(g.sale_wk||0)>=0?"▲":"▼"} ${fmtP(g.sale_wk)}</span></div>`
    +`<div style="padding-bottom:2px"><span style="font-size:11px;color:#9a9b92">전세</span> <span class="sm" style="color:#5A7CA0">${fmtL(g.jeonse)}</span> <span class="${cls(g.jeonse_wk)}" style="font-size:11px">${fmtP(g.jeonse_wk)}</span></div>`;
-  const W=620,H=120,PADt=8,PADb=8;
+  const svg=document.getElementById("trChart");
   const all=sale.concat(jeon).filter(v=>v!=null);
-  if(all.length<2){document.getElementById("trChart").innerHTML="";return;}
-  const mn=Math.min(...all),mx=Math.max(...all),r=(mx-mn)||1;
-  const X=i=>i/(sale.length-1)*W, Y=v=>H-PADb-(v-mn)/r*(H-PADt-PADb);
-  const line=s=>s.map((v,i)=>`${i?"L":"M"}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
-  const area=`M0,${H} `+sale.map((v,i)=>`L${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ")+` L${W},${H} Z`;
-  document.getElementById("trChart").innerHTML=
-    `<line x1="0" y1="${H*0.33}" x2="${W}" y2="${H*0.33}" stroke="#F1F2EC"/><line x1="0" y1="${H*0.66}" x2="${W}" y2="${H*0.66}" stroke="#F1F2EC"/>`
+  if(all.length<2){svg.innerHTML="";return;}
+  const L=64,Rr=606,T0=14,B=150,W=Rr-L,Hh=B-T0,n=sale.length;
+  const dmn=Math.min(...all),dmx=Math.max(...all);
+  const ticks=niceTicks(dmn,dmx);
+  const lo=Math.min(dmn,ticks[0]),hi=Math.max(dmx,ticks[ticks.length-1]),rr=(hi-lo)||1;
+  const X=i=>L+(n<=1?0:i/(n-1)*W), Y=v=>B-(v-lo)/rr*Hh;
+  const line=s=>s.map((v,i)=>v==null?"":`${(i&&s[i-1]!=null)?"L":"M"}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+  const area=`M${X(0).toFixed(1)},${B} `+sale.map((v,i)=>`L${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ")+` L${X(n-1).toFixed(1)},${B} Z`;
+  let grid="";
+  ticks.forEach(tv=>{const y=(+Y(tv)).toFixed(1);
+    grid+=`<line x1="${L}" y1="${y}" x2="${Rr}" y2="${y}" stroke="#F0F1EB"/>`
+        +`<text class="axt" x="${L-7}" y="${(+y+3).toFixed(1)}" text-anchor="end">${tv.toFixed(tv%1?1:0)}</text>`;});
+  let xt="";
+  for(let j=0;j<4;j++){const i=Math.round(j/3*(n-1));
+    xt+=`<text class="axt" x="${X(i).toFixed(1)}" y="${B+16}" text-anchor="middle">${fmtMon(tickDate(i,n))}</text>`;}
+  const ycy=((T0+B)/2).toFixed(0);
+  svg.innerHTML=grid
+   +`<line x1="${L}" y1="${B}" x2="${Rr}" y2="${B}" stroke="#D7D8D0"/>`
    +`<path d="${area}" fill="#B65F5A" opacity="0.08"/>`
    +`<path d="${line(sale)}" fill="none" stroke="#B65F5A" stroke-width="2"/>`
    +`<path d="${line(jeon)}" fill="none" stroke="#5A7CA0" stroke-width="1.7" stroke-dasharray="4 3"/>`
-   +`<line class="vx" x1="0" x2="0" y1="0" y2="${H}" stroke="#B9BBB0" stroke-dasharray="3 3" opacity="0"/>`
+   +xt
+   +`<text class="axtitle" x="${((L+Rr)/2).toFixed(0)}" y="194" text-anchor="middle">가로축 — 시점(주간, 매주 월요일 기준)</text>`
+   +`<text class="axtitle" x="13" y="${ycy}" text-anchor="middle" transform="rotate(-90 13 ${ycy})">세로축 — 가격지수 (2022.1.10=100)</text>`
+   +`<line class="vx" x1="${L}" x2="${L}" y1="${T0}" y2="${B}" stroke="#B9BBB0" stroke-dasharray="3 3" opacity="0"/>`
    +`<circle class="vd1" r="3" fill="#B65F5A" opacity="0"/><circle class="vd2" r="2.6" fill="#5A7CA0" opacity="0"/>`;
-  const svg=document.getElementById("trChart"),vtip=document.getElementById("vtip"),wrap=svg.parentElement;
+  const vtip=document.getElementById("vtip");
   const vx=svg.querySelector(".vx"),vd1=svg.querySelector(".vd1"),vd2=svg.querySelector(".vd2");
-  svg.onmousemove=e=>{const b=svg.getBoundingClientRect();const px=(e.clientX-b.left)/b.width*W;
-    let i=Math.round(px/W*(sale.length-1));i=Math.max(0,Math.min(sale.length-1,i));
+  svg.onmousemove=e=>{const b=svg.getBoundingClientRect();const ux=(e.clientX-b.left)/b.width*620;
+    let i=Math.round((ux-L)/W*(n-1));i=Math.max(0,Math.min(n-1,i));
     const x=X(i);vx.setAttribute("x1",x);vx.setAttribute("x2",x);vx.style.opacity="1";
-    vd1.setAttribute("cx",x);vd1.setAttribute("cy",Y(sale[i]));vd1.style.opacity="1";
-    if(jeon[i]!=null){vd2.setAttribute("cx",x);vd2.setAttribute("cy",Y(jeon[i]));vd2.style.opacity="1";}
-    vtip.innerHTML=`매매 <b>${fmtL(sale[i])}</b> · 전세 <b style="color:#5A7CA0">${fmtL(jeon[i])}</b>`;
-    let lx=e.clientX-b.left+12;if(lx>b.width-130)lx-=140;vtip.style.left=lx+"px";vtip.style.top="2px";vtip.style.opacity="1";};
+    if(sale[i]!=null){vd1.setAttribute("cx",x);vd1.setAttribute("cy",Y(sale[i]));vd1.style.opacity="1";}else vd1.style.opacity="0";
+    if(jeon[i]!=null){vd2.setAttribute("cx",x);vd2.setAttribute("cy",Y(jeon[i]));vd2.style.opacity="1";}else vd2.style.opacity="0";
+    vtip.innerHTML=`<b>${fmtMon(tickDate(i,n))}</b> · 매매 <b>${fmtL(sale[i])}</b> · 전세 <b style="color:#5A7CA0">${fmtL(jeon[i])}</b>`;
+    let lx=e.clientX-b.left+12;if(lx>b.width-160)lx-=170;vtip.style.left=lx+"px";vtip.style.top="2px";vtip.style.opacity="1";};
   svg.onmouseleave=()=>{vx.style.opacity="0";vd1.style.opacity="0";vd2.style.opacity="0";vtip.style.opacity="0";};}
 
 function pathNums(d){return (d.match(/-?\d+\.?\d*/g)||[]).map(Number);}
@@ -984,10 +1107,18 @@ function bboxOf(list){let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;list.forEach(d=>{const n
     for(let i=0;i+1<n.length;i+=2){const x=n[i],y=n[i+1];if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}});
   if(x1<x0)return[0,0,1100,1087];const padX=(x1-x0)*0.06,padY=(y1-y0)*0.06;
   return [x0-padX,y0-padY,(x1-x0)+2*padX,(y1-y0)+2*padY];}
-function activeSet(){if(region==="gn3")return D.filter(d=>GN3.includes(d.n));
-  if(region==="seoul")return D.filter(d=>d.sd==="seoul");if(region==="gg")return D.filter(d=>d.sd==="gg");return D;}
-function inActive(d){if(region==="gn3")return GN3.includes(d.n);if(region==="seoul")return d.sd==="seoul";
-  if(region==="gg")return d.sd==="gg";return true;}
+function activeSet(){
+  if(GK.includes(region)){
+    if(region==="gn3")return D.filter(d=>GN3.includes(d.n));
+    if(region==="seoul")return D.filter(d=>d.sd==="seoul");
+    if(region==="gg")return D.filter(d=>d.sd==="gg");return D;}
+  const one=D.filter(d=>d.n===region);return one.length?one:D;}
+function inActive(d){
+  if(GK.includes(region)){
+    if(region==="gn3")return GN3.includes(d.n);
+    if(region==="seoul")return d.sd==="seoul";
+    if(region==="gg")return d.sd==="gg";return true;}
+  return D.some(x=>x.n===region)?(d.n===region):true;}
 
 function placeLabels(){const act=activeSet();const big=act.length<=6;
   const cand=[...act].sort((a,b)=>b.ar-a.ar);const placed=[],out=[];
@@ -1037,8 +1168,8 @@ function buildHeat(){const pool=activeSet();const k=metric==="v"?"v":metric;
     return `<div class="tile" style="border-color:${c}"><span class="tsd">${d.sd==="seoul"?"서울":"경기"}</span><div class="tn">${d.sl}</div><div class="tv" style="color:${tc}">${val}</div></div>`;}).join("");}
 
 function updateHead(){const g=G[region]||{};
-  document.getElementById("hdSub").textContent=g.name+" · 매매 "+fmtL(g.sale)+" "+fmtP(g.sale_wk)+" · 강남3구·서울·경기·수도권 주간 동향";
-  document.getElementById("note").textContent="표 행을 누르면 추이·지도가 해당 권역으로 전환됩니다 · 지도 색 = 선택 지표(빨강 상승/파랑 하락) · 표·추이·범례를 지도 위로, 지도는 전체폭 확대 · 매매·전세=KB 주간지수, 거래=국토부 실거래, 전세가율=KB";}
+  document.getElementById("hdSub").textContent=(g.name||"")+" · 매매 "+fmtL(g.sale)+" "+fmtP(g.sale_wk)+" · 전세 "+fmtL(g.jeonse)+" "+fmtP(g.jeonse_wk);
+  document.getElementById("note").textContent="표에서 ▸를 누르면 하위 시군구가 펼쳐집니다(서울 25개 구·경기 시 단위) · 행을 누르면 추이·지도가 그 지역으로 전환 · 지도 색=선택 지표(빨강 상승/파랑 하락) · 거래는 주간 실거래(시군구는 표본이 작아 변동 큼) · 매매·전세=KB 주간지수, 전세가율=KB";}
 
 function refresh(){renderTable();renderTrend();drawLegend();drawMap();buildHeat();updateHead();}
 document.querySelectorAll("#periodSeg button").forEach(b=>b.onclick=()=>{document.querySelectorAll("#periodSeg button").forEach(x=>x.classList.remove("on"));b.classList.add("on");period=b.dataset.p;renderTrend();});
@@ -1052,7 +1183,7 @@ refresh();
 def _render_map():
     g, t = fetch_region_levels()
     components.html(_map_component(_merged_regions(), g, t),
-                    height=1240, scrolling=False)
+                    height=1430, scrolling=False)
 
 
 # ── 지도 탭 추이 차트 (코스피·코스닥 양식 · 매매·전세·전세가율 3종) ──────────
