@@ -973,7 +973,7 @@ td.child .cdot{color:#CDCEC4;margin-right:7px}
 </style></head><body>
 <div class="hd">
   <div><div class="h1">수도권 가격 지도</div><div class="hsub" id="hdSub"></div></div>
-  <div class="seg" id="periodSeg"><button data-p="1y">1년</button><button data-p="3y" class="on">3년</button><button data-p="all">전체</button></div>
+  <div class="seg" id="periodSeg"><button data-p="1y">1년</button><button data-p="3y">3년</button><button data-p="all" class="on">전체</button></div>
 </div>
 <div class="mxscroll"><table class="mx"><thead><tr><th style="width:22%">지역</th><th>매매지수</th><th>전세지수</th><th>거래(건)</th><th>전세가율</th></tr></thead><tbody id="mxBody"></tbody></table></div>
 <div class="panel">
@@ -1000,7 +1000,7 @@ td.child .cdot{color:#CDCEC4;margin-right:7px}
 _MAP_SCRIPT = r"""
 const GK=["gn3","seoul","gg","all"];
 const GN3=["강남구","서초구","송파구"];
-let region="seoul", metric="mm", period="3y";
+let region="seoul", metric="mm", period="all";
 let expanded={};
 
 const fmtP=v=>(v>0?"+":"")+(v||0).toFixed(2)+"%";
