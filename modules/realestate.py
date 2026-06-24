@@ -862,331 +862,274 @@ def _spark_svg(series, col, kind, baseline=None):
 
 
 # ── 지도 컴포넌트(iframe) HTML 생성 ─────────────────────────────
-def _map_component(regions, groups, trend):
-    """지도 탭 단일 화면 컴포넌트(iframe).
-    구성: 권역×지표 매트릭스 표(레벨+주간Δ+스파크) → 권역 추이 차트 → 전체폭 확대 지도
-         (지도 상단에 범례·지표 토글 오버레이). 권역 선택은 표 행 클릭으로 표/추이/지도 동시 전환.
-    regions=시군구 리스트(지도용), groups=권역 레벨 dict, trend=권역 추이 dict."""
-    d_json = json.dumps(regions, ensure_ascii=False, separators=(",", ":"))
-    g_json = json.dumps(groups, ensure_ascii=False, separators=(",", ":"))
-    t_json = json.dumps(trend, ensure_ascii=False, separators=(",", ":"))
-    border_json = json.dumps(_BORDER)
-    from datetime import date as _date
-    asof_json = json.dumps(_date.today().isoformat())
-    return (_MAP_HEAD
-            + "const D=" + d_json + ";\nconst G=" + g_json
-            + ";\nconst T=" + t_json + ";\nconst BORDER=" + border_json
-            + ";\nconst ASOF=" + asof_json + ";"
-            + _MAP_SCRIPT)
+# ── 지방 광역시(인천·부산·대구) placeholder 지오메트리 + 샘플 ──────────────
+#   실제 구/군 경계가 없어 2x2 타일(주요 3구 + 이외)로 예시 배치. 타일 n은 엔진 _local
+#   구명과 일치(연수구/서구/남동구 등) → 런타임 지표 머지. 실데이터 확보 시 경계 교체.
+_LOCAL_GEO = json.loads(r"""{"incheon": {"outline": "M40,10 h240 a30,30 0 0 1 30,30 v240 a30,30 0 0 1 -30,30 h-240 a30,30 0 0 1 -30,-30 v-240 a30,30 0 0 1 30,-30 z", "tiles": [{"n": "서구", "sl": "청라", "d": "M40,22 h92 a18,18 0 0 1 18,18 v92 a18,18 0 0 1 -18,18 h-92 a18,18 0 0 1 -18,-18 v-92 a18,18 0 0 1 18,-18 z", "cx": 86.0, "cy": 86.0, "others": false}, {"n": "남동구", "sl": "남동", "d": "M188,22 h92 a18,18 0 0 1 18,18 v92 a18,18 0 0 1 -18,18 h-92 a18,18 0 0 1 -18,-18 v-92 a18,18 0 0 1 18,-18 z", "cx": 234.0, "cy": 86.0, "others": false}, {"n": "연수구", "sl": "송도", "d": "M40,170 h92 a18,18 0 0 1 18,18 v92 a18,18 0 0 1 -18,18 h-92 a18,18 0 0 1 -18,-18 v-92 a18,18 0 0 1 18,-18 z", "cx": 86.0, "cy": 234.0, "others": false}, {"n": "이외", "sl": "이외", "d": "M188,170 h92 a18,18 0 0 1 18,18 v92 a18,18 0 0 1 -18,18 h-92 a18,18 0 0 1 -18,-18 v-92 a18,18 0 0 1 18,-18 z", "cx": 234.0, "cy": 234.0, "others": true}]}, "busan": {"outline": "M40,10 h240 a30,30 0 0 1 30,30 v240 a30,30 0 0 1 -30,30 h-240 a30,30 0 0 1 -30,-30 v-240 a30,30 0 0 1 30,-30 z", "tiles": [{"n": "동래구", "sl": "동래", "d": "M40,22 h92 a18,18 0 0 1 18,18 v92 a18,18 0 0 1 -18,18 h-92 a18,18 0 0 1 -18,-18 v-92 a18,18 0 0 1 18,-18 z", "cx": 86.0, "cy": 86.0, "others": false}, {"n": "수영구", "sl": "수영·광안", "d": "M188,22 h92 a18,18 0 0 1 18,18 v92 a18,18 0 0 1 -18,18 h-92 a18,18 0 0 1 -18,-18 v-92 a18,18 0 0 1 18,-18 z", "cx": 234.0, "cy": 86.0, "others": false}, {"n": "해운대구", "sl": "해운대", "d": "M40,170 h92 a18,18 0 0 1 18,18 v92 a18,18 0 0 1 -18,18 h-92 a18,18 0 0 1 -18,-18 v-92 a18,18 0 0 1 18,-18 z", "cx": 86.0, "cy": 234.0, "others": false}, {"n": "이외", "sl": "이외", "d": "M188,170 h92 a18,18 0 0 1 18,18 v92 a18,18 0 0 1 -18,18 h-92 a18,18 0 0 1 -18,-18 v-92 a18,18 0 0 1 18,-18 z", "cx": 234.0, "cy": 234.0, "others": true}]}, "daegu": {"outline": "M40,10 h240 a30,30 0 0 1 30,30 v240 a30,30 0 0 1 -30,30 h-240 a30,30 0 0 1 -30,-30 v-240 a30,30 0 0 1 30,-30 z", "tiles": [{"n": "중구", "sl": "도심", "d": "M40,22 h92 a18,18 0 0 1 18,18 v92 a18,18 0 0 1 -18,18 h-92 a18,18 0 0 1 -18,-18 v-92 a18,18 0 0 1 18,-18 z", "cx": 86.0, "cy": 86.0, "others": false}, {"n": "달서구", "sl": "월배", "d": "M188,22 h92 a18,18 0 0 1 18,18 v92 a18,18 0 0 1 -18,18 h-92 a18,18 0 0 1 -18,-18 v-92 a18,18 0 0 1 18,-18 z", "cx": 234.0, "cy": 86.0, "others": false}, {"n": "수성구", "sl": "범어·수성", "d": "M40,170 h92 a18,18 0 0 1 18,18 v92 a18,18 0 0 1 -18,18 h-92 a18,18 0 0 1 -18,-18 v-92 a18,18 0 0 1 18,-18 z", "cx": 86.0, "cy": 234.0, "others": false}, {"n": "이외", "sl": "이외", "d": "M188,170 h92 a18,18 0 0 1 18,18 v92 a18,18 0 0 1 -18,18 h-92 a18,18 0 0 1 -18,-18 v-92 a18,18 0 0 1 18,-18 z", "cx": 234.0, "cy": 234.0, "others": true}]}}""")
+
+# _local 미수집 시 폴백 샘플(화면이 비지 않게 · 상승장 가정)
+_LOCAL_SAMPLE = json.loads(r"""{"incheon":{"name":"인천","gu":{"연수구":{"mm":0.31,"js":0.18,"jr":55,"sale":[96.0,96.3,96.61,96.91,97.22,97.52,97.83,98.13,98.43,98.74,99.04,99.35,99.65,99.96,100.26,100.57,100.87,101.17,101.48,101.78,102.09,102.39,102.7,103.0],"jeonse":[95.0,95.17,95.35,95.52,95.7,95.87,96.04,96.22,96.39,96.57,96.74,96.91,97.09,97.26,97.43,97.61,97.78,97.96,98.13,98.3,98.48,98.65,98.83,99.0]},"서구":{"mm":0.18,"js":0.1,"jr":57,"sale":[97.0,97.17,97.35,97.52,97.7,97.87,98.04,98.22,98.39,98.57,98.74,98.91,99.09,99.26,99.43,99.61,99.78,99.96,100.13,100.3,100.48,100.65,100.83,101.0],"jeonse":[96.0,96.13,96.26,96.39,96.52,96.65,96.78,96.91,97.04,97.17,97.3,97.43,97.57,97.7,97.83,97.96,98.09,98.22,98.35,98.48,98.61,98.74,98.87,99.0]},"남동구":{"mm":0.07,"js":0.04,"jr":61,"sale":[98.0,98.09,98.17,98.26,98.35,98.43,98.52,98.61,98.7,98.78,98.87,98.96,99.04,99.13,99.22,99.3,99.39,99.48,99.57,99.65,99.74,99.83,99.91,100.0],"jeonse":[97.0,97.09,97.17,97.26,97.35,97.43,97.52,97.61,97.7,97.78,97.87,97.96,98.04,98.13,98.22,98.3,98.39,98.48,98.57,98.65,98.74,98.83,98.91,99.0]}},"others":{"mm":0.05,"js":0.03,"jr":62,"sale":[98.0,98.07,98.13,98.2,98.26,98.33,98.39,98.46,98.52,98.59,98.65,98.72,98.78,98.85,98.91,98.98,99.04,99.11,99.17,99.24,99.3,99.37,99.43,99.5],"jeonse":[97.0,97.07,97.13,97.2,97.26,97.33,97.39,97.46,97.52,97.59,97.65,97.72,97.78,97.85,97.91,97.98,98.04,98.11,98.17,98.24,98.3,98.37,98.43,98.5]}},"busan":{"name":"부산","gu":{"해운대구":{"mm":0.28,"js":0.12,"jr":52,"sale":[97.0,97.26,97.52,97.78,98.04,98.3,98.57,98.83,99.09,99.35,99.61,99.87,100.13,100.39,100.65,100.91,101.17,101.43,101.7,101.96,102.22,102.48,102.74,103.0],"jeonse":[95.0,95.13,95.26,95.39,95.52,95.65,95.78,95.91,96.04,96.17,96.3,96.43,96.57,96.7,96.83,96.96,97.09,97.22,97.35,97.48,97.61,97.74,97.87,98.0]},"수영구":{"mm":0.16,"js":0.08,"jr":59,"sale":[98.0,98.13,98.26,98.39,98.52,98.65,98.78,98.91,99.04,99.17,99.3,99.43,99.57,99.7,99.83,99.96,100.09,100.22,100.35,100.48,100.61,100.74,100.87,101.0],"jeonse":[96.0,96.09,96.17,96.26,96.35,96.43,96.52,96.61,96.7,96.78,96.87,96.96,97.04,97.13,97.22,97.3,97.39,97.48,97.57,97.65,97.74,97.83,97.91,98.0]},"동래구":{"mm":0.09,"js":0.05,"jr":63,"sale":[98.0,98.09,98.17,98.26,98.35,98.43,98.52,98.61,98.7,98.78,98.87,98.96,99.04,99.13,99.22,99.3,99.39,99.48,99.57,99.65,99.74,99.83,99.91,100.0],"jeonse":[97.0,97.04,97.09,97.13,97.17,97.22,97.26,97.3,97.35,97.39,97.43,97.48,97.52,97.57,97.61,97.65,97.7,97.74,97.78,97.83,97.87,97.91,97.96,98.0]}},"others":{"mm":0.02,"js":0.01,"jr":66,"sale":[99.0,99.02,99.04,99.07,99.09,99.11,99.13,99.15,99.17,99.2,99.22,99.24,99.26,99.28,99.3,99.33,99.35,99.37,99.39,99.41,99.43,99.46,99.48,99.5],"jeonse":[98.0,98.02,98.04,98.07,98.09,98.11,98.13,98.15,98.17,98.2,98.22,98.24,98.26,98.28,98.3,98.33,98.35,98.37,98.39,98.41,98.43,98.46,98.48,98.5]}},"daegu":{"name":"대구","gu":{"수성구":{"mm":0.34,"js":0.15,"jr":50,"sale":[96.0,96.3,96.61,96.91,97.22,97.52,97.83,98.13,98.43,98.74,99.04,99.35,99.65,99.96,100.26,100.57,100.87,101.17,101.48,101.78,102.09,102.39,102.7,103.0],"jeonse":[94.0,94.17,94.35,94.52,94.7,94.87,95.04,95.22,95.39,95.57,95.74,95.91,96.09,96.26,96.43,96.61,96.78,96.96,97.13,97.3,97.48,97.65,97.83,98.0]},"달서구":{"mm":0.11,"js":0.06,"jr":60,"sale":[98.0,98.09,98.17,98.26,98.35,98.43,98.52,98.61,98.7,98.78,98.87,98.96,99.04,99.13,99.22,99.3,99.39,99.48,99.57,99.65,99.74,99.83,99.91,100.0],"jeonse":[97.0,97.04,97.09,97.13,97.17,97.22,97.26,97.3,97.35,97.39,97.43,97.48,97.52,97.57,97.61,97.65,97.7,97.74,97.78,97.83,97.87,97.91,97.96,98.0]},"중구":{"mm":0.05,"js":0.03,"jr":66,"sale":[98.0,98.07,98.13,98.2,98.26,98.33,98.39,98.46,98.52,98.59,98.65,98.72,98.78,98.85,98.91,98.98,99.04,99.11,99.17,99.24,99.3,99.37,99.43,99.5],"jeonse":[97.0,97.04,97.09,97.13,97.17,97.22,97.26,97.3,97.35,97.39,97.43,97.48,97.52,97.57,97.61,97.65,97.7,97.74,97.78,97.83,97.87,97.91,97.96,98.0]}},"others":{"mm":0.01,"js":0.0,"jr":67,"sale":[99.0,99.01,99.03,99.04,99.05,99.07,99.08,99.09,99.1,99.12,99.13,99.14,99.16,99.17,99.18,99.2,99.21,99.22,99.23,99.25,99.26,99.27,99.29,99.3],"jeonse":[98.0,98.02,98.03,98.05,98.07,98.09,98.1,98.12,98.14,98.16,98.17,98.19,98.21,98.23,98.24,98.26,98.28,98.3,98.31,98.33,98.35,98.37,98.38,98.4]}}}""")
 
 
-_MAP_HEAD = """
-<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+_MAPC_HTML = r'''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
-:root{--ink:#34352f;--muted:#9a9b92;--card:#fff;--bg:#FCFCFA;--line:#ECEDE7;--line2:#DEDED7;
-  --sage:#7E9A83;--sage2:#A7BBA9;--up:#B65F5A;--dn:#5A7CA0;--jr:#6E8FA8;
-  --kfont:'Pretendard',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;}
+:root{--bg:#FCFCFA;--card:#fff;--ink:#34352f;--muted:#9a9b92;--line:#ECEDE7;--line2:#DEDED7;
+ --sage:#A7BBA9;--sage2:#7E9A83;--up:#B65F5A;--dn:#5A7CA0;--jr:#6E8FA8;
+ --kfont:'Pretendard',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;}
 *{box-sizing:border-box}
 body{margin:0;background:transparent;color:var(--ink);font-family:var(--kfont);font-size:14px;
-  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+ -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
 .up{color:var(--up)}.dn{color:var(--dn)}
-.hd{display:flex;justify-content:space-between;align-items:flex-end;margin:0 0 12px}
+.hd{display:flex;justify-content:space-between;align-items:flex-end;gap:10px;margin:0 0 10px;flex-wrap:wrap}
 .h1{font-size:18px;font-weight:800;letter-spacing:-.02em}
-.hsub{font-size:11.5px;color:var(--muted);margin-top:2px}
+.crumb{font-size:11.5px;color:var(--muted);margin-top:3px;display:flex;align-items:center;gap:6px}
+.crumb b{color:var(--ink)}
+.crumb .back{cursor:pointer;border:1px solid var(--line2);border-radius:7px;padding:1px 8px;color:var(--ink);background:var(--card);font-size:11px}
+.live{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--sage2);font-weight:700;margin-left:6px}
+.live i{width:7px;height:7px;border-radius:50%;background:var(--sage2);animation:bl 1.6s ease-in-out infinite}
+@keyframes bl{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}
 .seg{display:inline-flex;border:1px solid var(--line2);border-radius:8px;overflow:hidden;background:var(--card)}
-.seg button{border:none;background:none;padding:5px 12px;font-size:11.5px;color:var(--muted);cursor:pointer;
-  border-right:1px solid var(--line);font-family:var(--kfont)}
-.seg button:last-child{border-right:none}
-.seg button.on{background:#EEF1EC;color:var(--ink);font-weight:700}
-/* 권역×지표 매트릭스 표 */
-table.mx{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:0}
-/* 권역 펼침(서울 25개 구 등) 시 표만 내부 스크롤 — iframe 전체 높이는 고정 유지 */
-.mxscroll{max-height:336px;overflow-y:auto;border:1px solid var(--line);border-radius:11px;margin-bottom:13px}
-.mxscroll::-webkit-scrollbar{width:8px}
-.mxscroll::-webkit-scrollbar-thumb{background:#E2E3DC;border-radius:6px}
-table.mx thead th{position:sticky;top:0;background:var(--card);z-index:2}
-table.mx th{font-size:11px;color:var(--muted);font-weight:600;text-align:left;padding:6px 8px}
-table.mx td{padding:9px 8px;border-top:1px solid var(--line);vertical-align:middle}
-table.mx tr.row{cursor:pointer;transition:background .12s ease}
-table.mx tr.row:hover{background:#FAFAF6}
-table.mx tr.on{background:#F2F5F0}
-table.mx tr.on td:first-child{box-shadow:inset 3px 0 0 var(--sage)}
-.rg{font-weight:800;font-size:12.5px}
-.lv{font-size:15px;font-weight:800;letter-spacing:-.02em}
-.dl{font-size:10.5px;font-weight:700;margin-left:2px}
-.spk{vertical-align:middle;margin-left:6px}
-/* 추이 패널 */
-.panel{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:12px 14px;margin-bottom:13px}
-.p-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
-.p-t{font-size:12.5px;font-weight:800}
-.p-lg{font-size:10.5px;color:var(--muted);display:flex;gap:12px}
-.p-lg i{font-style:normal}.dot{display:inline-block;width:9px;height:9px;border-radius:2px;vertical-align:-1px;margin-right:3px}
-.p-read{display:flex;gap:18px;align-items:flex-end;margin-bottom:3px}
-.p-read .big{font-size:22px;font-weight:800;letter-spacing:-.02em}
-.p-read .sm{font-size:15px;font-weight:800}
-.chartwrap{position:relative;width:100%}
-#trChart{display:block;width:100%;height:auto}
-.vtip{position:absolute;pointer-events:none;background:var(--card);border:1px solid var(--line2);border-radius:7px;
-  padding:6px 9px;font-size:11px;opacity:0;transition:opacity .12s;white-space:nowrap;box-shadow:0 4px 14px rgba(52,53,47,.12);z-index:6}
-/* 전체폭 지도 + 상단 오버레이 */
-.mapwrap{position:relative;width:100%;height:560px;border:1px solid var(--line);border-radius:13px;
-  background:var(--bg);overflow:hidden}
-.ovl{position:absolute;top:0;left:0;right:0;z-index:3;display:flex;justify-content:space-between;align-items:center;
-  gap:10px;padding:8px 12px;background:rgba(252,252,250,.93);border-bottom:1px solid var(--line)}
-.leg{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--muted)}
-.leg .bar{width:140px;height:11px;border-radius:3px}
-.leg .lab{font-weight:700;color:var(--ink);margin-left:6px}
-.pills{display:inline-flex;gap:4px}
-.pills button{border:none;border-radius:7px;padding:3px 10px;font-size:10.5px;color:var(--muted);cursor:pointer;
-  background:transparent;font-family:var(--kfont)}
-.pills button.on{background:#EEF1EC;color:var(--ink);font-weight:700}
-#map{display:block;width:100%;height:100%}
-.dist{stroke:#fff;stroke-width:0.7;cursor:pointer;transition:fill .4s ease,opacity .25s ease}
-.dlabel{pointer-events:none;fill:#2f302a;font-family:var(--kfont)}
+.seg button{border:none;background:none;padding:5px 12px;font-size:11.5px;color:var(--muted);cursor:pointer;border-right:1px solid var(--line);font-family:var(--kfont)}
+.seg button:last-child{border-right:none}.seg button.on{background:#EEF1EC;color:var(--ink);font-weight:700}
+.chips{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 12px}
+.chip{font-size:12.5px;color:var(--ink);background:var(--card);border:1px solid var(--line2);border-radius:999px;padding:6px 15px;cursor:pointer;transition:all .15s ease}
+.chip:hover{border-color:var(--sage)}
+.chip.on{background:var(--sage2);color:#fff;border-color:var(--sage2);box-shadow:0 3px 10px rgba(126,154,131,.3)}
+.maparea{position:relative;width:100%;height:520px;border:1px solid var(--line);border-radius:16px;background:var(--bg);overflow:hidden;margin-bottom:13px}
+#big{display:block;width:100%;height:100%}
+.dist{stroke:#fff;stroke-width:.7;cursor:pointer;transition:fill .4s ease,opacity .3s}
+.dist.others{stroke-dasharray:3 3;stroke:#CFD1C8}
+.dlabel{pointer-events:none;fill:#2f302a;font-family:var(--kfont);font-weight:600}
+.dlabel.others{fill:#9a9b92;font-weight:700}
+#coutline{fill:none;stroke:#E2E4DC;stroke-width:1.4;stroke-dasharray:5 5;pointer-events:none}
 #hoverLabel{pointer-events:none;font-family:var(--kfont);font-weight:800;fill:#23241d;opacity:0;transition:opacity .1s}
-#border{fill:none;stroke:#9DB0A0;stroke-width:1.4;stroke-linejoin:round;pointer-events:none}
-.tip{position:absolute;pointer-events:none;background:var(--card);border:1px solid var(--line2);border-radius:8px;
-  padding:9px 11px;font-size:12px;min-width:150px;box-shadow:0 6px 22px rgba(52,53,47,.13);opacity:0;
-  transform:translateY(4px);transition:opacity .15s,transform .15s;z-index:5}
-.note{color:var(--muted);font-size:11px;margin-top:9px;line-height:1.6}
-/* 모바일 히트그리드 */
-.heatwrap{display:none}
-.heat{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:7px}
-.tile{border:1px solid var(--line);border-radius:10px;padding:8px 9px;position:relative;background:var(--card)}
-.tile .tn{font-size:12px;font-weight:700}.tile .tv{font-size:14px;font-weight:800;letter-spacing:-.02em;margin-top:2px}
-.tile .tsd{position:absolute;top:7px;right:8px;font-size:9px;color:var(--muted);font-weight:700}
-/* 계층 아코디언 표 */
-.car{display:inline-block;width:14px;color:var(--muted);font-size:10px;cursor:pointer;user-select:none;text-align:center}
-.car:hover{color:var(--ink)}
-table.mx tr.childrow td{border-top:1px solid #F4F5EF}
-td.child{padding-left:24px !important;font-weight:600;font-size:12.5px;color:#5f5e5a}
-td.child .cdot{color:#CDCEC4;margin-right:7px}
-.sparse{display:inline-block;margin-left:5px;font-size:9px;color:#86877f;background:#F1EFE8;border-radius:5px;padding:1px 5px;font-weight:700;vertical-align:1px}
-.lv.vlow{color:#B7B8AE}
-/* 완성형 추이 차트 축 + 각주 */
+.phwm{position:absolute;left:14px;bottom:12px;font-size:10px;color:#b08e57;background:#FBF3E3cc;border:1px solid #EAD9B6;border-radius:8px;padding:3px 8px;backdrop-filter:blur(3px)}
+.nav{position:absolute;top:11px;right:11px;width:140px;background:rgba(252,252,250,.92);border:1px solid var(--line2);border-radius:12px;padding:8px 8px 6px;backdrop-filter:blur(5px);box-shadow:0 6px 20px rgba(52,53,47,.10)}
+.nav .nt{font-size:9.5px;font-weight:800;color:var(--muted);letter-spacing:.04em;margin:0 2px 3px;display:flex;justify-content:space-between}
+.nav svg{display:block;width:100%;height:auto}
+#kland{fill:#EDEFE9;stroke:#D7DBD0;stroke-width:1.2}
+.kdot{cursor:pointer}.kdot circle{transition:r .15s ease,fill .2s ease}
+.kdot text{font-size:7.2px;font-weight:800;fill:#5d6258;font-family:var(--kfont);pointer-events:none}
+.kdot.on circle.main{fill:var(--up)}
+.kdot.on .pulse{animation:pl 1.7s ease-out infinite}
+@keyframes pl{0%{r:4;opacity:.5}100%{r:13;opacity:0}}
+.legend{position:absolute;left:13px;top:11px;display:flex;align-items:center;gap:6px;font-size:10px;color:var(--muted);background:rgba(252,252,250,.9);border:1px solid var(--line2);border-radius:9px;padding:5px 9px;backdrop-filter:blur(4px)}
+.legend .bar{width:110px;height:10px;border-radius:3px}.legend .lab{font-weight:700;color:var(--ink);margin-left:4px}
+.pills{position:absolute;right:11px;bottom:12px;display:inline-flex;gap:4px;background:rgba(252,252,250,.92);border:1px solid var(--line2);border-radius:9px;padding:3px;backdrop-filter:blur(4px)}
+.pills button{border:none;border-radius:7px;padding:4px 10px;font-size:10.5px;color:var(--muted);cursor:pointer;background:transparent;font-family:var(--kfont)}
+.pills button.on{background:#EEF1EC;color:var(--ink);font-weight:700}
+.tip{position:absolute;pointer-events:none;background:var(--card);border:1px solid var(--line2);border-radius:9px;padding:8px 11px;font-size:12px;min-width:148px;box-shadow:0 6px 22px rgba(52,53,47,.14);opacity:0;transform:translateY(4px);transition:opacity .14s,transform .14s;z-index:7}
+.tip .up{color:var(--up)}.tip .dn{color:var(--dn)}
+table.mx{width:100%;border-collapse:collapse;table-layout:fixed}
+.mxwrap{border:1px solid var(--line);border-radius:12px;overflow-y:auto;max-height:330px;margin-bottom:13px}
+.mxwrap::-webkit-scrollbar{width:8px}.mxwrap::-webkit-scrollbar-thumb{background:#E2E3DC;border-radius:6px}
+table.mx thead th{position:sticky;top:0;z-index:2}
+table.mx th{font-size:11px;color:var(--muted);font-weight:600;text-align:right;padding:7px 9px;background:var(--card)}
+table.mx th:first-child{text-align:left}
+table.mx td{padding:8px 9px;border-top:1px solid var(--line);text-align:right;vertical-align:middle}
+table.mx td:first-child{text-align:left;font-weight:700;font-size:12.5px}
+table.mx tr:hover{background:#FAFAF6}
+table.mx td.others,table.mx tr.others td:first-child{color:#9a9b92}
+.dl{font-size:12px;font-weight:800}
+.muted{color:var(--muted)}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:12px 14px;margin-bottom:6px}
+.p-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.p-t{font-size:12.5px;font-weight:800}
+.p-lg{font-size:10.5px;color:var(--muted);display:flex;gap:12px}.p-lg i{font-style:normal}
+.dot{display:inline-block;width:9px;height:9px;border-radius:2px;vertical-align:-1px;margin-right:3px}
+#trChart{display:block;width:100%;height:auto}
 .axt{fill:var(--muted);font-size:10px;font-family:var(--kfont)}
 .axtitle{fill:#6f706a;font-size:8.5px;font-family:var(--kfont)}
-.fn{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:10px 13px;font-size:10.8px;
-  color:#5f5e5a;line-height:1.65;margin-bottom:13px}
-.fn b{color:var(--ink);font-weight:700}
-.fn .warn{color:var(--up)}
-@media(max-width:680px){.mapwrap{height:420px}.heatwrap{display:block;margin-top:12px}.p-read .big{font-size:19px}}
+.vtip{position:absolute;pointer-events:none;background:var(--card);border:1px solid var(--line2);border-radius:7px;padding:6px 9px;font-size:11px;opacity:0;transition:opacity .12s;white-space:nowrap;box-shadow:0 4px 14px rgba(52,53,47,.12);z-index:6}
+.note{color:var(--muted);font-size:10.8px;margin-top:9px;line-height:1.6}
+@media(max-width:680px){.maparea{height:430px}.nav{width:116px}}
 </style></head><body>
 <div class="hd">
-  <div><div class="h1">수도권 가격 지도</div><div class="hsub" id="hdSub"></div></div>
+  <div><div class="h1">전국 아파트 가격지도</div>
+    <div class="crumb"><span class="back" id="back">‹ 전국</span> <span>전국</span> › <b id="crName">서울</b>
+      <span class="live"><i></i> 방금 갱신</span></div></div>
   <div class="seg" id="periodSeg"><button data-p="1y">1년</button><button data-p="3y">3년</button><button data-p="all" class="on">전체</button></div>
 </div>
-<div class="mxscroll"><table class="mx"><thead><tr><th style="width:22%">지역</th><th>매매지수</th><th>전세지수</th><th>거래(건)</th><th>전세가율</th></tr></thead><tbody id="mxBody"></tbody></table></div>
-<div class="panel">
-  <div class="p-h"><span class="p-t" id="trTitle"></span>
-    <span class="p-lg"><i><span class="dot" style="background:#B65F5A"></span>매매</i><i><span class="dot" style="background:#5A7CA0"></span>전세</i></span></div>
-  <div class="p-read" id="trRead"></div>
-  <div class="chartwrap"><svg id="trChart" viewBox="0 0 620 200" role="img" aria-label="가격지수 추이 차트"></svg><div class="vtip" id="vtip"></div></div>
-</div>
-<div class="fn">
-  <b>매매지수·전세지수란?</b> KB부동산 주간 아파트 가격지수. <b>2022년 1월 10일 = 100.0</b> 기준, 그 시점 대비 현재 매매(전세) 가격 수준을 시가총액 방식으로 지수화한 값입니다(예: 104.2 = 기준시점보다 4.2% 높음). · <b>거래(건)</b> 국토부 실거래 주간 신고 건수 · <b>전세가율</b> 매매가 대비 전세가 비율(KB 월간).
-  <span class="warn">※ 지역마다 기준시점 가격수준이 달라, 지수 레벨로 지역 간 가격을 직접 비교할 수는 없습니다(은평 104 &gt; 영등포 101 이라고 은평이 더 비싼 게 아님). 같은 지역의 시간 변화·등락률 비교에 사용하세요.</span>
-</div>
-<div class="mapwrap" id="mapwrap">
-  <div class="ovl"><div class="leg" id="legend"></div>
-    <div class="pills" id="metricPills"><button data-m="mm" class="on">매매</button><button data-m="js">전세</button><button data-m="v">거래</button><button data-m="jr">전세가율</button></div></div>
-  <svg id="map" viewBox="0 0 1100 1087" preserveAspectRatio="xMidYMid meet" role="img" aria-label="수도권 시군구 지표 지도"></svg>
+<div class="chips" id="chips"></div>
+<div class="maparea" id="maparea">
+  <div class="legend" id="legend"></div>
+  <svg id="big" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" role="img" aria-label="상세 지도"></svg>
+  <div class="phwm" id="phwm" style="display:none">예시 배치 — 실제 구/군 경계로 교체 예정</div>
+  <div class="pills" id="metricPills"><button data-m="mm" class="on">매매</button><button data-m="js">전세</button><button data-m="v">거래</button><button data-m="jr">전세가율</button></div>
+  <div class="nav"><div class="nt"><span>전국</span><span style="color:#C4C6BD">탭하여 이동</span></div>
+    <svg viewBox="0 0 120 150" role="img" aria-label="한반도 내비게이터">
+      <path id="kland" d="M44 14 C58 8 74 12 80 24 C86 34 82 44 88 52 C95 61 96 72 90 80 C97 86 100 96 95 106 C101 112 100 124 92 130 C86 134 80 128 76 120 C70 126 62 122 60 114 C52 118 44 114 42 106 C33 108 24 102 24 92 C16 90 12 80 18 72 C12 64 14 52 24 48 C22 38 28 26 38 22 C39 18 41 15 44 14 Z"></path>
+      <g id="kdots"></g></svg></div>
   <div class="tip" id="tip"></div>
 </div>
-<div class="heatwrap"><div class="heat" id="heatgrid"></div></div>
+<div class="mxwrap"><table class="mx"><thead><tr><th style="width:30%">지역</th><th>매매Δ</th><th>전세Δ</th><th>거래</th><th>전세가율</th></tr></thead><tbody id="mxBody"></tbody></table></div>
+<div class="panel"><div class="p-h"><span class="p-t" id="trTitle"></span>
+  <span class="p-lg"><i><span class="dot" style="background:#B65F5A"></span>매매</i><i><span class="dot" style="background:#5A7CA0"></span>전세</i></span></div>
+  <div style="position:relative"><svg id="trChart" viewBox="0 0 620 196" role="img" aria-label="가격지수 추이"></svg><div class="vtip" id="vtip"></div></div></div>
 <div class="note" id="note"></div>
 <script>
-"""
-
-_MAP_SCRIPT = r"""
-const GK=["gn3","seoul","gg","all"];
-const GN3=["강남구","서초구","송파구"];
-let region="seoul", metric="mm", period="all";
-let expanded={};
-
-const fmtP=v=>(v>0?"+":"")+(v||0).toFixed(2)+"%";
-const fmtL=v=>v==null?"-":(+v).toFixed(1);
+const D=__D__,LGEO=__LGEO__,LOCAL=__LOCAL__,TREND=__TREND__,GN3=__GN3__,ASOF=__ASOF__;
+const ORDER=["gn3","seoul","gg","incheon","daegu","busan"];
+const RNAME={gn3:"강남3구",seoul:"서울",gg:"경기",incheon:"인천",daegu:"대구",busan:"부산"};
+const SUDO=new Set(["gn3","seoul","gg"]);
+const NAVPOS={incheon:[34,54],seoul:[50,47],gn3:[54,55,1],gg:[64,45],daegu:[82,96],busan:[95,118]};
+let region="seoul",metric="mm",period="all",busy=false;
+const fmtP=v=>(v>0?"+":"")+(+v||0).toFixed(2)+"%";
 const cls=v=>v>0.005?"up":(v<-0.005?"dn":"");
-function colMM(v){if(v>=0.30)return"#C16C64";if(v>=0.15)return"#D89089";if(v>=0.05)return"#E9BDB8";if(v>-0.02)return"#EFEEE9";if(v>-0.10)return"#C9D6E5";return"#A9C0DA";}
+function colMM(v){if(v>=.30)return"#C16C64";if(v>=.15)return"#D89089";if(v>=.05)return"#E9BDB8";if(v>-.02)return"#EFEEE9";if(v>-.10)return"#C9D6E5";return"#A9C0DA";}
 function colV(v){if(v>=90)return"#6E9A83";if(v>=60)return"#9BBBA3";if(v>=40)return"#BBD2C0";if(v>=25)return"#D8E6DC";return"#EDF3EE";}
 function colJR(v){if(v>=68)return"#6E8FA8";if(v>=63)return"#92ABC1";if(v>=58)return"#B4C7D8";if(v>=53)return"#D2DEE9";return"#EBF0F5";}
-function fillOf(d){return metric==="v"?colV(d.v):metric==="jr"?colJR(d.jr==null?0:d.jr):colMM(d[metric]);}
-
-function periodN(){return period==="1y"?52:period==="3y"?156:1e9;}
-function spark(series,col,w,h){const s=(series||[]).slice(-40);if(s.length<2)return"";
-  const mn=Math.min(...s),mx=Math.max(...s),r=(mx-mn)||1;
-  const pts=s.map((v,i)=>`${(i/(s.length-1)*w).toFixed(1)},${(h-2-(v-mn)/r*(h-4)).toFixed(1)}`).join(" ");
-  return `<svg class="spk" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.5"/></svg>`;}
-
-function isLeaf(k){return !GK.includes(k);}
-function rowHTML(g,k,child){
-  const on=k===region?" on":"";
-  const mc=cls(g.sale_wk),jc=cls(g.jeonse_wk),vc=cls((g.vc||0)/100);
-  const tk=T[k]||{};
-  const kids=g.children&&g.children.length;
-  const car=kids?`<span class="car" data-exp="${k}">${expanded[k]?"▾":"▸"}</span>`
-                :(child?`<span class="cdot">·</span>`:`<span class="car"></span>`);
-  const vNum=g.v||0, low=child&&vNum<15;
-  const sparse=low?`<span class="sparse">표본 적음</span>`:"";
-  return `<tr class="row${child?" childrow":""}${on}" data-k="${k}">
-    <td class="${child?"child":"rg"}">${car}${g.name}</td>
-    <td><span class="lv">${fmtL(g.sale)}</span><span class="dl ${mc}">${fmtP(g.sale_wk)}</span>${child?"":spark(tk.sale,"#B65F5A",46,16)}</td>
-    <td><span class="lv">${fmtL(g.jeonse)}</span><span class="dl ${jc}">${fmtP(g.jeonse_wk)}</span></td>
-    <td><span class="lv${low?" vlow":""}">${vNum.toLocaleString()}</span><span class="dl ${vc}">${(g.vc||0)>0?"+":""}${g.vc||0}%</span>${sparse}</td>
-    <td><span class="lv">${g.jr==null?"-":g.jr+"%"}</span></td></tr>`;
+function fillOf(d){if(metric==="v")return d.v==null?"#F1F2EC":colV(d.v);if(metric==="jr")return colJR(d.jr==null?0:d.jr);return colMM(metric==="js"?d.js:d.mm);}
+// 지역 → 구역 리스트(geometry+metrics)
+function pathsOf(r){
+  if(SUDO.has(r)){
+    let f=r==="gn3"?D.filter(d=>GN3.includes(d.n)):r==="seoul"?D.filter(d=>d.sd==="seoul"):D.filter(d=>d.sd==="gg");
+    return f.map(d=>({n:d.n,sl:d.sl,d:d.d,cx:d.cx,cy:d.cy,mm:d.mm,js:d.js,v:d.v,vc:d.vc,jr:d.jr,others:false}));}
+  const lg=LGEO[r],lc=LOCAL[r]||{gu:{},others:{}};
+  return (lg?lg.tiles:[]).map(t=>{const m=t.others?(lc.others||{}):((lc.gu||{})[t.n]||{});
+    return {n:t.n,sl:t.sl,d:t.d,cx:t.cx,cy:t.cy,mm:m.mm||0,js:m.js||0,v:null,jr:m.jr==null?null:m.jr,others:t.others,sale:m.sale,jeonse:m.jeonse};});
 }
-function renderTable(){
-  let html="";
-  GK.forEach(k=>{const g=G[k];if(!g)return;
-    html+=rowHTML(g,k,false);
-    if(expanded[k]&&g.children){g.children.forEach(cn=>{const cg=G[cn];if(cg)html+=rowHTML(cg,cn,true);});}});
-  const body=document.getElementById("mxBody");body.innerHTML=html;
-  body.querySelectorAll(".car[data-exp]").forEach(c=>c.onclick=e=>{
-    e.stopPropagation();const k=c.dataset.exp;expanded[k]=!expanded[k];renderTable();});
-  body.querySelectorAll("tr.row").forEach(tr=>tr.onclick=()=>{const k=tr.dataset.k;region=k;
-    if(!isLeaf(k)&&G[k].children&&G[k].children.length)expanded[k]=true;refresh();});}
+function pathNums(d){return (d.match(/-?\d+\.?\d*/g)||[]).map(Number);}
+function vbOf(r,paths){
+  if(!SUDO.has(r))return[0,0,320,320];
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  paths.forEach(d=>{const n=pathNums(d.d);for(let i=0;i+1<n.length;i+=2){const x=n[i],y=n[i+1];if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}});
+  if(x1<x0)return[0,0,1100,1087];const px=(x1-x0)*0.07,py=(y1-y0)*0.15;
+  return[x0-px,y0-py,(x1-x0)+2*px,(y1-y0)+2*py];}
 
-function sliceP(arr){const n=periodN();return (arr||[]).slice(-n);}
-function niceTicks(mn,mx){const span=(mx-mn)||1,raw=span/3;
-  const mag=Math.pow(10,Math.floor(Math.log10(raw)));
-  const cands=[1,2,2.5,5,10].map(m=>m*mag);
-  const step=cands.find(c=>c>=raw)||cands[cands.length-1];
-  const lo=Math.ceil(mn/step)*step,ts=[];
-  for(let v=lo;v<=mx+1e-9&&ts.length<6;v+=step)ts.push(+v.toFixed(2));
-  return ts.length?ts:[mn,mx];}
-const _ASOF=new Date(ASOF+"T00:00:00");
-function tickDate(i,n){const d=new Date(_ASOF);d.setDate(d.getDate()-(n-1-i)*7);return d;}
-function fmtMon(d){return "'"+String(d.getFullYear()).slice(2)+"."+(d.getMonth()+1);}
+function drawChips(){document.getElementById("chips").innerHTML=ORDER.map(r=>
+  `<div class="chip ${r===region?"on":""}" data-r="${r}">${RNAME[r]}</div>`).join("");
+  document.querySelectorAll(".chip").forEach(c=>c.onclick=()=>setRegion(c.dataset.r));}
+function drawNav(){document.getElementById("kdots").innerHTML=ORDER.map(r=>{const p=NAVPOS[r];const on=r===region;const rad=p[2]?2.6:3.6;
+  return `<g class="kdot ${on?"on":""}" data-r="${r}">${on?`<circle class="pulse" cx="${p[0]}" cy="${p[1]}" r="4" fill="#B65F5A"/>`:""}<circle class="main" cx="${p[0]}" cy="${p[1]}" r="${rad}" fill="${on?"#B65F5A":"#9aa39b"}"/><text x="${p[0]}" y="${p[1]-6}" text-anchor="middle">${p[2]?"강남3":RNAME[r]}</text></g>`;}).join("");
+  document.querySelectorAll("#kdots .kdot").forEach(el=>el.onclick=()=>setRegion(el.dataset.r));}
+function drawLegend(){let h="";if(metric==="v")h=`<span>적음</span><span class="bar" style="background:linear-gradient(90deg,#EDF3EE,#6E9A83)"></span><span>많음</span><span class="lab">거래</span>`;
+  else if(metric==="jr")h=`<span>낮음</span><span class="bar" style="background:linear-gradient(90deg,#EBF0F5,#6E8FA8)"></span><span>높음</span><span class="lab">전세가율</span>`;
+  else h=`<span>하락</span><span class="bar" style="background:linear-gradient(90deg,#A9C0DA,#EFEEE9,#C16C64)"></span><span>상승</span><span class="lab">${metric==="mm"?"매매":"전세"}</span>`;
+  document.getElementById("legend").innerHTML=h;}
 
-function renderTrend(){const g=G[region]||{};const tk=T[region]||{};
-  const sale=sliceP(tk.sale),jeon=sliceP(tk.jeonse);
-  document.getElementById("trTitle").textContent=(g.name||"")+" 가격지수 추이";
-  document.getElementById("trRead").innerHTML=
-    `<div><span style="font-size:11px;color:#9a9b92">매매</span> <span class="big">${fmtL(g.sale)}</span> <span class="${cls(g.sale_wk)}" style="font-weight:800;font-size:12.5px">${(g.sale_wk||0)>=0?"▲":"▼"} ${fmtP(g.sale_wk)}</span></div>`
-   +`<div style="padding-bottom:2px"><span style="font-size:11px;color:#9a9b92">전세</span> <span class="sm" style="color:#5A7CA0">${fmtL(g.jeonse)}</span> <span class="${cls(g.jeonse_wk)}" style="font-size:11px">${fmtP(g.jeonse_wk)}</span></div>`;
-  const svg=document.getElementById("trChart");
-  const all=sale.concat(jeon).filter(v=>v!=null);
-  if(all.length<2){svg.innerHTML="";return;}
-  const L=64,Rr=606,T0=14,B=150,W=Rr-L,Hh=B-T0,n=sale.length;
-  const dmn=Math.min(...all),dmx=Math.max(...all);
-  const ticks=niceTicks(dmn,dmx);
-  const lo=Math.min(dmn,ticks[0]),hi=Math.max(dmx,ticks[ticks.length-1]),rr=(hi-lo)||1;
-  const X=i=>L+(n<=1?0:i/(n-1)*W), Y=v=>B-(v-lo)/rr*Hh;
+let _paths=[];
+function drawMap(){const r=region;_paths=pathsOf(r);const svg=document.getElementById("big");
+  svg.setAttribute("viewBox",vbOf(r,_paths).join(" "));
+  const ph=!SUDO.has(r);const big=_paths.length<=4;
+  const out=ph&&LGEO[r]?`<path id="coutline" d="${LGEO[r].outline}"></path>`:"";
+  const ps=_paths.map((d,i)=>`<path class="dist${d.others?" others":""}" data-i="${i}" d="${d.d}" fill="${fillOf(d)}"></path>`).join("");
+  const labs=_paths.map(d=>{const fs=big?13:(d.sl.length>3?9:11);
+    return `<text class="dlabel${d.others?" others":""}" x="${d.cx}" y="${d.cy}" text-anchor="middle" dominant-baseline="middle" font-size="${fs}" paint-order="stroke" stroke="#FCFCFA" stroke-width="2" stroke-linejoin="round">${d.sl}</text>`;}).join("");
+  svg.innerHTML=out+`<g id="paths">${ps}</g><g>${labs}</g><text id="hoverLabel" text-anchor="middle" dominant-baseline="middle" paint-order="stroke" stroke="#FCFCFA" stroke-width="2.6" stroke-linejoin="round"></text>`;
+  document.getElementById("phwm").style.display=ph?"block":"none";
+  const tip=document.getElementById("tip"),area=document.getElementById("maparea"),pg=svg.querySelector("#paths"),hl=svg.querySelector("#hoverLabel");
+  svg.querySelectorAll("path.dist").forEach(p=>{const d=_paths[+p.dataset.i];
+    p.onmouseenter=()=>{p.style.stroke="#7E9A83";p.style.strokeWidth="1.6";pg.appendChild(p);
+      const nm=d.others?`${RNAME[region]} 이외 <span class="muted" style="font-weight:500">시 전체 근사</span>`:`${d.n}${ph?' <span style="color:#b08e57;font-weight:500">예시</span>':''}`;
+      const vline=d.v==null?'<div class="muted">거래 — 미수집(지방)</div>':`<div class="muted">거래 ${d.v}건</div>`;
+      tip.innerHTML=`<div style="font-weight:800;margin-bottom:4px">${nm}</div><div class="muted">매매 <span class="${cls(d.mm)}">${fmtP(d.mm)}</span> · 전세 <span class="${cls(d.js)}">${fmtP(d.js)}</span></div>${vline}<div class="muted">전세가율 ${d.jr==null?"-":d.jr+"%"}</div>`;
+      tip.style.opacity="1";tip.style.transform="translateY(0)";
+      hl.setAttribute("x",d.cx);hl.setAttribute("y",d.cy);hl.setAttribute("font-size",big?15:12);hl.textContent=d.sl;hl.style.opacity="1";};
+    p.onmouseleave=()=>{p.style.stroke=d.others?"#CFD1C8":"#fff";p.style.strokeWidth=".7";tip.style.opacity="0";hl.style.opacity="0";};});
+  area.onmousemove=e=>{const b=area.getBoundingClientRect();let x=e.clientX-b.left+14,y=e.clientY-b.top+14;if(x>b.width-176)x-=190;if(y>b.height-96)y-=104;tip.style.left=x+"px";tip.style.top=y+"px";};}
+
+function drawTable(){const rows=_paths.length?_paths:pathsOf(region);
+  const sorted=[...rows].sort((a,b)=>(a.others?1:0)-(b.others?1:0)||(b.mm||-9)-(a.mm||-9));
+  document.getElementById("mxBody").innerHTML=sorted.map(d=>{
+    const vcell=d.v==null?'<span class="muted">–</span>':d.v.toLocaleString();
+    return `<tr class="${d.others?"others":""}"><td>${d.n}</td>
+      <td><span class="dl ${cls(d.mm)}">${fmtP(d.mm)}</span></td>
+      <td><span class="dl ${cls(d.js)}">${fmtP(d.js)}</span></td>
+      <td>${vcell}</td><td>${d.jr==null?"-":d.jr+"%"}</td></tr>`;}).join("");}
+
+function trendOf(r){if(SUDO.has(r))return TREND[r]||{};const o=(LOCAL[r]||{}).others||{};return{sale:o.sale,jeonse:o.jeonse};}
+function sliceP(a){const n=period==="1y"?12:period==="3y"?36:1e9;return (a||[]).slice(-n);}
+function drawTrend(){const tk=trendOf(region);const sale=sliceP(tk.sale),jeon=sliceP(tk.jeonse);
+  document.getElementById("trTitle").textContent=RNAME[region]+" 가격지수 추이";
+  const svg=document.getElementById("trChart");const all=(sale||[]).concat(jeon||[]).filter(v=>v!=null);
+  if(all.length<2){svg.innerHTML='<text class="axt" x="310" y="100" text-anchor="middle">추이 데이터가 아직 없어요</text>';return;}
+  const L=58,Rr=606,T0=12,B=150,W=Rr-L,Hh=B-T0,n=sale.length;
+  let dmn=Math.min(...all),dmx=Math.max(...all);const pad=(dmx-dmn)*0.12||1;const lo=dmn-pad,hi=dmx+pad,rr=(hi-lo)||1;
+  const X=i=>L+(n<=1?0:i/(n-1)*W),Y=v=>B-(v-lo)/rr*Hh;
   const line=s=>s.map((v,i)=>v==null?"":`${(i&&s[i-1]!=null)?"L":"M"}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
   const area=`M${X(0).toFixed(1)},${B} `+sale.map((v,i)=>`L${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ")+` L${X(n-1).toFixed(1)},${B} Z`;
-  let grid="";
-  ticks.forEach(tv=>{const y=(+Y(tv)).toFixed(1);
-    grid+=`<line x1="${L}" y1="${y}" x2="${Rr}" y2="${y}" stroke="#F0F1EB"/>`
-        +`<text class="axt" x="${L-7}" y="${(+y+3).toFixed(1)}" text-anchor="end">${tv.toFixed(tv%1?1:0)}</text>`;});
-  let xt="";
-  for(let j=0;j<4;j++){const i=Math.round(j/3*(n-1));
-    xt+=`<text class="axt" x="${X(i).toFixed(1)}" y="${B+16}" text-anchor="middle">${fmtMon(tickDate(i,n))}</text>`;}
+  let grid="";const step=(hi-lo)/3;for(let g=0;g<=3;g++){const tv=lo+step*g,y=Y(tv).toFixed(1);
+    grid+=`<line x1="${L}" y1="${y}" x2="${Rr}" y2="${y}" stroke="#F0F1EB"/><text class="axt" x="${L-7}" y="${(+y+3).toFixed(1)}" text-anchor="end">${tv.toFixed(1)}</text>`;}
+  let xt="";const asof=new Date(ASOF+"T00:00:00");
+  for(let j=0;j<4;j++){const i=Math.round(j/3*(n-1));const d=new Date(asof);d.setMonth(d.getMonth()-(n-1-i));
+    xt+=`<text class="axt" x="${X(i).toFixed(1)}" y="${B+15}" text-anchor="middle">'${String(d.getFullYear()).slice(2)}.${d.getMonth()+1}</text>`;}
   const ycy=((T0+B)/2).toFixed(0);
-  svg.innerHTML=grid
-   +`<line x1="${L}" y1="${B}" x2="${Rr}" y2="${B}" stroke="#D7D8D0"/>`
-   +`<path d="${area}" fill="#B65F5A" opacity="0.08"/>`
-   +`<path d="${line(sale)}" fill="none" stroke="#B65F5A" stroke-width="2"/>`
-   +`<path d="${line(jeon)}" fill="none" stroke="#5A7CA0" stroke-width="1.7" stroke-dasharray="4 3"/>`
-   +xt
-   +`<text class="axtitle" x="${((L+Rr)/2).toFixed(0)}" y="194" text-anchor="middle">가로축 — 시점(주간, 매주 월요일 기준)</text>`
-   +`<text class="axtitle" x="13" y="${ycy}" text-anchor="middle" transform="rotate(-90 13 ${ycy})">세로축 — 가격지수 (2022.1.10=100)</text>`
-   +`<line class="vx" x1="${L}" x2="${L}" y1="${T0}" y2="${B}" stroke="#B9BBB0" stroke-dasharray="3 3" opacity="0"/>`
-   +`<circle class="vd1" r="3" fill="#B65F5A" opacity="0"/><circle class="vd2" r="2.6" fill="#5A7CA0" opacity="0"/>`;
-  const vtip=document.getElementById("vtip");
-  const vx=svg.querySelector(".vx"),vd1=svg.querySelector(".vd1"),vd2=svg.querySelector(".vd2");
-  svg.onmousemove=e=>{const b=svg.getBoundingClientRect();const ux=(e.clientX-b.left)/b.width*620;
-    let i=Math.round((ux-L)/W*(n-1));i=Math.max(0,Math.min(n-1,i));
+  svg.innerHTML=grid+`<line x1="${L}" y1="${B}" x2="${Rr}" y2="${B}" stroke="#D7D8D0"/>`
+    +`<path d="${area}" fill="#B65F5A" opacity="0.08"/>`
+    +`<path d="${line(sale)}" fill="none" stroke="#B65F5A" stroke-width="2"/>`
+    +`<path d="${line(jeon)}" fill="none" stroke="#5A7CA0" stroke-width="1.7" stroke-dasharray="4 3"/>`+xt
+    +`<text class="axtitle" x="${((L+Rr)/2).toFixed(0)}" y="192" text-anchor="middle">가로축 — 시점(월)</text>`
+    +`<text class="axtitle" x="13" y="${ycy}" text-anchor="middle" transform="rotate(-90 13 ${ycy})">세로축 — 가격지수 (2022.1.10=100)</text>`
+    +`<line class="vx" x1="${L}" x2="${L}" y1="${T0}" y2="${B}" stroke="#B9BBB0" stroke-dasharray="3 3" opacity="0"/>`
+    +`<circle class="vd1" r="3" fill="#B65F5A" opacity="0"/><circle class="vd2" r="2.6" fill="#5A7CA0" opacity="0"/>`;
+  const vtip=document.getElementById("vtip"),vx=svg.querySelector(".vx"),vd1=svg.querySelector(".vd1"),vd2=svg.querySelector(".vd2");
+  svg.onmousemove=e=>{const b=svg.getBoundingClientRect();const ux=(e.clientX-b.left)/b.width*620;let i=Math.round((ux-L)/W*(n-1));i=Math.max(0,Math.min(n-1,i));
     const x=X(i);vx.setAttribute("x1",x);vx.setAttribute("x2",x);vx.style.opacity="1";
     if(sale[i]!=null){vd1.setAttribute("cx",x);vd1.setAttribute("cy",Y(sale[i]));vd1.style.opacity="1";}else vd1.style.opacity="0";
     if(jeon[i]!=null){vd2.setAttribute("cx",x);vd2.setAttribute("cy",Y(jeon[i]));vd2.style.opacity="1";}else vd2.style.opacity="0";
-    vtip.innerHTML=`<b>${fmtMon(tickDate(i,n))}</b> · 매매 <b>${fmtL(sale[i])}</b> · 전세 <b style="color:#5A7CA0">${fmtL(jeon[i])}</b>`;
-    let lx=e.clientX-b.left+12;if(lx>b.width-160)lx-=170;vtip.style.left=lx+"px";vtip.style.top="2px";vtip.style.opacity="1";};
+    vtip.innerHTML=`매매 <b>${sale[i]==null?"-":sale[i]}</b> · 전세 <b style="color:#5A7CA0">${jeon[i]==null?"-":jeon[i]}</b>`;
+    let lx=e.clientX-b.left+12;if(lx>b.width-150)lx-=160;vtip.style.left=lx+"px";vtip.style.top="2px";vtip.style.opacity="1";};
   svg.onmouseleave=()=>{vx.style.opacity="0";vd1.style.opacity="0";vd2.style.opacity="0";vtip.style.opacity="0";};}
 
-function pathNums(d){return (d.match(/-?\d+\.?\d*/g)||[]).map(Number);}
-function bboxOf(list){let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;list.forEach(d=>{const n=pathNums(d.d);
-    for(let i=0;i+1<n.length;i+=2){const x=n[i],y=n[i+1];if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}});
-  if(x1<x0)return[0,0,1100,1087];const padX=(x1-x0)*0.07,padY=(y1-y0)*0.15;
-  return [x0-padX,y0-padY,(x1-x0)+2*padX,(y1-y0)+2*padY];}
-function activeSet(){
-  if(GK.includes(region)){
-    if(region==="gn3")return D.filter(d=>GN3.includes(d.n));
-    if(region==="seoul")return D.filter(d=>d.sd==="seoul");
-    if(region==="gg")return D.filter(d=>d.sd==="gg");return D;}
-  const one=D.filter(d=>d.n===region);return one.length?one:D;}
-function inActive(d){
-  if(GK.includes(region)){
-    if(region==="gn3")return GN3.includes(d.n);
-    if(region==="seoul")return d.sd==="seoul";
-    if(region==="gg")return d.sd==="gg";return true;}
-  return D.some(x=>x.n===region)?(d.n===region):true;}
+function updateNote(){const ph=!SUDO.has(region);
+  document.getElementById("note").innerHTML=(ph
+    ?"인천·부산·대구는 주요 3개 구 + ‘이외’(시 전체 근사)로 비교 · 색·추이=KB 월간 가격지수 · 거래(실거래)는 지방 미수집 · 경계는 예시(실데이터 교체 예정)"
+    :"우상단 미니 한반도/칩으로 지역 이동 · 지도 색=선택 지표(빨강 상승/파랑 하락) · 거래는 주간 실거래(시군구는 표본 작아 변동 큼) · 매매·전세=KB 주간지수, 전세가율=KB")
+    +" · 기준 2022.1.10=100";}
 
-function placeLabels(){const act=activeSet();const big=act.length<=6;
-  const cand=[...act].sort((a,b)=>b.ar-a.ar);const placed=[],out=[];
-  for(const d of cand){const fs=big?15:(d.sd==="seoul"?10:12);const w=d.sl.length*fs*0.62,h=fs;
-    if(!big&&d.sd==="gg"&&d.ar<420)continue;
-    const box=[d.cx-w/2,d.cy-h/2,d.cx+w/2,d.cy+h/2];let ok=true;
-    for(const p of placed){if(!(box[2]<p[0]||box[0]>p[2]||box[3]<p[1]||box[1]>p[3])){ok=false;break;}}
-    if(!ok)continue;placed.push(box);
-    out.push(`<text class="dlabel" x="${d.cx}" y="${d.cy}" text-anchor="middle" dominant-baseline="middle" font-size="${fs}" font-weight="${d.sd==="seoul"?700:600}" paint-order="stroke" stroke="#FCFCFA" stroke-width="2" stroke-linejoin="round">${d.sl}</text>`);}
-  return out.join("");}
-
-let hovered=null;
-function drawMap(){const svg=document.getElementById("map");
-  svg.setAttribute("viewBox",bboxOf(activeSet()).map(v=>v.toFixed(1)).join(" "));
-  const ps=D.map((d,i)=>{const dim=!inActive(d);
-    return `<path class="dist" data-i="${i}" d="${d.d}" fill="${fillOf(d)}" style="opacity:${dim?0.12:1};pointer-events:${dim?"none":"auto"}"></path>`;}).join("");
-  svg.innerHTML=`<g id="paths">${ps}</g><path id="border" d="${BORDER}"></path><g id="labels">${placeLabels()}</g>`
-    +`<text id="hoverLabel" text-anchor="middle" dominant-baseline="middle" paint-order="stroke" stroke="#FCFCFA" stroke-width="2.6" stroke-linejoin="round"></text>`;
-  const wrap=document.getElementById("mapwrap"),tip=document.getElementById("tip"),pg=svg.querySelector("#paths"),hl=svg.querySelector("#hoverLabel");
-  hovered=null;
-  function clearHover(){if(hovered){hovered.style.stroke="#fff";hovered.style.strokeWidth="0.7";hovered=null;}hl.style.opacity="0";tip.style.opacity="0";tip.style.transform="translateY(4px)";}
-  svg.querySelectorAll("path.dist").forEach(p=>{
-    p.onmouseenter=()=>{clearHover();hovered=p;p.style.stroke="#7E9A83";p.style.strokeWidth="1.5";pg.appendChild(p);
-      const d=D[+p.dataset.i];showTip(d,tip);tip.style.opacity="1";tip.style.transform="translateY(0)";
-      hl.setAttribute("x",d.cx);hl.setAttribute("y",d.cy);hl.setAttribute("font-size",d.sd==="seoul"?14:16);hl.textContent=d.sl;hl.style.opacity="1";};
-    p.onmouseleave=()=>clearHover();});
-  wrap.onmouseleave=()=>clearHover();
-  wrap.onmousemove=e=>{const r=wrap.getBoundingClientRect();let x=e.clientX-r.left+14,y=e.clientY-r.top+14;
-    if(x>r.width-180)x=e.clientX-r.left-168;if(y>r.height-90)y=e.clientY-r.top-80;tip.style.left=x+"px";tip.style.top=y+"px";};}
-function showTip(d,tip){tip.innerHTML=`<div style="font-weight:700;margin-bottom:5px">${d.n} <span style="font-weight:400;color:#9a9b92">${d.sd==="seoul"?"서울":"경기"}</span></div>
-  <div style="color:#9a9b92">매매 <span class="${cls(d.mm)}">${fmtP(d.mm)}</span> · 전세 <span class="${cls(d.js)}">${fmtP(d.js)}</span></div>
-  <div style="color:#9a9b92">거래 ${d.v}건 <span class="${cls(d.vc/100)}">(${d.vc>0?"+":""}${d.vc}%)</span></div>
-  <div style="color:#9a9b92">전세가율 ${d.jr==null?"-":d.jr+"%"}</div>`;}
-
-function drawLegend(){let html="";
-  if(metric==="v"){html=grad("#EDF3EE","#6E9A83","적음","많음","거래량");}
-  else if(metric==="jr"){html=grad("#EBF0F5","#6E8FA8","낮음","높음","전세가율");}
-  else{html=`<span>하락</span><span class="bar" style="background:linear-gradient(90deg,#A9C0DA,#C9D6E5,#EFEEE9,#E9BDB8,#D89089,#C16C64)"></span><span>상승</span><span class="lab">${metric==="mm"?"매매":"전세"} 등락</span>`;}
-  document.getElementById("legend").innerHTML=html;}
-function grad(c0,c1,l0,l1,lab){return `<span>${l0}</span><span class="bar" style="background:linear-gradient(90deg,${c0},${c1})"></span><span>${l1}</span><span class="lab">${lab}</span>`;}
-
-function buildHeat(){const pool=activeSet();const k=metric==="v"?"v":metric;
-  const sorted=[...pool].sort((a,b)=>((b[k]==null?-1e9:b[k]))-((a[k]==null?-1e9:a[k])));
-  document.getElementById("heatgrid").innerHTML=sorted.map(d=>{const c=fillOf(d);
-    const val=metric==="v"?d.v+"건":metric==="jr"?(d.jr==null?"-":d.jr+"%"):fmtP(d[metric]);
-    const tc=(metric==="v"||metric==="jr")?"#34352f":(d[metric]>=0?"#B65F5A":"#5A7CA0");
-    return `<div class="tile" style="border-color:${c}"><span class="tsd">${d.sd==="seoul"?"서울":"경기"}</span><div class="tn">${d.sl}</div><div class="tv" style="color:${tc}">${val}</div></div>`;}).join("");}
-
-function updateHead(){const g=G[region]||{};
-  document.getElementById("hdSub").textContent=(g.name||"")+" · 매매 "+fmtL(g.sale)+" "+fmtP(g.sale_wk)+" · 전세 "+fmtL(g.jeonse)+" "+fmtP(g.jeonse_wk);
-  document.getElementById("note").textContent="표에서 ▸를 누르면 하위 시군구가 펼쳐집니다(서울 25개 구·경기 시 단위) · 행을 누르면 추이·지도가 그 지역으로 전환 · 지도 색=선택 지표(빨강 상승/파랑 하락) · 거래는 주간 실거래(시군구는 표본이 작아 변동 큼) · 매매·전세=KB 주간지수, 전세가율=KB";}
-
-function refresh(){renderTable();renderTrend();drawLegend();drawMap();buildHeat();updateHead();}
-document.querySelectorAll("#periodSeg button").forEach(b=>b.onclick=()=>{document.querySelectorAll("#periodSeg button").forEach(x=>x.classList.remove("on"));b.classList.add("on");period=b.dataset.p;renderTrend();});
-document.querySelectorAll("#metricPills button").forEach(b=>b.onclick=()=>{document.querySelectorAll("#metricPills button").forEach(x=>x.classList.remove("on"));b.classList.add("on");metric=b.dataset.m;drawLegend();drawMap();buildHeat();});
+function refresh(){drawChips();drawNav();drawLegend();drawMap();drawTable();drawTrend();updateNote();
+  document.getElementById("crName").textContent=RNAME[region];}
+function setRegion(k){if(!RNAME[k]||busy)return;busy=true;region=k;
+  drawChips();drawNav();document.getElementById("crName").textContent=RNAME[k];
+  const svg=document.getElementById("big");
+  svg.style.transformOrigin="50% 46%";svg.style.transition="transform .16s ease, opacity .16s ease";
+  svg.style.opacity="0";svg.style.transform="scale(1.12)";
+  setTimeout(()=>{drawLegend();drawMap();drawTable();drawTrend();updateNote();
+    svg.style.transition="none";svg.style.opacity="0";svg.style.transform="scale(.9)";svg.getBoundingClientRect();
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      svg.style.transition="transform .44s cubic-bezier(.18,.7,.3,1), opacity .3s ease";
+      svg.style.opacity="1";svg.style.transform="scale(1)";}));
+    setTimeout(()=>{busy=false;},480);},190);}
+document.querySelectorAll("#periodSeg button").forEach(b=>b.onclick=()=>{document.querySelectorAll("#periodSeg button").forEach(x=>x.classList.remove("on"));b.classList.add("on");period=b.dataset.p;drawTrend();});
+document.querySelectorAll("#metricPills button").forEach(b=>b.onclick=()=>{document.querySelectorAll("#metricPills button").forEach(x=>x.classList.remove("on"));b.classList.add("on");metric=b.dataset.m;drawLegend();drawMap();drawTable();});
+document.getElementById("back").onclick=()=>setRegion("seoul");
 refresh();
 (function(){function _fit(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;if(window.frameElement){window.frameElement.style.height=h+"px";window.frameElement.setAttribute("height",h);}}catch(e){}}window.addEventListener("load",_fit);setTimeout(_fit,150);setTimeout(_fit,600);setTimeout(_fit,1500);window.addEventListener("resize",_fit);try{new ResizeObserver(_fit).observe(document.body);}catch(e){}})();
 </script></body></html>
-"""
+'''
 
 
-# ── 서브탭 렌더러 ───────────────────────────────────────────────
+def _map_component(regions, groups, trend, local):
+    """지도 탭 C안 컴포넌트(iframe) — 미니 한반도 내비(상시) + 줌 전환 + 6지역 + 구별표 + 추이."""
+    import json as _json
+    from datetime import date as _date
+    D = _json.dumps(regions, ensure_ascii=False, separators=(",", ":"))
+    LG = _json.dumps(_LOCAL_GEO, ensure_ascii=False, separators=(",", ":"))
+    LC = _json.dumps(local or {}, ensure_ascii=False, separators=(",", ":"))
+    TR = _json.dumps({k: (trend or {}).get(k, {}) for k in ("gn3", "seoul", "gg")},
+                     ensure_ascii=False, separators=(",", ":"))
+    GN3 = _json.dumps(["강남구", "서초구", "송파구"], ensure_ascii=False)
+    AS = _json.dumps(_date.today().isoformat())
+    return (_MAPC_HTML.replace("__D__", D).replace("__LGEO__", LG)
+            .replace("__LOCAL__", LC).replace("__TREND__", TR)
+            .replace("__GN3__", GN3).replace("__ASOF__", AS))
+
+
+def _fetch_local():
+    """지방 광역시(인천·부산·대구) 지도 데이터. 세션/DB metrics의 '_local' → 샘플 폴백."""
+    m = _resolved_metrics()
+    if isinstance(m, dict) and isinstance(m.get("_local"), dict) and m["_local"]:
+        return m["_local"]
+    return _LOCAL_SAMPLE
+
+
 def _render_map():
     g, t = fetch_region_levels()
-    components.html(_map_component(_merged_regions(), g, t),
-                    height=1430, scrolling=False)
+    components.html(_map_component(_merged_regions(), g, t, _fetch_local()),
+                    height=1500, scrolling=False)
 
 
 # ── 지도 탭 추이 차트 (코스피·코스닥 양식 · 매매·전세·전세가율 3종) ──────────
@@ -2169,7 +2112,7 @@ def render_realestate():
     with t_map:
         st.markdown(_RE_CSS + '<div class="accent-bar"></div>',
                     unsafe_allow_html=True)
-        st.title("수도권 아파트 가격지도")
+        st.title("전국 아파트 가격지도")
         _render_collect_controls()
         _render_map()
 
