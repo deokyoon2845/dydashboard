@@ -806,6 +806,8 @@ _RE_CSS = """
   border-radius:14px;padding:12px 14px;display:block;text-decoration:none;color:inherit;cursor:pointer;
   transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease;}
 .re-hl-card:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(138,109,59,.13);border-color:#D8C49A;}
+.re-sub-card,.re-sub-card:link,.re-sub-card:visited,.re-hl-card,.re-hl-card:link,.re-hl-card:visited{color:var(--ink,#34352f) !important;text-decoration:none !important;}
+.re-sub-card *,.re-hl-card *{text-decoration:none !important;}
 .re-hl-go{position:absolute;right:12px;bottom:11px;color:#C9B78F;font-size:13px;font-weight:800;
   transition:color .15s ease,transform .15s ease;}
 .re-hl-card:hover .re-hl-go{color:#8A6D3B;transform:translateX(2px);}
@@ -964,7 +966,7 @@ td.child .cdot{color:#CDCEC4;margin-right:7px}
 .lv.vlow{color:#B7B8AE}
 /* 완성형 추이 차트 축 + 각주 */
 .axt{fill:var(--muted);font-size:10px;font-family:var(--kfont)}
-.axtitle{fill:#6f706a;font-size:10.5px;font-family:var(--kfont)}
+.axtitle{fill:#6f706a;font-size:8.5px;font-family:var(--kfont)}
 .fn{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:10px 13px;font-size:10.8px;
   color:#5f5e5a;line-height:1.65;margin-bottom:13px}
 .fn b{color:var(--ink);font-weight:700}
@@ -1105,7 +1107,7 @@ function renderTrend(){const g=G[region]||{};const tk=T[region]||{};
 function pathNums(d){return (d.match(/-?\d+\.?\d*/g)||[]).map(Number);}
 function bboxOf(list){let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;list.forEach(d=>{const n=pathNums(d.d);
     for(let i=0;i+1<n.length;i+=2){const x=n[i],y=n[i+1];if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}});
-  if(x1<x0)return[0,0,1100,1087];const padX=(x1-x0)*0.06,padY=(y1-y0)*0.06;
+  if(x1<x0)return[0,0,1100,1087];const padX=(x1-x0)*0.07,padY=(y1-y0)*0.15;
   return [x0-padX,y0-padY,(x1-x0)+2*padX,(y1-y0)+2*padY];}
 function activeSet(){
   if(GK.includes(region)){
@@ -1175,6 +1177,7 @@ function refresh(){renderTable();renderTrend();drawLegend();drawMap();buildHeat(
 document.querySelectorAll("#periodSeg button").forEach(b=>b.onclick=()=>{document.querySelectorAll("#periodSeg button").forEach(x=>x.classList.remove("on"));b.classList.add("on");period=b.dataset.p;renderTrend();});
 document.querySelectorAll("#metricPills button").forEach(b=>b.onclick=()=>{document.querySelectorAll("#metricPills button").forEach(x=>x.classList.remove("on"));b.classList.add("on");metric=b.dataset.m;drawLegend();drawMap();buildHeat();});
 refresh();
+(function(){function _fit(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;if(window.frameElement){window.frameElement.style.height=h+"px";window.frameElement.setAttribute("height",h);}}catch(e){}}window.addEventListener("load",_fit);setTimeout(_fit,150);setTimeout(_fit,600);setTimeout(_fit,1500);window.addEventListener("resize",_fit);try{new ResizeObserver(_fit).observe(document.body);}catch(e){}})();
 </script></body></html>
 """
 
@@ -1369,6 +1372,7 @@ function render(){
 document.querySelectorAll("#period button").forEach(b=>b.onclick=()=>{
  document.querySelectorAll("#period button").forEach(x=>x.classList.remove("on"));b.classList.add("on");period=b.dataset.p;render();});
 render();
+(function(){function _fit(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;if(window.frameElement){window.frameElement.style.height=h+"px";window.frameElement.setAttribute("height",h);}}catch(e){}}window.addEventListener("load",_fit);setTimeout(_fit,150);setTimeout(_fit,600);setTimeout(_fit,1500);window.addEventListener("resize",_fit);try{new ResizeObserver(_fit).observe(document.body);}catch(e){}})();
 </script></body></html>'''
 
 
@@ -1605,6 +1609,7 @@ document.querySelectorAll("#view button").forEach(b=>b.onclick=()=>{document.que
 document.querySelectorAll("#period button").forEach(b=>b.onclick=()=>{document.querySelectorAll("#period button").forEach(x=>x.classList.remove("on"));b.classList.add("on");period=b.dataset.p;renderCycle();renderFocus();renderBody();});
 document.getElementById("viewDesc").textContent="기능별로 묶어 의미 파악";
 renderCycle();renderFocus();renderBody();
+(function(){function _fit(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;if(window.frameElement){window.frameElement.style.height=h+"px";window.frameElement.setAttribute("height",h);}}catch(e){}}window.addEventListener("load",_fit);setTimeout(_fit,150);setTimeout(_fit,600);setTimeout(_fit,1500);window.addEventListener("resize",_fit);try{new ResizeObserver(_fit).observe(document.body);}catch(e){}})();
 </script></body></html>'''
 
 
