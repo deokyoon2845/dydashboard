@@ -637,10 +637,100 @@ def _collect_kosis_unsold(points=18):
     return [round(v / 10000, 1) for v in vals[-points:]]
 
 
+# ── 실거래량(수도권 아파트 매매 '건수') — KOSIS 부동산거래현황(월, 단발 호출) ──
+#   RTMS 49개 코드×개월 무거운 스윕 대신 KOSIS 1콜로 2020.1까지 가볍게 확보.
+#   이 표는 '거래주체별'이라 (지역×주체)로 여러 행 → 주체 '계/합계'만 남겨 중복합산 방지.
+#   수도권 = 서울+인천+경기(시도명 매칭) · 시도명을 못 찾으면 전국으로 폴백.
+#   구조 인식 실패/0이면 [] → 뷰어는 '연결예정' 유지(가짜 데이터 없음).
+#   [검증] 첫 07:00 수집 로그에 '[realestate] KOSIS 거래량 …'이 찍힌다.
+#          tbl/지역 인식이 안 되거나 값 자릿수가 이상하면 아래 _KOSIS_APT_VOL만 교체.
+_KOSIS_APT_VOL = {
+    "org": "408",                            # 한국부동산원
+    "tbl": "DT_408_2006_S0066",              # 거래주체별 아파트매매거래현황(월)
+    "sudogwon": ("서울", "인천", "경기"),       # 수도권 합산 대상 시도
+    "total_labels": ("계", "합계", "소계", "전체", "총계"),  # 거래주체 '총합' 라벨
+}
+
+
+def _collect_kosis_apt_volume(points=18):
+    """KOSIS 월별 아파트 매매 거래량(수도권 합) 건수 시계열(최근 points개, 과거→현재).
+    실패/구조불명/0이면 [] (가짜 데이터 없음)."""
+    key = _env_key("KOSIS_API_KEY")
+    if not key:
+        return []
+    try:
+        import pandas as pd
+        from PublicDataReader import Kosis
+        api = Kosis(key)
+        cfg = _KOSIS_APT_VOL
+        df, last_err = None, ""
+        # 분류 차원 수를 몰라도 동작하도록 obj 레벨을 단계적으로 확장(KOSIS 에러코드20 회피).
+        for extra in ({}, {"objL2": "ALL"}, {"objL2": "ALL", "objL3": "ALL"}):
+            try:
+                df = api.get_data("통계자료", orgId=cfg["org"], tblId=cfg["tbl"],
+                                  itmId="ALL", objL1="ALL", prdSe="M",
+                                  newEstPrdCnt=str(points + 3), **extra)
+            except Exception as e:
+                last_err, df = str(e), None
+            if df is not None and len(df):
+                break
+        if df is None or len(df) == 0:
+            print(f"[realestate] KOSIS 거래량 0행 — tbl={cfg['tbl']} err={last_err}")
+            return []
+        cols = list(df.columns)
+        pcol = next((c for c in cols if "시점" in c or c.upper() == "PRD_DE"), None)
+        vcol = next((c for c in cols if c in ("수치", "DT") or c.upper() == "DT"), None)
+        if vcol is None:
+            for c in reversed(cols):
+                if pd.to_numeric(df[c], errors="coerce").notna().sum() >= 2:
+                    vcol = c
+                    break
+        nmcols = [c for c in cols if c.endswith("_NM") or c.endswith("명")]
+        sido_keys = list(cfg["sudogwon"]) + ["전국"]
+        regcol = next((c for c in nmcols
+                       if df[c].astype(str).str.contains("|".join(sido_keys)).any()), None)
+        if not (pcol and vcol and regcol):
+            print(f"[realestate] KOSIS 거래량 컬럼 인식 실패 cols={cols}")
+            return []
+        df = df.copy()
+        df["_v"] = pd.to_numeric(df[vcol], errors="coerce")
+        # 지역 외 분류(거래주체 등)는 '계/합계'만 남겨 중복합산 방지.
+        for c in [x for x in nmcols if x != regcol]:
+            mask = df[c].astype(str).str.contains("|".join(cfg["total_labels"]))
+            if mask.any():
+                df = df[mask]
+        reg = df[regcol].astype(str)
+        sel = df[reg.str.contains("|".join(cfg["sudogwon"]))]
+        scope = "수도권"
+        if sel.empty:
+            sel = df[reg.str.contains("전국")]
+            scope = "전국"
+        if sel.empty:
+            print(f"[realestate] KOSIS 거래량 지역 매칭 실패 names={list(reg.unique())[:12]}")
+            return []
+        g = sel.dropna(subset=["_v"]).groupby(pcol)["_v"].sum().sort_index()
+        cur_ym = date.today().strftime("%Y%m")   # 신고지연 과소집계 현재월 제외
+        series = [int(round(v)) for p, v in g.items() if str(p) != cur_ym][-points:]
+        if not any(v > 0 for v in series):
+            print(f"[realestate] KOSIS 거래량 전수 0 — scope={scope}")
+            return []
+        print(f"[realestate] KOSIS 거래량 OK scope={scope} n={len(series)} 최근={series[-1]}")
+        return series
+    except Exception as e:
+        print(f"[realestate] KOSIS 거래량 실패: {e}")
+        return []
+
+
 def collect_indicators():
     """지표 탭용 시계열 6종. 각 항목 {key,label,sub,unit,col,series}.
     가격지수는 전부 KB(신뢰 소스), 미분양 KOSIS, 금리 ECOS. 실패 항목은 자동 생략."""
     inds = []
+    # 모든 지표 차트가 2020.1월부터 같은 시작점으로 정렬되도록 길이를 통일한다.
+    # 시계열은 날짜 없이 값 배열만 반환하고, 뷰어가 ASOF에서 주(7일)·월(30일) 간격으로
+    # 거꾸로 날짜를 재구성하므로 '개수'를 2020-01-01→오늘에 맞추면 시작점이 정렬된다.
+    _span = (date.today() - date(2020, 1, 1)).days
+    WN = _span // 7 + 1       # 주간 지표 개수(KB 주간) — 뷰어 7일 간격 → 2020.1 시작
+    MN = _span // 30 + 1      # 월간 지표 개수(KB·KOSIS·ECOS) — 뷰어 30일 간격 → 2020.1 시작
 
     def add(key, label, sub, unit, col, series):
         if series and len(series) >= 2:
@@ -650,62 +740,62 @@ def collect_indicators():
     try:
         add("sale", "매매가격지수", "서울 · 주간(KB)", "", "#B65F5A",
             _kb_seoul_series("index", {"월간주간구분코드": "02", "매물종별구분": "01",
-                                       "매매전세코드": "01"}, points=400))
+                                       "매매전세코드": "01"}, points=WN))
     except Exception as e:
         print(f"[realestate] KB 매매지수 실패: {e}")
     try:
         add("jeonse", "전세가격지수", "서울 · 주간(KB)", "", "#5A7CA0",
             _kb_seoul_series("index", {"월간주간구분코드": "02", "매물종별구분": "01",
-                                       "매매전세코드": "02"}, points=400))
+                                       "매매전세코드": "02"}, points=WN))
     except Exception as e:
         print(f"[realestate] KB 전세지수 실패: {e}")
     try:
         add("lead50", "선도아파트50지수", "전국 · 주간(KB) · 상위 50개 단지", "", "#A35F5A",
-            _kb_lead50_series(points=400))
+            _kb_lead50_series(points=WN))
     except Exception as e:
         print(f"[realestate] KB 선도50지수 실패: {e}")
     try:
         # maktTrnd는 dataList가 dict라 전용 파서 사용(기존 평면 파싱 버그 수정)
         add("buy", "매수우위지수", "서울 · 주간(KB) · 100=중립", "", "#B89A5C",
-            _kb_maktrnd_series("01", "02", points=400))
+            _kb_maktrnd_series("01", "02", points=WN))
     except Exception as e:
         print(f"[realestate] KB 매수우위 실패: {e}")
     try:
         add("jsup", "전세수급지수", "서울 · 주간(KB) · 100=균형", "", "#6E8FA8",
-            _kb_maktrnd_series("03", "02", points=400))
+            _kb_maktrnd_series("03", "02", points=WN))
     except Exception as e:
         print(f"[realestate] KB 전세수급 실패: {e}")
     try:
         add("outlook", "매매가격전망지수", "서울 · 월간(KB) · 100=중립", "", "#C2A05A",
-            _kb_maktrnd_series("05", "01", points=84))
+            _kb_maktrnd_series("05", "01", points=MN))
     except Exception as e:
         print(f"[realestate] KB 매매전망 실패: {e}")
     try:
         add("joutlook", "전세가격전망지수", "서울 · 월간(KB) · 100=중립", "", "#8AA0B5",
-            _kb_maktrnd_series("06", "01", points=84))
+            _kb_maktrnd_series("06", "01", points=MN))
     except Exception as e:
         print(f"[realestate] KB 전세전망 실패: {e}")
     try:
         add("jr", "전세가율", "서울 · 월간(KB)", "%", "#7E9A83",
             _kb_seoul_series("jratio", {"월간주간구분코드": "01", "매물종별구분": "01"},
-                             points=84))
+                             points=MN))
     except Exception as e:
         print(f"[realestate] KB 전세가율 실패: {e}")
     try:
         add("unsold", "미분양", "전국 · 월간(KOSIS)", "만호", "#8A7C9E",
-            _collect_kosis_unsold(points=84))
+            _collect_kosis_unsold(points=MN))
     except Exception as e:
         print(f"[realestate] KOSIS 미분양 실패: {e}")
     try:
         add("rate", "주담대 금리", "월간(한은 ECOS)", "%", "#9a9b92",
-            _collect_mortgage_rate(points=84))
+            _collect_mortgage_rate(points=MN))
     except Exception as e:
         print(f"[realestate] ECOS 금리 실패: {e}")
     try:
-        # 실거래량(수도권 아파트 매매 '건수') 월별 시계열 — 검증된 국토부 _fetch 재사용.
-        # 호출량이 커서 기본 24개월(_APT_VOLUME_MONTHS)만. 실패/0건은 자동 생략(연결예정 유지).
-        add("volume", "실거래량(수도권)", "월간 · 국토부 실거래(아파트 매매)", "건", "#7E9A83",
-            _collect_apt_volume_series(months=_APT_VOLUME_MONTHS))
+        # 실거래량(수도권 아파트 매매 '건수') — KOSIS 월별(단발 호출)로 2020.1까지 가볍게 정렬.
+        # (RTMS 49코드×개월 스윕은 무거워 제외 — _collect_apt_volume_series는 보존만.)
+        add("volume", "실거래량(수도권)", "월간 · KOSIS 부동산거래현황(아파트 매매)", "건", "#7E9A83",
+            _collect_kosis_apt_volume(points=MN))
     except Exception as e:
         print(f"[realestate] 실거래량 시계열 실패: {e}")
     return inds
@@ -1010,6 +1100,75 @@ def collect_region_levels(asof=None, metrics=None, points=350):
 
 
 # ── 지역 지표 (지도) — KB 가격지수(mm/js/jr) + 실거래 건수(v/vc) ──
+# ── 지방 광역시(인천·부산·대구) — KB 시도코드 1회 호출로 하위 구가 함께 온다 ──
+#   [중요] 이름 매칭은 '각 시도 응답 안에서만' 한다 → 서울 '중구' ↔ 대구 '중구' 충돌 방지.
+#   (가) 정책: 지방은 KB 가격지수만 — 실거래(RTMS) 건수는 수집하지 않는다(지도 '거래' 칸 비움).
+#   '이외' = 시 전체 지수로 근사(주요 3구를 뺀 나머지 대용). metrics['_local']로 실어 보냄(스키마 무변경).
+_KB_LOCAL = {
+    "incheon": {"sido": "28", "name": "인천", "city": ("인천", "인천광역시"),
+                "gu": ("연수구", "서구", "남동구")},
+    "busan":   {"sido": "26", "name": "부산", "city": ("부산", "부산광역시"),
+                "gu": ("해운대구", "수영구", "동래구")},
+    "daegu":   {"sido": "27", "name": "대구", "city": ("대구", "대구광역시"),
+                "gu": ("수성구", "달서구", "중구")},
+}
+
+
+def _kb_local_jratio(sido_code):
+    """해당 시도 전세가율 {KB지역명: jr}. 실패 시 {}."""
+    try:
+        data = _kb_get(_KB_URL["jratio"], {
+            "월간주간구분코드": "01", "매물종별구분": "01", "지역코드": sido_code})
+    except Exception:
+        return {}
+    out = {}
+    for r in _kb_rows(data):
+        lv = _kb_latest(r["vals"])
+        if lv is not None:
+            out[str(r["name"]).strip()] = round(lv, 1)
+    return out
+
+
+def collect_kb_local_metrics(points=350):
+    """인천·부산·대구의 주요 3구 + '이외(시 전체 근사)' KB 지표.
+    반환 {지역키: {'name', 'gu':{구명:{mm,js,jr,sale,jeonse}}, 'others':{mm,js,jr,sale,jeonse}}}.
+    한 시도라도 받으면 그 시도만 채우고, 전부 실패면 {}. (월간 가격지수 기준.)"""
+    out = {}
+    for rkey, cfg in _KB_LOCAL.items():
+        sido = cfg["sido"]
+        idx_sale = _kb_index_byname("01", "01", sido, points)   # 월간 매매지수(레벨)
+        idx_jeon = _kb_index_byname("02", "01", sido, points)   # 월간 전세지수(레벨)
+        jr = _kb_local_jratio(sido)
+        if not idx_sale:
+            print(f"[realestate] KB 지방 {cfg['name']} 가격지수 0행 — 시도코드 {sido} 확인 필요")
+            continue
+
+        def _jr_of(*cands):
+            for c in cands:
+                for k, v in jr.items():
+                    if c in k:
+                        return v
+            return None
+
+        gu_out = {}
+        for g in cfg["gu"]:
+            sale = _pick_series(idx_sale, g)     # 이 시도 응답 안에서만 매칭
+            jeon = _pick_series(idx_jeon, g)
+            if not sale:
+                continue
+            gu_out[g] = {"mm": _wk_change(sale), "js": _wk_change(jeon),
+                         "jr": _jr_of(g), "sale": sale, "jeonse": jeon}
+        city_sale = _pick_series(idx_sale, *cfg["city"])
+        city_jeon = _pick_series(idx_jeon, *cfg["city"])
+        others = {"mm": _wk_change(city_sale), "js": _wk_change(city_jeon),
+                  "jr": _jr_of(*cfg["city"]), "sale": city_sale, "jeonse": city_jeon}
+        if gu_out or city_sale:
+            out[rkey] = {"name": cfg["name"], "gu": gu_out, "others": others}
+            print(f"[realestate] KB 지방 {cfg['name']} OK 구={list(gu_out)} "
+                  f"이외={'O' if city_sale else 'X'}")
+    return out
+
+
 def collect_region_metrics(asof=None, exclude_direct=True):
     """지역명 -> {'mm','js','v','vc','jr'}.
     가격 방향(mm/js)·전세가율(jr)은 KB 월간 가격지수(신뢰 소스),
@@ -1053,6 +1212,15 @@ def collect_region_metrics(asof=None, exclude_direct=True):
             result["_asof"] = lv["asof"]
     except Exception as e:
         print(f"[realestate] 권역 레벨 수집 실패(생략): {e}")
+
+    # ── 지방 광역시(인천·부산·대구) 지도 데이터 — '_local'로 실어 보냄(스키마 무변경) ──
+    try:
+        loc = collect_kb_local_metrics()
+        if loc:
+            result["_local"] = loc
+            print(f"[realestate] 지방 지도 {list(loc)} 수집")
+    except Exception as e:
+        print(f"[realestate] 지방 지도 수집 실패(생략): {e}")
     return result
 
 
