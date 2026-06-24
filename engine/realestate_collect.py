@@ -877,11 +877,36 @@ def _agg_v_vc_jr(metrics, names):
     return int(v_now), vc_agg, jr_agg
 
 
-def collect_region_levels(asof=None, metrics=None, points=200):
-    """강남3구·서울·경기·수도권의 매매·전세 지수 레벨 + 주간 등락 + 전세가율 + 거래량.
+def _sigungu_from_byname(byname):
+    """{KB 지역명: series} → {내 시군구명: series}.
+    경기 자치구 시(예: '성남시 분당구')는 _match_region이 시 단위(성남시)로 접어 통합.
+    한 시군구에 여러 KB행이 매칭되면 시-레벨 행을 우선, 없으면 구 시계열 평균(시 통합)."""
+    grouped = {}
+    for raw, ser in (byname or {}).items():
+        if not ser:
+            continue
+        key = _match_region(str(raw))
+        if not key:
+            continue
+        grouped.setdefault(key, []).append((str(raw).strip(), ser))
+    out = {}
+    for key, items in grouped.items():
+        exact = [s for (nm, s) in items if nm.endswith(key)]
+        chosen = exact if exact else [s for (_, s) in items]
+        agg = chosen[0] if len(chosen) == 1 else _avg_series(chosen)
+        if agg:
+            out[key] = agg
+    return out
 
-    반환 {'asof', 'groups':{k:{name,sale,sale_wk,jeonse,jeonse_wk,jr,v,vc}},
-          'trend':{k:{sale:[...],jeonse:[...]}}}  (k ∈ gn3/seoul/gg/all)
+
+def collect_region_levels(asof=None, metrics=None, points=200):
+    """강남3구·서울·경기·수도권 + 개별 시군구의 매매·전세 지수 레벨 + 주간 등락 + 전세가율 + 거래량.
+
+    반환 {'asof', 'groups':{k:{name,sale,sale_wk,jeonse,jeonse_wk,jr,v,vc,[children]}},
+          'trend':{k:{sale:[...],jeonse:[...]}}}
+    k ∈ gn3/seoul/gg/all(권역) + 개별 시군구명(서울 25개 구 / 경기 시).
+    권역 entry에는 children(하위 시군구명 리스트, 매매지수 내림차순)이 붙는다.
+    거래량(v/vc)은 주간 기준(시군구는 표본이 작아 변동 큼 — 뷰어에서 '표본 적음' 표시).
     metrics(시군구 dict)가 있으면 v/vc/jr 집계에 재사용. KB 레벨을 못 받으면 None.
     """
     asof = asof or date.today()
@@ -934,6 +959,47 @@ def collect_region_levels(asof=None, metrics=None, points=200):
         trend[k] = {"sale": s_sale, "jeonse": s_jeon}
     if not groups:
         return None
+
+    # ── 개별 시군구(서울 구 / 경기 시) 레벨·추이 ─────────────────
+    #   시도 byname에 하위 구·시가 이미 함께 담겨 있다. 경기 자치구 시는 시 단위로 통합.
+    sale_sg = {**_sigungu_from_byname(su_sale), **_sigungu_from_byname(gg_sale)}
+    jeon_sg = {**_sigungu_from_byname(su_jeon), **_sigungu_from_byname(gg_jeon)}
+    seoul_children, gg_children = [], []
+    for name, s_sale in sale_sg.items():
+        if not s_sale:
+            continue
+        s_jeon = jeon_sg.get(name, [])
+        v, vc, jr = _agg_v_vc_jr(metrics, {name})
+        groups[name] = {
+            "name": name,
+            "sale": s_sale[-1],
+            "sale_wk": _wk_change(s_sale),
+            "jeonse": (s_jeon[-1] if s_jeon else None),
+            "jeonse_wk": _wk_change(s_jeon),
+            "jr": jr,
+            "v": v,
+            "vc": vc,
+            "leaf": True,
+        }
+        trend[name] = {"sale": s_sale, "jeonse": s_jeon}
+        (seoul_children if name in _SEOUL else gg_children).append(name)
+
+    def _by_sale(n):
+        s = groups.get(n, {}).get("sale")
+        return s if s is not None else -1.0
+    seoul_children.sort(key=_by_sale, reverse=True)
+    gg_children.sort(key=_by_sale, reverse=True)
+    gn3_children = sorted([n for n in _GROUP_GU3 if n in groups],
+                          key=_by_sale, reverse=True)
+    if "gn3" in groups:
+        groups["gn3"]["children"] = gn3_children
+    if "seoul" in groups:
+        groups["seoul"]["children"] = seoul_children
+    if "gg" in groups:
+        groups["gg"]["children"] = gg_children
+    if "all" in groups:
+        groups["all"]["children"] = []
+
     return {"asof": asof.strftime("%Y-%m-%d"), "groups": groups, "trend": trend}
 
 
