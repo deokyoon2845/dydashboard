@@ -899,7 +899,7 @@ def _sigungu_from_byname(byname):
     return out
 
 
-def collect_region_levels(asof=None, metrics=None, points=200):
+def collect_region_levels(asof=None, metrics=None, points=350):
     """강남3구·서울·경기·수도권 + 개별 시군구의 매매·전세 지수 레벨 + 주간 등락 + 전세가율 + 거래량.
 
     반환 {'asof', 'groups':{k:{name,sale,sale_wk,jeonse,jeonse_wk,jr,v,vc,[children]}},
@@ -908,6 +908,12 @@ def collect_region_levels(asof=None, metrics=None, points=200):
     권역 entry에는 children(하위 시군구명 리스트, 매매지수 내림차순)이 붙는다.
     거래량(v/vc)은 주간 기준(시군구는 표본이 작아 변동 큼 — 뷰어에서 '표본 적음' 표시).
     metrics(시군구 dict)가 있으면 v/vc/jr 집계에 재사용. KB 레벨을 못 받으면 None.
+
+    points: 보관할 '주간' 지수 포인트 수(최근값 기준 뒤에서 N개). KB 주간지수는
+      기준시점 2022.1.10=100 이므로, 차트를 그 기준점부터 그리려면 N이 그날까지
+      거슬러 갈 만큼 커야 한다(2022.1.10→현재 ≈ 232주). 350이면 2020년경까지
+      포함(KB가 그 이전 rebased 시계열을 주는 경우)되어 '전체' 토글이 기준점부터 보인다.
+      ※ 늘려도 KB 응답에 있는 만큼만 슬라이스되므로 과대해도 안전(여분은 무시).
     """
     asof = asof or date.today()
     metrics = metrics or {}
