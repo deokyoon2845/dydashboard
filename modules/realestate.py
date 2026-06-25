@@ -1101,8 +1101,8 @@ function drawTrend(){const tk=trendOf(region);const sale=sliceP(tk.sale),jeon=sl
     +`<path d="${area}" fill="#B65F5A" opacity="0.08"/>`
     +`<path d="${line(sale)}" fill="none" stroke="#B65F5A" stroke-width="2"/>`
     +`<path d="${line(jeon)}" fill="none" stroke="#5A7CA0" stroke-width="1.7" stroke-dasharray="4 3"/>`+xt
-    +`<text class="axtitle" x="${((L+Rr)/2).toFixed(0)}" y="192" text-anchor="middle">가로축 — 시점(월)</text>`
-    +`<text class="axtitle" x="13" y="${ycy}" text-anchor="middle" transform="rotate(-90 13 ${ycy})">세로축 — 가격지수 (2022.1.10=100)</text>`
+    +`<text class="axtitle" x="${((L+Rr)/2).toFixed(0)}" y="192" text-anchor="middle"> 시점(월)</text>`
+    +`<text class="axtitle" x="13" y="${ycy}" text-anchor="middle" transform="rotate(-90 13 ${ycy})"> 가격지수 (2022.1.10=100)</text>`
     +`<line class="vx" x1="${L}" x2="${L}" y1="${T0}" y2="${B}" stroke="#B9BBB0" stroke-dasharray="3 3" opacity="0"/>`
     +`<circle class="vd1" r="3" fill="#B65F5A" opacity="0"/><circle class="vd2" r="2.6" fill="#5A7CA0" opacity="0"/>`;
   const vtip=document.getElementById("vtip"),vx=svg.querySelector(".vx"),vd1=svg.querySelector(".vd1"),vd2=svg.querySelector(".vd2");
