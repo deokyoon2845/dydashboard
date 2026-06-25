@@ -20,6 +20,7 @@ from modules.timeline_view import render_timeline
 from modules.indicators import render_indicators
 from modules.reports import render_reports, render_reports_manage
 from modules.keywords_view import render_keywords
+from modules.leaders import render_leaders
 from modules.watchlist_brief import render_watchlist_tab
 from modules.usage import total_cost_usd
 from modules.ticker_tape import render_ticker_tape
@@ -904,11 +905,13 @@ _inject_countup()
 top_stock, top_re = st.tabs(["주식", "부동산"])
 
 with top_stock:
-    tab_idx, tab_rep, tab_kw = st.tabs(["지수", "시황", "키워드"])
+    tab_idx, tab_rep, tab_ldr, tab_kw = st.tabs(["지수", "시황", "주도주", "키워드"])
     with tab_idx:
         render_indices()
     with tab_rep:
         render_report_tab()
+    with tab_ldr:
+        render_leaders()
     with tab_kw:
         render_keywords()
         st.divider()
