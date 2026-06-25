@@ -1106,12 +1106,26 @@ def collect_region_levels(asof=None, metrics=None, points=350):
 #   '이외' = 시 전체 지수로 근사(주요 3구를 뺀 나머지 대용). metrics['_local']로 실어 보냄(스키마 무변경).
 _KB_LOCAL = {
     "incheon": {"sido": "28", "name": "인천", "city": ("인천", "인천광역시"),
-                "gu": ("연수구", "서구", "남동구")},
+                "gu": ("중구", "동구", "미추홀구", "연수구", "남동구",
+                       "부평구", "계양구", "서구")},
     "busan":   {"sido": "26", "name": "부산", "city": ("부산", "부산광역시"),
-                "gu": ("해운대구", "수영구", "동래구")},
+                "gu": ("중구", "서구", "동구", "영도구", "부산진구", "동래구",
+                       "남구", "북구", "해운대구", "사하구", "금정구", "강서구",
+                       "연제구", "수영구", "사상구")},
     "daegu":   {"sido": "27", "name": "대구", "city": ("대구", "대구광역시"),
-                "gu": ("수성구", "달서구", "중구")},
+                "gu": ("중구", "동구", "서구", "남구", "북구", "수성구", "달서구")},
 }
+
+
+def _exact_gu_map(byname):
+    """{KB지역명: 값} → {구명(마지막 토큰): 값}. '동구'가 '남동구'에 부분매칭되는
+    충돌을 막기 위해 구명 단위 정확매칭용 맵을 만든다(첫 매칭 우선)."""
+    out = {}
+    for k, v in (byname or {}).items():
+        toks = str(k).split()
+        gu = toks[-1] if toks else str(k)
+        out.setdefault(gu, v)
+    return out
 
 
 def _kb_local_jratio(sido_code):
@@ -1151,20 +1165,23 @@ def collect_kb_local_metrics(points=350):
             return None
 
         gu_out = {}
+        sale_map = _exact_gu_map(idx_sale)      # 구명 정확매칭(동구↔남동구 충돌 방지)
+        jeon_map = _exact_gu_map(idx_jeon)
+        jr_map = _exact_gu_map(jr)
         for g in cfg["gu"]:
-            sale = _pick_series(idx_sale, g)     # 이 시도 응답 안에서만 매칭
-            jeon = _pick_series(idx_jeon, g)
+            sale = sale_map.get(g)
+            jeon = jeon_map.get(g)
             if not sale:
                 continue
             gu_out[g] = {"mm": _wk_change(sale), "js": _wk_change(jeon),
-                         "jr": _jr_of(g), "sale": sale, "jeonse": jeon}
+                         "jr": jr_map.get(g), "sale": sale, "jeonse": jeon}
         city_sale = _pick_series(idx_sale, *cfg["city"])
         city_jeon = _pick_series(idx_jeon, *cfg["city"])
         others = {"mm": _wk_change(city_sale), "js": _wk_change(city_jeon),
                   "jr": _jr_of(*cfg["city"]), "sale": city_sale, "jeonse": city_jeon}
         if gu_out or city_sale:
             out[rkey] = {"name": cfg["name"], "gu": gu_out, "others": others}
-            print(f"[realestate] KB 지방 {cfg['name']} OK 구={list(gu_out)} "
+            print(f"[realestate] KB 지방 {cfg['name']} OK 구={len(gu_out)}/{len(cfg['gu'])} "
                   f"이외={'O' if city_sale else 'X'}")
     return out
 
