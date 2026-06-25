@@ -1339,6 +1339,52 @@ def _apt_units_map(pairs):
     return out
 
 
+def _apt_info_map(pairs):
+    """{(시군구,단지명): {'units':세대수|None,'builder':시공사|None}}.
+    공동주택 목록(getSigunguAptList3)→기본정보(getAphusBassInfoV3, kaptdaCnt·kaptBcompany).
+    상위 주목단지(소수)만 조회 — 가볍다. 매칭 실패 시 세대수만 _KNOWN_UNITS 폴백."""
+    out = {}
+    by_sgg = {}
+    for sgg, apt in pairs:
+        by_sgg.setdefault(sgg, set()).add(apt)
+    info_cache = {}
+    for sgg, apts in by_sgg.items():
+        codes = SIGUNGU_CODES.get(sgg)
+        name2code = {}
+        if codes:
+            code_list = codes if isinstance(codes, (list, tuple)) else [codes]
+            for sgg_code in code_list:
+                body = _dgo_json(_APT_LIST, {"sigunguCode": str(sgg_code)[:5]})
+                for it in _dgo_items(body):
+                    nm = _norm_apt(it.get("kaptName"))
+                    kc = str(it.get("kaptCode") or "").strip()
+                    if nm and kc:
+                        name2code.setdefault(nm, kc)
+        for apt in apts:
+            na = _norm_apt(apt)
+            kc = name2code.get(na) or next(
+                (c for n, c in name2code.items() if na and (na in n or n in na)), None)
+            units = builder = None
+            if kc:
+                if kc not in info_cache:
+                    b = _dgo_json(_APT_INFO, {"kaptCode": kc})
+                    item = (b or {}).get("item") or {}
+                    if isinstance(item, list):
+                        item = item[0] if item else {}
+                    try:
+                        u = int(str(item.get("kaptdaCnt")).strip())
+                    except (ValueError, TypeError, AttributeError):
+                        u = None
+                    bc = str(item.get("kaptBcompany") or "").strip() or None
+                    info_cache[kc] = {"units": u, "builder": bc}
+                units = info_cache[kc].get("units")
+                builder = info_cache[kc].get("builder")
+            if units is None:
+                units = _known_lookup(na)
+            out[(sgg, apt)] = {"units": units, "builder": builder}
+    return out
+
+
 def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=150):
     """특이거래 리스트(느슨 슈퍼셋 — 뷰어가 프리셋으로 좁힘).
     소형/저유동 단지는 '거래빈도 컷'으로 생성 단계에서 제외(세대수 API 비의존).
@@ -1506,8 +1552,16 @@ def _datalab_interest(names, ref="부동산", months=3):
     return {n: round(v / mx * 100) for n, v in raw.items()}      # 0~100 정규화
 
 
-def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=24, exclude_direct=True,
-                          with_search=True):
+def _recent_price_in_band(rows, lo, hi):
+    """rows 중 전용면적이 [lo,hi) 인 가장 최근 거래의 가격(만원). 없으면 None."""
+    cand = [r for r in rows if lo <= r["area"] < hi]
+    if not cand:
+        return None
+    return max(cand, key=lambda r: r["date"])["price"]
+
+
+def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=True,
+                          with_search=False):
     """주목 단지 리스트(딕셔너리 배열). 최근 거래 활발 + 상승 단지 랭킹 + (옵션)검색관심도.
     반환 [{apt,gu,sd,recent,prev,vol_chg,price,price_eok,chg,area,freq,search}] (search=0~100|None).
     KB/세대수 비의존 — 국토부 실거래만. 표본 0이면 []."""
@@ -1551,13 +1605,33 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=24, exclude_direct=T
                 "vol_chg": round((len(rec) / max(len(prev), 1) - 1) * 100),
                 "price": med_price, "price_eok": _fmt_eok(med_price),
                 "chg": chg, "area": f"{area}㎡", "freq": len(rs), "search": None,
+                "_rows": rs, "_rec": rec,
             }
     if not agg:
         return []
     # 랭킹: 최근 거래수 우선 + 상승률 가점
     ranked = sorted(agg.values(),
                     key=lambda d: (d["recent"], d["chg"]), reverse=True)[:top]
-    # B: 검색관심도 오버레이(공식 데이터랩) — 키 없으면 자동 생략
+    # 단지정보 보강(세대수·시공사) + 면적별(59·84㎡) 최근 실거래가 + 소재지(구+동)
+    from collections import Counter
+    info = {}
+    try:
+        info = _apt_info_map([(d["gu"], d["apt"]) for d in ranked])
+    except Exception as e:
+        print(f"[realestate] 단지정보 보강 생략: {e}")
+    for d in ranked:
+        rs = d.pop("_rows", []) or []
+        d.pop("_rec", None)
+        d["p59"] = _recent_price_in_band(rs, 49.0, 63.0)
+        d["p84"] = _recent_price_in_band(rs, 74.0, 90.0)
+        d["p59_eok"] = _fmt_eok(d["p59"]) if d["p59"] else None
+        d["p84_eok"] = _fmt_eok(d["p84"]) if d["p84"] else None
+        dong = Counter(r["dong"] for r in rs if r.get("dong")).most_common(1)
+        d["dong"] = dong[0][0] if dong else ""
+        d["addr"] = (d["gu"] + " " + d["dong"]).strip()
+        inf = info.get((d["gu"], d["apt"]), {})
+        d["units"] = inf.get("units")
+        d["builder"] = inf.get("builder")
     if with_search:
         try:
             si = _datalab_interest([d["apt"] for d in ranked])
