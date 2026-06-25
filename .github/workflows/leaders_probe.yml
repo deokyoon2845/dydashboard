@@ -1,0 +1,38 @@
+name: leaders 데이터 소스 프로브 (수동)
+
+# ──────────────────────────────────────────────────────────────────────────
+#  '주도주' 엔진 본체를 짜기 전에, GitHub Actions(데이터센터 IP)에서 어떤 데이터
+#  소스가 살아있는지 1회만 확인한다. 수동 실행 전용(스케줄 없음).
+#  Actions → 이 워크플로 → Run workflow → 로그의 [1]~[4] 결과를 확인.
+#  ※ data.go.kr 키(DATA_GO_KR_KEY 또는 PUBLIC_DATA_API_KEY/MOLIT_API_KEY) 필요.
+#    금융위 '주식시세정보' 서비스가 키에 미승인이면 [1]이 resultCode 30으로 뜬다
+#    → data.go.kr 마이페이지에서 해당 서비스 활용신청 후 다시 실행.
+# ──────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v5
+
+      - name: 파이썬 설정
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: 라이브러리 설치 (프로브 전용 — 가볍게)
+        run: pip install requests lxml
+
+      - name: 데이터 소스 프로브 실행
+        env:
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
+          PUBLIC_DATA_API_KEY: ${{ secrets.PUBLIC_DATA_API_KEY }}
+          MOLIT_API_KEY: ${{ secrets.MOLIT_API_KEY }}
+        run: python -m engine.leaders_probe
