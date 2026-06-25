@@ -1,0 +1,60 @@
+name: 주도주 수집 (일일)
+
+# ──────────────────────────────────────────────────────────────────────────
+#  전종목을 스캔해 주도 섹터·주도주를 점수화하고 Supabase(leaders)에 저장한다.
+#  뷰어(modules/leaders.py)는 이 최신 행만 읽는다. 모든 데이터는 Naver(프로브에서
+#  Actions 동작 확인) — 별도 API 키 불필요, SUPABASE 키만 있으면 된다.
+#  · 17:30 KST(평일) — KRX 장마감(15:30) 후 Naver 일별 종가가 확정된 뒤 수집.
+#  · 리포트(daily.yml)·부동산(realestate.yml)과 잡 이름·테이블·시간이 달라 충돌 없음.
+#  · 수동 실행도 가능: Actions → 이 워크플로 → Run workflow.
+#  ※ 최초 1회 Supabase에서 leaders 테이블 생성 필요(modules/db.py 상단 SQL).
+# ──────────────────────────────────────────────────────────────────────────
+
+on:
+  schedule:
+    - cron: '30 8 * * 1-5'     # 08:30 UTC = 17:30 KST · 월~금
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: leaders-collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v5
+
+      - name: 필수 시크릿 점검
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        shell: bash
+        run: |
+          missing=""
+          for v in SUPABASE_URL SUPABASE_KEY; do
+            if [ -z "${!v}" ]; then missing="$missing $v"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::필수 시크릿이 비어 있습니다 →$missing"
+            exit 1
+          fi
+          echo "✅ 필수 시크릿 확인 — 수집 단계로 진행합니다."
+
+      - name: 파이썬 설정
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: 라이브러리 설치
+        run: pip install -r requirements.txt
+
+      - name: 주도주 수집 → Supabase 저장
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python -m engine.leaders_run
