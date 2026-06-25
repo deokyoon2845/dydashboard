@@ -901,7 +901,7 @@ def _inject_countup():
 
 # ── 탭 ──
 _inject_countup()
-top_stock, top_re = st.tabs(["증시", "부동산"])
+top_stock, top_re = st.tabs(["주식", "부동산"])
 
 with top_stock:
     tab_idx, tab_rep, tab_kw = st.tabs(["지수", "시황", "키워드"])
