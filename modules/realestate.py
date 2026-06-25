@@ -514,7 +514,7 @@ _INDV2_ORDER = ["buy", "outlook", "lead50", "sale", "jeonse", "volume",
 # 연결예정 슬롯 — 데이터 소스 미연결. 가짜 데이터 대신 정직하게 자리만 표시(차트·신호 없음).
 _INDV2_PENDING = [
     {"k": "volume", "g": "coin", "lab": "실거래량(수도권)",
-     "note": "국토부 실거래 월별 집계 · 다음 자동수집(06:30)부터 채워집니다(최근 24개월)"},
+     "note": "국토부 실거래 월별 집계 · 다음 자동수집(07:00)부터 채워집니다(최근 24개월)"},
     {"k": "auction", "g": "lead", "lab": "경매 낙찰가율",
      "note": "법원경매 월간 · 데이터 소스 연결 예정"},
     {"k": "supply", "g": "fund", "lab": "입주물량(수도권)",
@@ -612,20 +612,26 @@ def fetch_anomalies():
     return _SAMPLE_ANOMALIES
 
 
-# ── 주목 단지(거래 활발·상승 + 네이버 검색관심도) ────────────────────────
+# ── 주목 단지(최근 거래 활발·상승 · 국토부 실거래) ────────────────────────
 _SAMPLE_HOT = [
-    {"apt": "파크리오", "gu": "송파구", "sd": "seoul", "recent": 14, "prev": 6,
-     "vol_chg": 133, "price_eok": "24.8억", "chg": 2.1, "area": "84㎡", "freq": 40, "search": 100},
-    {"apt": "헬리오시티", "gu": "송파구", "sd": "seoul", "recent": 12, "prev": 7,
-     "vol_chg": 71, "price_eok": "23.5억", "chg": 1.6, "area": "84㎡", "freq": 51, "search": 92},
-    {"apt": "잠실엘스", "gu": "송파구", "sd": "seoul", "recent": 9, "prev": 5,
-     "vol_chg": 80, "price_eok": "27.0억", "chg": 2.4, "area": "84㎡", "freq": 33, "search": 81},
-    {"apt": "래미안원베일리", "gu": "서초구", "sd": "seoul", "recent": 7, "prev": 3,
-     "vol_chg": 133, "price_eok": "58.0억", "chg": 3.2, "area": "84㎡", "freq": 18, "search": 88},
-    {"apt": "고덕그라시움", "gu": "강동구", "sd": "seoul", "recent": 8, "prev": 6,
-     "vol_chg": 33, "price_eok": "17.2억", "chg": 0.9, "area": "84㎡", "freq": 29, "search": 64},
-    {"apt": "광교중흥S클래스", "gu": "수원시", "sd": "gg", "recent": 6, "prev": 4,
-     "vol_chg": 50, "price_eok": "17.8억", "chg": 1.4, "area": "84㎡", "freq": 16, "search": 55},
+    {"apt": "파크리오", "gu": "송파구", "sd": "seoul", "addr": "송파구 잠실동",
+     "units": 6864, "builder": "대우건설", "recent": 14, "prev": 6, "vol_chg": 133,
+     "chg": 2.1, "freq": 40, "p59_eok": "18.4억", "p84_eok": "24.8억"},
+    {"apt": "헬리오시티", "gu": "송파구", "sd": "seoul", "addr": "송파구 가락동",
+     "units": 9510, "builder": "현대건설", "recent": 12, "prev": 7, "vol_chg": 71,
+     "chg": 1.6, "freq": 51, "p59_eok": "17.6억", "p84_eok": "23.5억"},
+    {"apt": "잠실엘스", "gu": "송파구", "sd": "seoul", "addr": "송파구 잠실동",
+     "units": 5678, "builder": "삼성물산", "recent": 9, "prev": 5, "vol_chg": 80,
+     "chg": 2.4, "freq": 33, "p59_eok": "19.5억", "p84_eok": "27.0억"},
+    {"apt": "래미안원베일리", "gu": "서초구", "sd": "seoul", "addr": "서초구 반포동",
+     "units": 2990, "builder": "삼성물산", "recent": 7, "prev": 3, "vol_chg": 133,
+     "chg": 3.2, "freq": 18, "p59_eok": None, "p84_eok": "58.0억"},
+    {"apt": "고덕그라시움", "gu": "강동구", "sd": "seoul", "addr": "강동구 고덕동",
+     "units": 4932, "builder": "대우건설", "recent": 8, "prev": 6, "vol_chg": 33,
+     "chg": 0.9, "freq": 29, "p59_eok": "13.4억", "p84_eok": "17.2억"},
+    {"apt": "광교중흥S클래스", "gu": "수원시", "sd": "gg", "addr": "수원시 하동",
+     "units": 2231, "builder": "중흥토건", "recent": 6, "prev": 4, "vol_chg": 50,
+     "chg": 1.4, "freq": 16, "p59_eok": "13.2억", "p84_eok": "17.8억"},
 ]
 
 
@@ -774,6 +780,30 @@ _RE_CSS = """
 .re-hot-si .bar i{display:block;height:100%;background:var(--sage-deep,#7E9A83);}
 .re-hot-si .v{font-size:11px;font-weight:800;color:#5d6258;width:22px;text-align:right;}
 .re-hot-si.dim{color:#C4C6BD;font-size:12px;justify-content:center;}
+/* 주목 단지 카드 (59/84·세대수·시공사·소재지·지도) */
+.re-hcwrap{display:flex;flex-direction:column;gap:8px;margin-bottom:6px;}
+.re-hc{display:flex;align-items:stretch;gap:11px;background:var(--card,#fff);
+  border:1px solid var(--line,#ECEDE7);border-radius:13px;padding:11px 13px;}
+.re-hc-rk{flex:none;width:23px;height:23px;border-radius:7px;background:#F2F5F0;color:#5d6258;
+  font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;margin-top:1px;}
+.re-hc-main{flex:1;min-width:0;}
+.re-hc-top{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
+.re-hc-nm{font-size:14px;font-weight:800;color:var(--ink,#34352f);}
+.re-hc-chg{font-size:12px;font-weight:800;}
+.re-hc-chg.up{color:var(--up,#B65F5A);} .re-hc-chg.dn{color:var(--down,#5A7CA0);}
+.re-hc-meta{font-size:11.5px;color:var(--muted,#9a9b92);margin-top:2px;}
+.re-hc-stat{font-size:11.5px;color:var(--muted,#9a9b92);margin-top:3px;}
+.re-hc-stat .up{color:var(--up,#B65F5A);} .re-hc-stat .dn{color:var(--down,#5A7CA0);}
+.re-hc-prices{display:flex;gap:7px;margin-top:8px;flex-wrap:wrap;}
+.re-hc-pp{font-size:12.5px;font-weight:800;color:var(--ink,#34352f);background:#F7F8F4;
+  border:1px solid var(--line,#ECEDE7);border-radius:8px;padding:4px 10px;}
+.re-hc-pp i{font-style:normal;font-weight:700;color:var(--muted,#9a9b92);font-size:11px;margin-right:5px;}
+.re-hc-pp.dim{color:#C4C6BD;background:#FAFAF7;} .re-hc-pp.dim i{color:#C4C6BD;}
+.re-hc-map{flex:none;align-self:center;font-size:11.5px;font-weight:700;color:var(--sage-deep,#7E9A83);
+  border:1px solid var(--line2,#DEDED7);border-radius:9px;padding:7px 11px;text-decoration:none;
+  white-space:nowrap;transition:background .15s ease,border-color .15s ease;}
+.re-hc-map:hover{background:#EEF1EC;border-color:var(--sage,#A7BBA9);}
+@media(max-width:680px){.re-hc{flex-wrap:wrap;} .re-hc-map{margin-left:34px;margin-top:2px;}}
 .re-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
 .re-chip{font-size:12px;color:var(--pill-ink,#5d6258);background:var(--pill-bg,#F1F2EC);
   border:1px solid var(--line,#ECEDE7);border-radius:999px;padding:4px 12px;}
@@ -824,6 +854,16 @@ _RE_CSS = """
 .re-tl-dot{margin:7px auto 5px;width:8px;height:8px;border-radius:50%;background:var(--line2,#DEDED7);}
 .re-tl-dot.s{background:var(--sage-deep,#7E9A83);} .re-tl-dot.e{background:var(--up,#B65F5A);}
 .re-tl-c{font-size:10.5px;color:var(--ink,#34352f);line-height:1.3;}
+.re-sub-when{font-size:11.5px;color:var(--muted,#9a9b92);margin-top:3px;}
+.re-sub-acts{display:flex;flex-direction:column;gap:5px;flex:none;align-self:center;padding-left:8px;}
+.re-hl-acts{display:flex;gap:6px;margin-top:9px;}
+.re-go-btn{font-size:11px;font-weight:700;color:var(--sage-deep,#7E9A83);border:1px solid var(--line2,#DEDED7);
+  border-radius:8px;padding:5px 10px;text-decoration:none !important;white-space:nowrap;background:var(--card,#fff);
+  transition:background .15s ease,border-color .15s ease;display:inline-block;text-align:center;}
+.re-go-btn:hover{background:#EEF1EC;border-color:var(--sage,#A7BBA9);}
+.re-go-btn.map{color:#5d6258;}
+.re-go-btn.gold{border-color:#E2D3B0;color:#8A6D3B;background:rgba(255,255,255,.65);}
+.re-go-btn.gold:hover{background:#fff;border-color:#D8C49A;}
 @media(max-width:680px){.re-hl{grid-template-columns:1fr;}}
 </style>
 """
@@ -1183,7 +1223,7 @@ def _render_trend_charts(data):
     from datetime import date
     inds = _trend_series_3(data)
     if not inds:
-        st.caption("추이 데이터가 아직 없어요. 매일 06:30 수집 후 표시됩니다.")
+        st.caption("추이 데이터가 아직 없어요. 매일 07:00 수집 후 표시됩니다.")
         return
     asof = date.today().strftime("%Y-%m-%d")
     components.html(_trend_component(inds, asof), height=508, scrolling=False)
@@ -1594,13 +1634,13 @@ def _indicator_chart_component(ind, pend, asof):
 
 def _render_indicator_charts(data):
     """지표 탭 v2 — 사이클 위치 + 기능별 그룹 + 신호 배지/해석 + 신호강도순 토글.
-    데이터는 엔진(06:30 수집) 가격지수 시계열을 그대로 쓰고, 미연결 항목은 '연결예정'으로 표시."""
+    데이터는 엔진(07:00 수집) 가격지수 시계열을 그대로 쓰고, 미연결 항목은 '연결예정'으로 표시."""
     from datetime import date
     from math import ceil
     live = data is not _IND_SAMPLE
     ind, pend = _indicators_v2_payload(data)
     if not ind:
-        st.caption("지표 데이터가 아직 없어요. 매일 06:30 수집 후 표시됩니다.")
+        st.caption("지표 데이터가 아직 없어요. 매일 07:00 수집 후 표시됩니다.")
         return
     asof = date.today().strftime("%Y-%m-%d")
     # 그룹 보기(가장 높은 레이아웃) 기준으로 높이 산정 — 클리핑 방지.
@@ -1611,7 +1651,7 @@ def _render_indicator_charts(data):
     components.html(_indicator_chart_component(ind, pend, asof),
                     height=height, scrolling=False)
     src = ("KB·KOSIS·ECOS 실데이터" if live
-           else "샘플(엔진 수집 전 — 06:30 자동 수집 후 실데이터로 교체)")
+           else "샘플(엔진 수집 전 — 07:00 자동 수집 후 실데이터로 교체)")
     st.caption("선행/동행/수급·심리/펀더멘털로 그룹핑 · 카드별 신호·해석(역행지표 자동 반전) · "
                f"사이클 위치는 선행·심리 종합 · {src}")
 
@@ -1670,6 +1710,12 @@ def _naver_land_url(apt):
     return "https://m.land.naver.com/search/result/" + quote(apt)
 
 
+def _naver_map_url(query):
+    """네이버 지도 검색 URL('네이버 지도에서 보기' 링크 · 키 불필요)."""
+    from urllib.parse import quote
+    return "https://map.naver.com/p/search/" + quote((query or "").strip())
+
+
 _WD_KR = ["월", "화", "수", "목", "금", "토", "일"]
 
 
@@ -1713,42 +1759,54 @@ _ANOM_PRESETS = {
 
 
 def _render_hot_complexes():
-    """주목 단지 보드 — 거래 활발·상승(국토부 실거래) + 네이버 검색관심도(데이터랩)."""
+    """주목 단지 보드 — 최근 거래 활발·상승(국토부 실거래) + 단지정보(세대수·시공사·소재지)
+    + 면적별(59·84㎡) 최근 실거래가 + '네이버 지도에서 보기' 링크."""
     hot = [h for h in (fetch_hot_complexes() or []) if isinstance(h, dict)]
     if not hot:
         return
-    st.markdown('<div class="re-grp">주목 단지<span class="sub">거래 활발·상승 + '
-                '네이버 검색관심도</span></div>', unsafe_allow_html=True)
-    has_search = any(isinstance(h.get("search"), (int, float)) for h in hot)
+    st.markdown('<div class="re-grp">주목 단지'
+                '<span class="sub">최근 거래 활발·상승 · 국토부 실거래</span></div>',
+                unsafe_allow_html=True)
+
+    def _pp(lbl, val):
+        if val:
+            return f'<span class="re-hc-pp"><i>{lbl}</i>{val}</span>'
+        return f'<span class="re-hc-pp dim"><i>{lbl}</i>–</span>'
+
     body = ""
-    for i, h in enumerate(hot[:12], 1):
+    for i, h in enumerate(hot[:15], 1):
         sd = "서울" if h.get("sd") == "seoul" else "경기"
         chg = h.get("chg") or 0
         chg_cls = "up" if chg >= 0 else "dn"
         vol = h.get("vol_chg") or 0
         vol_cls = "up" if vol >= 0 else "dn"
-        sval = h.get("search")
-        si = (f'<div class="re-hot-si"><span class="bar">'
-              f'<i style="width:{max(0, min(100, int(sval)))}%"></i></span>'
-              f'<span class="v">{int(sval)}</span></div>'
-              if isinstance(sval, (int, float)) else '<div class="re-hot-si dim">–</div>')
         apt = h.get("apt", "")
-        apt_link = (f'<a href="{_naver_land_url(apt)}" target="_blank" '
-                    f'rel="noopener">{apt}</a>')
-        body += (f'<div class="re-hot"><span class="re-hot-rk">{i}</span>'
-                 f'<div style="flex:1"><div class="re-apt">{apt_link} '
-                 f'<span class="re-sub">· {sd} {h.get("gu","")} · {h.get("area","")}</span></div>'
-                 f'<div class="re-sub">최근 {h.get("recent",0)}건 '
-                 f'<span class="{vol_cls}">({"+" if vol>=0 else ""}{vol}%)</span> · '
-                 f'1년 {h.get("freq",0)}건</div></div>'
-                 f'<div class="re-hot-r"><div class="re-price">{h.get("price_eok","-")}</div>'
-                 f'<div class="re-chg {chg_cls}">{"+" if chg>=0 else ""}{chg}%</div></div>{si}</div>')
-    st.markdown(f'<div class="re-hotwrap">{body}</div>', unsafe_allow_html=True)
-    st.caption(("거래 활발·상승 단지 · 네이버 데이터랩 검색관심도(0~100, 상대값)"
-                if has_search else
-                "거래 활발·상승 단지 · 검색관심도는 네이버 키 연결 시 표시")
-               + " · 호갱노노·아실 등 인기리스트는 공식 API 부재·약관으로 미사용 · "
-               "단지명 클릭 시 네이버부동산.")
+        addr = (h.get("addr") or f"{sd} {h.get('gu', '')}").strip()
+        meta = [addr]
+        u = h.get("units")
+        if isinstance(u, (int, float)) and u:
+            meta.append(f"{int(u):,}세대")
+        if h.get("builder"):
+            meta.append(str(h["builder"]))
+        meta_s = " · ".join(m for m in meta if m)
+        prices = _pp("59㎡", h.get("p59_eok")) + _pp("84㎡", h.get("p84_eok"))
+        mq = (addr + " " + apt).strip() if addr else apt
+        body += (
+            f'<div class="re-hc"><span class="re-hc-rk">{i}</span>'
+            f'<div class="re-hc-main">'
+            f'<div class="re-hc-top"><span class="re-hc-nm">{apt}</span>'
+            f'<span class="re-hc-chg {chg_cls}">{"+" if chg >= 0 else ""}{chg}%</span></div>'
+            f'<div class="re-hc-meta">{meta_s}</div>'
+            f'<div class="re-hc-stat">최근 {h.get("recent", 0)}건 '
+            f'<span class="{vol_cls}">({"+" if vol >= 0 else ""}{vol}%)</span> · '
+            f'1년 {h.get("freq", 0)}건</div>'
+            f'<div class="re-hc-prices">{prices}</div></div>'
+            f'<a class="re-hc-map" href="{_naver_map_url(mq)}" target="_blank" '
+            f'rel="noopener">네이버 지도 ↗</a></div>')
+    st.markdown(f'<div class="re-hcwrap">{body}</div>', unsafe_allow_html=True)
+    st.caption("최근 거래가 몰린 상승 단지(국토부 실거래 기준 · 직거래 제외) · "
+               "59·84㎡는 각 면적대 최근 실거래가 · 세대수·시공사=공동주택 단지정보 · "
+               "‘네이버 지도 ↗’로 위치 확인")
 
 
 def _render_anomalies():
@@ -1940,12 +1998,16 @@ def _render_subscriptions():
         cards = ""
         for it in hot[:3]:
             reg_kr = "서울" if it["sd"] == "seoul" else "경기"
-            cards += (f'<a class="re-hl-card" href="{it["url"]}" target="_blank" rel="noopener">'
+            nmap = _naver_map_url((it["addr"] + " " + it["nm"]).strip())
+            cards += (f'<div class="re-hl-card">'
                       f'<span class="re-hl-dday">{it["dday"]}</span>'
                       f'<div class="re-hl-nm">{it["nm"]}</div>'
                       f'<div class="re-hl-meta">{reg_kr} {it["gu"]} · {it["typ"]} · {_units(it["nse"])}</div>'
                       f'<div class="re-hl-when">청약 {it["s"]}~{it["e"]} · 입주 {it["mv"]}</div>'
-                      f'<span class="re-hl-go">↗</span></a>')
+                      f'<div class="re-hl-acts">'
+                      f'<a class="re-go-btn gold" href="{it["url"]}" target="_blank" rel="noopener">공고 ↗</a>'
+                      f'<a class="re-go-btn gold map" href="{nmap}" target="_blank" rel="noopener">지도 ↗</a>'
+                      f'</div></div>')
         st.markdown('<div class="re-hl-sec">청약 임박 <span>진행 중 · 7일 내 시작</span></div>',
                     unsafe_allow_html=True)
         st.markdown(f'<div class="re-hl">{cards}</div>', unsafe_allow_html=True)
@@ -1980,22 +2042,26 @@ def _render_subscriptions():
     for it in items:
         bg, fg = bdg[it["status"]]
         reg_kr = "서울" if it["sd"] == "seoul" else "경기"
-        html += (f'<a class="re-sub-card" href="{it["url"]}" target="_blank" rel="noopener">'
+        nmap = _naver_map_url((it["addr"] + " " + it["nm"]).strip())
+        html += (f'<div class="re-sub-card">'
                  f'<span class="re-sub-bdg" style="background:{bg};color:{fg}">{it["dday"]}</span>'
-                 f'<div style="flex:1"><div class="re-sub-nm">{it["nm"]}</div>'
+                 f'<div style="flex:1;min-width:0"><div class="re-sub-nm">{it["nm"]}</div>'
                  f'<div class="re-sub-meta">{reg_kr} {it["gu"]} · {it["typ"]} · '
-                 f'{_units(it["nse"])} · {it["addr"]}</div></div>'
-                 f'<div class="re-sub-r"><b>청약 {it["s"]}~{it["e"]}</b>입주 {it["mv"]}</div>'
-                 f'<span class="re-sub-go">↗</span></a>')
+                 f'{_units(it["nse"])} · {it["addr"]}</div>'
+                 f'<div class="re-sub-when">청약 {it["s"]}~{it["e"]} · 입주 {it["mv"]}</div></div>'
+                 f'<div class="re-sub-acts">'
+                 f'<a class="re-go-btn" href="{it["url"]}" target="_blank" rel="noopener">공고 ↗</a>'
+                 f'<a class="re-go-btn map" href="{nmap}" target="_blank" rel="noopener">지도 ↗</a>'
+                 f'</div></div>')
     st.markdown(html, unsafe_allow_html=True)
     if live:
         st.caption("소스: 한국부동산원 청약홈 분양정보(data.go.kr) — 실데이터. "
-                   "카드를 누르면 청약홈 해당 공고로 이동해요. "
+                   "‘공고 ↗’는 청약홈 해당 공고, ‘지도 ↗’는 네이버 지도로 이동해요. "
                    "D-day는 청약 시작일(예정)·마감일(진행 중) 기준 자동 계산. 진행/임박 우선.")
     else:
         st.caption("소스: 한국부동산원 청약홈 분양정보(data.go.kr) — 현재 샘플. "
                    "‘갱신’ 누르면 실데이터(청약홈 분양정보 활용신청 필요). "
-                   "카드를 누르면 청약홈 공고 목록으로 이동(샘플이라 개별 공고 링크 없음). "
+                   "‘공고 ↗’는 청약홈(샘플은 공고 목록), ‘지도 ↗’는 네이버 지도로 이동. "
                    "D-day는 청약 시작·마감일 기준 자동 계산.")
 
 
@@ -2003,9 +2069,9 @@ def _run_collection():
     """뷰어 '최신 데이터 불러오기' — 라이브 API를 호출하지 않고 DB 스냅샷만 다시 읽는다.
 
     KB(data-api.kbland.kr)는 Streamlit Cloud IP에서 차단/타임아웃되고, 국토부 대량 호출도
-    뷰어에서는 불안정하다(엔진-우선 원칙). 그래서 실제 수집은 매일 06:30 GitHub Actions가
+    뷰어에서는 불안정하다(엔진-우선 원칙). 그래서 실제 수집은 매일 07:00 GitHub Actions가
     수행해 Supabase(realestate_snapshots)에 채우고, 뷰어는 그 최신 행을 읽기만 한다.
-    이 함수는 스냅샷 캐시를 비워 '방금 06:30/수동 워크플로가 쓴 최신본'을 즉시 반영한다.
+    이 함수는 스냅샷 캐시를 비워 '방금 07:00/수동 워크플로가 쓴 최신본'을 즉시 반영한다.
     (예외를 던지지 않는다 — 에러 배너 대신 항상 DB/샘플을 보여준다.)"""
     try:
         _load_re_snapshot.clear()      # 스냅샷 캐시 무효화 → 다음 읽기에서 DB 최신본 로드
@@ -2055,9 +2121,9 @@ def _render_collect_controls():
         snap = _load_re_snapshot()
         asof = (snap or {}).get("asof") if snap else None
     if asof:
-        st.caption(f"수도권 아파트 · KB 월간 매매지수·국토부 실거래 기준 {asof} KST · 매일 06:30 자동 갱신")
+        st.caption(f"수도권 아파트 · KB 월간 매매지수·국토부 실거래 기준 {asof} KST · 매일 07:00 자동 갱신")
     else:
-        st.caption("수도권 아파트 · 현재 샘플 — 매일 06:30 자동 수집(KB 가격지수·실거래) 후 "
+        st.caption("수도권 아파트 · 현재 샘플 — 매일 07:00 자동 수집(KB 가격지수·실거래) 후 "
                    "실데이터로 채워집니다.")
 
     _re_render_lock_gate()
@@ -2066,7 +2132,7 @@ def _render_collect_controls():
     with col_a:
         do_collect = st.button(
             "🔄 최신 데이터 불러오기", disabled=not authed,
-            help="매일 06:30 GitHub Actions가 KB·국토부 데이터를 수집해 DB에 저장합니다. "
+            help="매일 07:00 GitHub Actions가 KB·국토부 데이터를 수집해 DB에 저장합니다. "
                  "이 버튼은 그 최신본을 즉시 다시 불러옵니다(라이브 API 호출 없음).",
             use_container_width=True)
     with col_b:
@@ -2107,7 +2173,7 @@ def render_realestate():
     # 블록으로 두면 그 블록이 세로 간격을 한 칸 더 먹어 증시보다 벌어지므로,
     # 첫 패널(지도)의 accent-bar와 한 블록으로 합쳐 주입한다(간격 일치).
     t_map, t_ind, t_anom, t_sub, t_kw = st.tabs(
-        ["지도", "지표", "거래", "분양", "키워드"])
+        ["지도", "지표", "주목단지", "분양", "키워드"])
 
     with t_map:
         st.markdown(_RE_CSS + '<div class="accent-bar"></div>',
@@ -2125,9 +2191,9 @@ def render_realestate():
 
     with t_anom:
         st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
-        st.title("거래 동향")
-        st.caption("주목 단지(거래 활발·상승 + 검색관심도) · 특이거래(신고가·급등락·거래량) · "
-                   "국토부 실거래 기준 · 직거래(증여추정) 기본 제외")
+        st.title("주목 단지")
+        st.caption("최근 거래가 몰린 상승 단지 + 단지정보(세대수·시공사·소재지·59/84㎡ 실거래가) · "
+                   "특이거래(신고가·급등락·거래량) · 국토부 실거래 기준 · 직거래 기본 제외")
         _render_hot_complexes()
         st.markdown('<div class="re-grp" style="margin-top:14px">특이거래'
                     '<span class="sub">신고가·신저가·급등락·거래량 급증</span></div>',
@@ -2137,11 +2203,11 @@ def render_realestate():
     with t_sub:
         st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
         st.title("분양 단지")
-        st.caption("한국부동산원 청약홈 분양정보 · 청약 임박·진행 우선 · 매일 06:30 자동 갱신")
+        st.caption("한국부동산원 청약홈 분양정보 · 청약 임박·진행 우선 · 매일 07:00 자동 갱신")
         if _re_authed():
             if st.button(
                     "🔄 최신 분양정보 불러오기", key="re_sub_refresh",
-                    help="매일 06:30 GitHub Actions가 청약홈 분양정보를 수집해 DB에 저장합니다. "
+                    help="매일 07:00 GitHub Actions가 청약홈 분양정보를 수집해 DB에 저장합니다. "
                          "이 버튼은 그 최신본을 즉시 다시 불러옵니다.",
                     use_container_width=True):
                 with st.spinner("DB에서 최신 분양정보 불러오는 중..."):
