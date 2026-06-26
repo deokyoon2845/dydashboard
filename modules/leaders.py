@@ -37,7 +37,6 @@ GROUP_COLORS = {
 
 _CSS = """
 <style>
-.ldr-bar3{height:3px;width:30px;background:var(--sage);border-radius:3px;margin:0 0 12px;}
 .ldr-strip{background:var(--summary-bg);border:1px solid var(--line);border-radius:10px;
   padding:10px 14px;font-size:12.5px;color:var(--sage-deep);font-weight:600;margin:2px 0 14px;line-height:1.7;}
 .ldr-strip b{color:var(--ink);font-weight:700;} .ldr-strip b.up{color:var(--up);} .ldr-strip b.down{color:var(--down);}
@@ -301,7 +300,7 @@ def _render_sector(rank, sec, by_upjong):
 
 def render_leaders():
     st.markdown(_CSS, unsafe_allow_html=True)
-    st.markdown('<div class="ldr-bar3"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
     st.title("주도주")
 
     with st.expander("ⓘ 주도주 보는 법", expanded=False):
