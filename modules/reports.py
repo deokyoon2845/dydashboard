@@ -49,7 +49,7 @@ _RPT_CSS = """
 __MOOD_BADGE_CSS__
 .rpt2-bar{height:3px;width:34px;background:var(--sage,#A7BBA9);border-radius:3px;margin:0 0 10px;}
 .rpt2-date{font-family:'Fraunces','Noto Sans KR',serif;font-size:15px;font-weight:600;color:var(--sage-deep,#7E9A83);letter-spacing:.02em;}
-.rpt2-title{font-family:'Fraunces','Noto Sans KR',serif;font-size:30px;font-weight:600;line-height:1.3;color:var(--ink,#34352f);margin:2px 0 16px;}
+.rpt2-title{font-family:'Fraunces','Noto Sans KR',serif;font-size:30px;font-weight:600;line-height:1.3;color:var(--ink,#34352f);margin:2px 0 12px;}
 .rpt2-grp{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted,#9a9b92);margin:22px 0 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .rpt2-grp .sub{font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted,#9a9b92);font-size:11px;}
 .rpt2-grp .tag{font-size:10.5px;font-weight:700;letter-spacing:.02em;text-transform:none;padding:2px 9px;border-radius:20px;}
@@ -771,7 +771,7 @@ def render_reports():
     files = list_reports()
 
     sel_date = _selected_date(files)
-    st.markdown('<div class="rpt2-bar"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
 
     # 제목 우측에 ⓘ 보고서 보는 법 팝오버 배치
     title_col, help_col = st.columns([0.82, 0.18])
