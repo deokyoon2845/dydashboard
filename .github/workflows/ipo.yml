@@ -1,0 +1,46 @@
+name: 증시 IPO 데이터 프로브 (수동)
+
+# ──────────────────────────────────────────────────────────────────────────
+#  1차: data.go.kr(금융위 시세/발행/상장종목) + DART 의 실제 응답 필드명을
+#  Actions 로그에 찍어 확인하기 위한 '프로브' 전용 워크플로다.
+#  아직 Supabase에 쓰지 않는다(읽기·진단만). 스케줄 없음 — 수동 실행만.
+#    Actions → 이 워크플로 → Run workflow.
+#  필드 확정 후 engine/ipo_collect.py의 collect()를 채우고, 이 파일에
+#  schedule(cron)과 Supabase 저장 스텝을 더해 본 엔진으로 승격한다.
+#
+#  필요한 secret:
+#    DATA_GO_KR_KEY  (없으면 MOLIT_API_KEY로 폴백)  — data.go.kr 디코딩 인증키
+#    DART_API_KEY    — opendart.fss.or.kr 인증키
+# ──────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ipo-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v5
+
+      - name: 파이썬 설정
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: 라이브러리 설치
+        run: pip install -r requirements.txt
+
+      - name: IPO 데이터 소스 프로브 (필드명·샘플 출력)
+        env:
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
+          MOLIT_API_KEY: ${{ secrets.MOLIT_API_KEY }}
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+        run: python -m engine.ipo_collect probe
