@@ -244,7 +244,7 @@ def _render_items(items, watch_set):
 
 def render_keywords():
     st.markdown(_KW_CSS, unsafe_allow_html=True)
-    st.markdown('<div class="rpt-bar"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
     st.title("오늘의 키워드")
 
     if st.button("🔄 키워드 갱신"):
