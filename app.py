@@ -907,7 +907,7 @@ _inject_countup()
 top_stock, top_re = st.tabs(["주식", "부동산"])
 
 with top_stock:
-    tab_idx, tab_rep, tab_ldr, tab_kw, tab_ipo = st.tabs(["지수", "시황", "주도주", "IPO", "키워드"])
+    tab_idx, tab_rep, tab_ldr, tab_ipo, tab_kw  = st.tabs(["지수", "시황", "주도주", "IPO", "키워드"])
     with tab_idx:
         render_indices()
     with tab_rep:
