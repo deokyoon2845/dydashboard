@@ -1,4 +1,4 @@
-"""Supabase 보고서·관심종목·부동산 저장소 — 엔진(GitHub Actions)·뷰어(Streamlit) 공용 얇은 계층.
+"""Supabase 보고서·관심종목·부동산·IPO 저장소 — 엔진(GitHub Actions)·뷰어(Streamlit) 공용 얇은 계층.
 
 - 뷰어에서는 Streamlit Secrets, 엔진에서는 환경변수로 키를 읽는다(둘 다 지원).
 - 보고서는 reports 테이블에 (report_date, report_kind) 기준 upsert 된다.
@@ -45,19 +45,20 @@
       updated_at timestamptz default now()
     );
 
-- 주도주 스냅샷은 leaders 테이블에 날짜(asof_date)별로 upsert 된다. 뷰어는 최신 1행만 읽는다.
-  엔진(engine.leaders_run)이 전종목 스캔·점수화 결과(섹터·종목)를 payload(jsonb)로 저장한다.
-  (※ 최초 1회 아래 SQL로 테이블 생성)
+- 증시 IPO 스냅샷은 ipo_snapshots 테이블에 날짜(asof_date)별로 upsert 된다.
+  엔진(engine.ipo_run)이 최근 2년 신규상장(시총 2,000억↑)·향후 IPO를 적재하고,
+  뷰어(modules/ipo.py)는 최신 1행만 읽는다(없으면 샘플 폴백).
+  (※ 최초 1회 아래 SQL로 테이블을 만들어야 함)
 
-    create table if not exists leaders (
+    create table if not exists ipo_snapshots (
       asof_date  date primary key,
       asof       text,
-      payload    jsonb,
+      recent     jsonb not null default '[]'::jsonb,
+      upcoming   jsonb not null default '[]'::jsonb,
       updated_at timestamptz default now()
     );
 """
 import os
-import json
 import re
 from datetime import datetime
 
@@ -68,7 +69,7 @@ WL_TABLE = "watchlist"
 WL_ID = 1
 RE_TABLE = "realestate_snapshots"
 KW_TABLE = "keywords"
-LEADERS_TABLE = "leaders"
+IPO_TABLE = "ipo_snapshots"
 _CLIENT: Client | None = None
 
 
@@ -317,43 +318,34 @@ def load_recent_keywords(limit: int = 40) -> list[dict]:
     return res.data or []
 
 
-# ── 주도주 스냅샷: 읽기·쓰기 ──────────────────────────────────
-# leaders 테이블에 날짜(asof_date)별로 전종목 스캔·점수화 결과를 payload(jsonb)로 upsert.
-# 뷰어(modules/leaders.py)는 최신 1행만 읽어 '항상 실데이터'를 보장.
-# payload 구조: {asof, asof_date, params, sectors[], stocks[]}
+# ── 증시 IPO 스냅샷: 읽기·쓰기 ────────────────────────────────
+# ipo_snapshots 테이블에 날짜(asof_date)별로 최신 수집 결과를 upsert.
+# 뷰어(modules/ipo.py)는 최신 1행만 읽어 '항상 실데이터'를 보장(샘플 폴백은 행이 없을 때만).
+# recent/upcoming 은 뷰어가 그대로 그릴 수 있는 dict 배열.
 
-def save_leaders(payload: dict, asof: str | None = None,
-                 asof_date: str | None = None) -> str:
-    """주도주 스냅샷 저장(upsert, asof_date 단일행). payload는 collect() 결과 dict."""
+def save_ipo(recent=None, upcoming=None,
+             asof: str | None = None, asof_date: str | None = None) -> str:
+    """IPO 스냅샷 저장(upsert, asof_date 단일행)."""
     now = datetime.now()
-    asof = asof or (payload or {}).get("asof") or now.strftime("%Y-%m-%d %H:%M")
-    asof_date = asof_date or (payload or {}).get("asof_date") or asof[:10]
+    asof = asof or now.strftime("%Y-%m-%d %H:%M")
+    asof_date = asof_date or asof[:10]
     row = {
         "asof_date": asof_date,
         "asof": asof,
-        "payload": payload,
+        "recent": recent or [],
+        "upcoming": upcoming or [],
         "updated_at": now.isoformat(),
     }
-    _client().table(LEADERS_TABLE).upsert(row, on_conflict="asof_date").execute()
+    _client().table(IPO_TABLE).upsert(row, on_conflict="asof_date").execute()
     return asof_date
 
 
-def load_leaders() -> dict | None:
-    """가장 최신 주도주 스냅샷 payload를 반환. 행이 없으면 None.
-       반환 dict: {asof, asof_date, params, sectors[], stocks[]}."""
-    res = (_client().table(LEADERS_TABLE)
-           .select("asof,payload")
+def load_ipo() -> dict | None:
+    """가장 최신 IPO 스냅샷 1행을 반환. 행이 없으면 None.
+       반환 dict: {'asof','recent','upcoming'}."""
+    res = (_client().table(IPO_TABLE)
+           .select("asof,recent,upcoming")
            .order("asof_date", desc=True)
            .limit(1)
            .execute())
-    if not res.data:
-        return None
-    row = res.data[0]
-    payload = row.get("payload") or {}
-    if isinstance(payload, str):
-        try:
-            payload = json.loads(payload)
-        except Exception:
-            payload = {}
-    payload.setdefault("asof", row.get("asof"))
-    return payload
+    return res.data[0] if res.data else None
