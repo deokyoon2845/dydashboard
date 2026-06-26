@@ -1,34 +1,58 @@
-name: 증시 IPO 데이터 프로브 (수동)
+name: 증시 IPO 수집 (일일)
 
 # ──────────────────────────────────────────────────────────────────────────
-#  1차: data.go.kr(금융위 시세/발행/상장종목) + DART 의 실제 응답 필드명을
-#  Actions 로그에 찍어 확인하기 위한 '프로브' 전용 워크플로다.
-#  아직 Supabase에 쓰지 않는다(읽기·진단만). 스케줄 없음 — 수동 실행만.
-#    Actions → 이 워크플로 → Run workflow.
-#  필드 확정 후 engine/ipo_collect.py의 collect()를 채우고, 이 파일에
-#  schedule(cron)과 Supabase 저장 스텝을 더해 본 엔진으로 승격한다.
+#  최근 2년 신규상장(시총 2,000억↑)·향후 IPO를 매일 06:00 KST 수집해
+#  Supabase(ipo_snapshots)에 저장한다. 뷰어(modules/ipo.py)는 DB만 읽는다.
+#  · 금융위 주식시세정보는 기준일 T+1 13:00 KST 갱신 → 06:00 KST 실행은 전일자 데이터 사용(무해).
+#  · 다른 잡(daily/realestate)과 잡 이름·테이블이 달라 충돌 없음.
+#  · 수동 실행도 가능: Actions → 이 워크플로 → Run workflow.
+#  ※ 최초 1회 Supabase에서 ipo_snapshots 테이블 생성 필요(modules/db.py 상단 SQL).
 #
 #  필요한 secret:
-#    DATA_GO_KR_KEY  (없으면 MOLIT_API_KEY로 폴백)  — data.go.kr 디코딩 인증키
-#    DART_API_KEY    — opendart.fss.or.kr 인증키
+#    SUPABASE_URL / SUPABASE_KEY
+#    DATA_GO_KR_KEY (없으면 MOLIT_API_KEY)  — data.go.kr 디코딩 인증키
+#    DART_API_KEY   — opendart 인증키(향후 IPO 일정용; 없으면 향후 섹션만 비고 진행)
 # ──────────────────────────────────────────────────────────────────────────
 
 on:
+  schedule:
+    - cron: '0 21 * * *'        # 21:00 UTC = 06:00 KST
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ipo-probe
+  group: ipo-collect
   cancel-in-progress: false
 
 jobs:
-  probe:
+  collect:
     runs-on: ubuntu-latest
     steps:
       - name: 저장소 체크아웃
         uses: actions/checkout@v5
+
+      - name: 필수 시크릿 점검
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
+          MOLIT_API_KEY: ${{ secrets.MOLIT_API_KEY }}
+        shell: bash
+        run: |
+          missing=""
+          for v in SUPABASE_URL SUPABASE_KEY; do
+            if [ -z "${!v}" ]; then missing="$missing $v"; fi
+          done
+          if [ -z "$DATA_GO_KR_KEY$MOLIT_API_KEY" ]; then
+            missing="$missing DATA_GO_KR_KEY(또는_MOLIT_API_KEY)"
+          fi
+          if [ -n "$missing" ]; then
+            echo "::error::필수 시크릿이 비어 있습니다 →$missing"
+            exit 1
+          fi
+          echo "✅ 필수 시크릿 확인 — 수집 단계로 진행합니다."
 
       - name: 파이썬 설정
         uses: actions/setup-python@v6
@@ -38,9 +62,11 @@ jobs:
       - name: 라이브러리 설치
         run: pip install -r requirements.txt
 
-      - name: IPO 데이터 소스 프로브 (필드명·샘플 출력)
+      - name: IPO 수집 → Supabase 저장
         env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
           MOLIT_API_KEY: ${{ secrets.MOLIT_API_KEY }}
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
-        run: python -m engine.ipo_collect probe
+        run: python -m engine.ipo_run
