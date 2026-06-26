@@ -104,8 +104,11 @@ def _num(txt):
 
 # 제외 패턴: 우선주(…우/우B) · 스팩 · 리츠 · ETF/ETN 브랜드
 _EXCL_NAME = re.compile(r"(우$|우B$|[0-9]우$|스팩|리츠|리얼티)")
-_EXCL_ETF = re.compile(r"(KODEX|TIGER|PLUS|ARIRANG|KBSTAR|ACE|SOL|RISE|HANARO|KOSEF|TIMEFOLIO|ETN)",
-                       re.IGNORECASE)
+_EXCL_ETF = re.compile(
+    r"(KODEX|TIGER|PLUS|ARIRANG|KBSTAR|ACE|SOL|RISE|HANARO|KOSEF|TIMEFOLIO|ETN|"
+    r"WON|UNICORN|KIWOOM|TIME|KoAct|1Q|BNK|마이다스|히어로즈|마이티|FOCUS|마이다스|"
+    r"파워|에셋플러스|VITA|히어로|액티브|밸류업액티브)",
+    re.IGNORECASE)
 
 
 def _is_excluded(name: str, code: str) -> bool:
@@ -256,6 +259,16 @@ def _ma(vals, n):
     return sum(vals[-n:]) / n
 
 
+def _downsample(vals, n=30):
+    """리스트를 n개로 균등 다운샘플 + 반올림(정수). 스파크라인 저장용."""
+    if not vals:
+        return []
+    if len(vals) <= n:
+        return [round(v) for v in vals]
+    step = len(vals) / n
+    return [round(vals[int(i * step)]) for i in range(n)]
+
+
 def _ret(closes, offset):
     if len(closes) <= offset:
         return None
@@ -270,6 +283,7 @@ def _metrics(closes, vols):
     if not closes or len(closes) < 30:
         return None
     last = closes[-1]
+    ret_1d = _ret(closes, 1)
     ret_1w, ret_1m, ret_3m = _ret(closes, 5), _ret(closes, 21), _ret(closes, 63)
     if ret_3m is None:           # 3개월 수익률을 못 내면 주도주 후보에서 제외
         return None
@@ -300,11 +314,12 @@ def _metrics(closes, vols):
         if pairs:
             turn = sum(c * v for c, v in pairs) / len(pairs) / 1e8
     return {
-        "ret_1w": ret_1w, "ret_1m": ret_1m, "ret_3m": ret_3m,
+        "ret_1d": ret_1d, "ret_1w": ret_1w, "ret_1m": ret_1m, "ret_3m": ret_3m,
         "aligned": aligned, "above_ratio": above_ratio,
         "above_ma60": bool(ma60 and last > ma60),
         "high_ratio": round(high_ratio, 1), "streak": streak,
         "turnover_eok": round(turn, 1),
+        "spark": _downsample(closes[-63:], 30),   # 3개월(≈63영업일) 미니차트용
     }
 
 
@@ -370,6 +385,7 @@ def score(cands, mkt_ret):
             "code": c["code"], "name": c["name"], "market": c["market"],
             "upjong": c.get("upjong") or "기타", "group": _coarse(c.get("upjong")),
             "score": round(total, 1),
+            "mom_1d": round(m["ret_1d"], 2) if m.get("ret_1d") is not None else None,
             "mom_1w": round(m["ret_1w"], 1) if m["ret_1w"] is not None else None,
             "mom_1m": round(m["ret_1m"], 1) if m["ret_1m"] is not None else None,
             "mom_3m": round(m["ret_3m"], 1),
@@ -377,7 +393,7 @@ def score(cands, mkt_ret):
             "mcap_eok": round(c["mcap_eok"]),
             "turnover_eok": m["turnover_eok"],
             "high_ratio": m["high_ratio"], "aligned": m["aligned"],
-            "streak": m["streak"],
+            "streak": m["streak"], "spark": m.get("spark") or [],
             "comp": {"mom": round(mom_s[i], 1), "rs": round(rs_s[i], 1),
                      "trend": trend_s, "liq": round(liq_s[i], 1),
                      "high": round(high_s, 1)},
@@ -430,11 +446,14 @@ def collect():
     print(f"[collect] 유니버스 {len(uni)}종목")
     sect = fetch_sector_map(sess)
 
-    # 시총 하한 + 시총 내림차순 상한 → 일별 받을 후보 압축
-    cand = [u for u in uni if u["mcap_eok"] >= MCAP_MIN_EOK]
+    # 시총 하한 + '진짜 종목'만(네이버 업종에 매핑된 코드 = ETF/ETN 제외) + 시총 내림차순 상한
+    n_pre = sum(1 for u in uni if u["mcap_eok"] >= MCAP_MIN_EOK)
+    cand = [u for u in uni if u["mcap_eok"] >= MCAP_MIN_EOK and u["code"] in sect]
+    n_etf = n_pre - len(cand)
     cand.sort(key=lambda x: x["mcap_eok"], reverse=True)
     cand = cand[:DEEP_SCAN_MAX]
-    print(f"[collect] 시총 {MCAP_MIN_EOK}억↑ & 상위 {DEEP_SCAN_MAX} → 정밀스캔 {len(cand)}종목")
+    print(f"[collect] 시총 {MCAP_MIN_EOK}억↑ {n_pre}종목 · 업종 미매핑(ETF 등) {n_etf}종목 제외 · "
+          f"상위 {DEEP_SCAN_MAX} → 정밀스캔 {len(cand)}종목")
 
     mkt_ret = _market_returns(sess)
     print(f"[collect] 시장수익률 {mkt_ret}")
