@@ -341,7 +341,7 @@ def render_ipo_tab():
     recent = data.get("recent") or []
     upcoming = data.get("upcoming") or []
     asof = data.get("asof", "")
-    cap_txt = f"기준 {asof} · 최근 2년 내 상장(현재 시총 2,000억원 이상) · 최신순"
+    cap_txt = f"기준 {asof} · 최근 2년 내 상장(현재 시총 5,000억원 이상) · 최신순"
     if data.get("_sample"):
         cap_txt = "샘플 데이터 — 엔진(ipo_run) 첫 실행 후 실데이터로 대체돼요 · " + cap_txt
     st.caption(cap_txt)
