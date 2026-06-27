@@ -11,18 +11,23 @@
   · 추이 스파크라인 = 상장일~최신 일별 종가(isinCd 필터)를 다운샘플(약 60p).
         시세 API의 srtnCd 필터가 무시되는 이슈 → isinCd(고유)로 교체. 실패 시 빈 배열
         → 뷰어가 라이브(네이버)로 폴백.
+  · 섹터 = DART corpCode.xml(단축코드→corp_code) + company.json(induty_code) → KSIC 라벨.
   · 향후 IPO = DART 증권신고서(지분증권·미상장) + 기업소개 + 상장 예상구간(추정).
 
-  ※ 상장방식·밸류(공모가/PER)는 금융위 API에 소스가 없어 제외(2025.06 결정).
+  ※ 공모가·공모시총 = 주식발행정보 V3 ②주식발행내역(발행가)에서 채울 예정.
+     해당 V3 op명 확정 전까지 빈 값(자리만 유지). 현재가·현재시총은 시세 스냅샷으로 즉시 채움.
 
 키: DATA_GO_KR_KEY(없으면 MOLIT_API_KEY) · DART_API_KEY
 """
 
+import io
 import os
 import re
 import sys
 import time
 import traceback
+import zipfile
+import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta
 
 import requests
@@ -48,6 +53,42 @@ _LOCK_OPS = [
 
 _DART = "https://opendart.fss.or.kr/api"
 _DART_LIST = f"{_DART}/list.json"
+_DART_CORPCODE = f"{_DART}/corpCode.xml"   # 전체 corp_code↔stock_code 매핑(zip)
+_DART_COMPANY = f"{_DART}/company.json"    # 회사개황(induty_code=업종코드)
+
+# KSIC(표준산업분류) 2자리 prefix → 섹터 라벨 (제조업은 세분)
+_KSIC = {
+    "01": "농업·임업·어업", "02": "농업·임업·어업", "03": "농업·임업·어업",
+    "05": "광업", "06": "광업", "07": "광업", "08": "광업",
+    "10": "식음료", "11": "식음료", "12": "식음료",
+    "13": "섬유·의류", "14": "섬유·의류", "15": "섬유·의류",
+    "16": "목재·종이", "17": "목재·종이", "18": "인쇄·기록매체",
+    "19": "석유·화학", "20": "석유·화학", "21": "제약·바이오",
+    "22": "고무·플라스틱", "23": "비금속광물",
+    "24": "철강·금속", "25": "금속가공",
+    "26": "반도체·전자부품", "27": "의료·정밀·광학", "28": "전기장비",
+    "29": "기계·장비", "30": "운송장비", "31": "운송장비",
+    "32": "기타제조", "33": "기타제조", "34": "기타제조",
+    "35": "전기·가스", "36": "수도·환경", "37": "수도·환경",
+    "38": "수도·환경", "39": "수도·환경",
+    "41": "건설", "42": "건설",
+    "45": "도소매·유통", "46": "도소매·유통", "47": "도소매·유통",
+    "49": "운수·물류", "50": "운수·물류", "51": "운수·물류", "52": "운수·물류",
+    "55": "숙박·음식", "56": "숙박·음식",
+    "58": "출판·콘텐츠", "59": "미디어·콘텐츠", "60": "미디어·콘텐츠",
+    "61": "통신", "62": "소프트웨어·IT서비스", "63": "소프트웨어·IT서비스",
+    "64": "금융", "65": "보험", "66": "금융서비스",
+    "68": "부동산",
+    "70": "전문서비스", "71": "전문서비스", "72": "연구개발", "73": "전문서비스",
+    "74": "사업서비스", "75": "사업서비스", "76": "사업서비스",
+    "85": "교육", "86": "헬스케어", "87": "헬스케어",
+    "90": "예술·여가", "91": "예술·여가",
+}
+
+
+def _ksic_label(code: str) -> str:
+    c = _digits(code)
+    return _KSIC.get(c[:2], "")
 
 CAP_MIN = 500_000_000_000          # 5,000억 (원) — 종목 과다 방지(2,000억은 200_000_000_000)
 RECENT_DAYS = 731                  # 최근 2년(+1)
@@ -347,6 +388,56 @@ def _daily_series(key, isin, srtn, start_basdt, end_basdt):
     return []
 
 
+# ── DART 섹터: corpCode.xml(단축코드→corp_code) + company.json(업종코드) ──
+_corpcode_map = None       # {stock_code(6): corp_code(8)}
+_sector_cache = {}         # corp_code → 섹터 라벨
+
+
+def _dart_corpcode_map(key):
+    global _corpcode_map
+    if _corpcode_map is not None:
+        return _corpcode_map
+    _corpcode_map = {}
+    if not key:
+        return _corpcode_map
+    try:
+        r = requests.get(_DART_CORPCODE, params={"crtfc_key": key}, headers=_UA, timeout=60)
+        r.raise_for_status()
+        zf = zipfile.ZipFile(io.BytesIO(r.content))
+        root = ET.fromstring(zf.read(zf.namelist()[0]))
+        for c in root.iter("list"):
+            sc = (c.findtext("stock_code") or "").strip()
+            cc = (c.findtext("corp_code") or "").strip()
+            if sc and len(sc) == 6 and cc:
+                _corpcode_map[sc] = cc
+        _log(f"DART corpCode 매핑 {len(_corpcode_map)}종목")
+    except Exception as e:
+        _log(f"DART corpCode 매핑 실패(섹터 생략): {str(e)[:80]}")
+    return _corpcode_map
+
+
+def _dart_sector(key, stock_code):
+    if not key:
+        return ""
+    cc = _dart_corpcode_map(key).get(_digits(stock_code, 6))
+    if not cc:
+        return ""
+    if cc in _sector_cache:
+        return _sector_cache[cc]
+    sector = ""
+    try:
+        r = requests.get(_DART_COMPANY, params={"crtfc_key": key, "corp_code": cc},
+                         headers=_UA, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+        if str(data.get("status")) == "000":
+            sector = _ksic_label(data.get("induty_code"))
+    except Exception:
+        sector = ""
+    _sector_cache[cc] = sector
+    return sector
+
+
 # ── DART: 향후 IPO ──
 def _dart_upcoming(key, days=75):
     if not key:
@@ -436,7 +527,7 @@ def collect() -> dict:
     _log(f"시총≥{_fmt_cap(CAP_MIN)} & 최근상장 후보 {len(cands)}종목")
 
     recent = []
-    n_listed = n_intro = n_lock = n_spark = n_crno = 0
+    n_listed = n_intro = n_lock = n_spark = n_crno = n_sect = 0
     cutoff = (date.today() - timedelta(days=RECENT_DAYS)).strftime("%Y%m%d")
     win_start = (date.today() - timedelta(days=RECENT_DAYS + 90)).strftime("%Y%m%d")
     for x in cands:
@@ -473,12 +564,22 @@ def collect() -> dict:
         n_spark += 1 if spark else 0
         lock = _lockup(key, crno)
         n_lock += 1 if lock else 0
+        sector = _dart_sector(_dartk(), srtn)
+        if sector:
+            n_sect += 1
+
+        cur_price = _f(x.get("clpr"))
+        shares = _f(x.get("lstgStCnt"))     # 상장주식수 → 공모시총 계산용
 
         recent.append({
-            "name": nm, "code": srtn, "market": mkt,
+            "name": nm, "code": srtn, "market": mkt, "sector": sector,
             "listed": _fmt_date(lstg), "_lstg": lstg,
             "cap": _fmt_cap(cap), "cap_won": cap,
-            "price": f"{int(_f(x.get('clpr')) or 0):,}", "pct": _f(x.get("fltRt")),
+            "price": f"{int(cur_price or 0):,}", "price_won": cur_price,
+            "pct": _f(x.get("fltRt")), "shares": shares,
+            # 공모가·공모시총 — 주식발행정보 V3(②주식발행내역) op 확정 시 채움
+            "ipo_price": "", "ipo_price_won": None,
+            "offer_cap": "", "offer_cap_won": None, "ipo_return": None,
             "lockup": lock, "intro": intro, "spark": spark,
         })
         time.sleep(0.05)
@@ -495,7 +596,7 @@ def collect() -> dict:
             u["intro"] = o["enpMainBizNm"]
 
     _log(f"완료: 최근상장 {len(recent)}종목 "
-         f"(crno {n_crno} · 상장일 {n_listed} · 회사소개 {n_intro} · 보호예수 {n_lock} · 추이 {n_spark}) "
+         f"(crno {n_crno} · 상장일 {n_listed} · 섹터 {n_sect} · 회사소개 {n_intro} · 보호예수 {n_lock} · 추이 {n_spark}) "
          f"/ 향후 {len(upcoming)}건")
 
     return {
