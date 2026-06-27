@@ -12,6 +12,7 @@ from pathlib import Path
 import streamlit as st
 
 from modules.stocks import naver_stock_url
+from modules.ui import tab_header
 
 KW_PATH = Path("data/keywords_today.json")
 KW_ARCHIVE_DIR = Path("data/keywords_archive")
@@ -243,9 +244,7 @@ def _render_items(items, watch_set):
 
 
 def render_keywords():
-    st.markdown(_KW_CSS, unsafe_allow_html=True)
-    st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
-    st.title("오늘의 키워드")
+    tab_header("오늘의 키워드", css=_KW_CSS)
 
     if st.button("🔄 키워드 갱신"):
         with st.spinner("네이버 뉴스 수집 → 키워드 추출 중..."):
