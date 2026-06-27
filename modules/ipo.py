@@ -27,6 +27,7 @@ import requests
 import streamlit as st
 
 from modules.stocks import naver_stock_url
+from modules.ui import tab_header
 
 _UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                      "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"}
@@ -80,9 +81,9 @@ _CSS = """
 .ipo-sec:before{content:"";width:14px;height:2px;background:var(--sage,#A7BBA9);border-radius:2px;}
 .ipo-sec .mut{font-weight:600;font-size:11px;text-transform:none;letter-spacing:0;color:var(--muted,#9a9b92);}
 /* 향후 일정 스트립 */
-.ipo-strip{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 10px;}
+.ipo-strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;padding:2px 2px 10px;}
 .ipo-strip::-webkit-scrollbar{height:5px;} .ipo-strip::-webkit-scrollbar-thumb{background:var(--line,#ECEDE7);border-radius:5px;}
-.ipo-up{flex:0 0 auto;min-width:198px;max-width:230px;background:var(--summary-bg,#F6F7F2);
+.ipo-up{min-width:0;background:var(--summary-bg,#F6F7F2);
   border:1px solid var(--line,#ECEDE7);border-radius:12px;padding:11px 13px;}
 .ipo-up .nm{font-size:13px;font-weight:800;display:flex;justify-content:space-between;gap:8px;align-items:center;}
 .ipo-up .sub{font-size:10.5px;color:var(--muted,#9a9b92);margin-top:5px;line-height:1.5;}
@@ -447,17 +448,15 @@ def _apply(recent, market, sector, sort):
 
 # ── 메인 렌더 ─────────────────────────────────────────────────
 def render_ipo_tab():
-    st.markdown(_CSS, unsafe_allow_html=True)
-    st.markdown('<div class="ipo-bar"></div>', unsafe_allow_html=True)
-    st.title("IPO")
-
     data = load_ipo()
     recent = data.get("recent") or []
     upcoming = data.get("upcoming") or []
     cap_txt = f"기준 {data.get('asof','')} · 최근 2년 내 상장(시총 5,000억원 이상)"
     if data.get("_sample"):
         cap_txt = "샘플 데이터 — 엔진 첫 실행 후 실데이터로 대체돼요 · " + cap_txt
-    st.caption(cap_txt)
+
+    # 초록 바 + 제목 + 캡션(다른 탭과 동일 배치). 탭 CSS는 바와 한 블록으로 합침.
+    tab_header("IPO", caption=cap_txt, css=_CSS)
 
     # ① 향후 IPO 일정
     st.markdown('<div class="ipo-sec">향후 IPO 일정 '
