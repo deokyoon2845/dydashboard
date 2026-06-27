@@ -11,7 +11,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from modules.stocks import naver_stock_url
+from modules.stocks import naver_stock_url, naver_stock_page_url, naver_n_icon
 from modules.ui import tab_header
 
 KW_PATH = Path("data/keywords_today.json")
@@ -43,6 +43,11 @@ _KW_CSS = """
 .kw-wbar{height:4px;border-radius:3px;background:var(--line,#ECEDE7);margin:0 0 9px;overflow:hidden;}
 .kw-wbar>span{display:block;height:100%;background:var(--sage,#A7BBA9);border-radius:3px;}
 .kw-stocks{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:9px;}
+.kw-stkwrap{display:inline-flex;align-items:center;}
+.nv{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;flex:none;
+  border-radius:4px;background:#03C75A;color:#fff;font-size:10px;font-weight:900;
+  text-decoration:none;margin-left:5px;vertical-align:1px;line-height:1;}
+.nv:hover{filter:brightness(.92);}
 .kw-stk{font-size:11px;font-weight:600;text-decoration:none;background:var(--pill-bg,#F1F2EC);
   color:var(--pill-ink,#5d6258);border:1px solid var(--line,#ECEDE7);padding:2px 8px;border-radius:7px;}
 .kw-stk.kw-stk-watch{border-color:#D9A93C;}
@@ -180,8 +185,10 @@ def _stock_html(names, watch_set):
         label = ("⭐ " if is_watch else "") + html.escape(n)
         watch_cls = " kw-stk-watch" if is_watch else ""
         parts.append(
-            f'<a class="kw-stk{watch_cls}" href="{html.escape(naver_stock_url(n))}" '
+            f'<span class="kw-stkwrap">'
+            f'<a class="kw-stk{watch_cls}" href="{html.escape(naver_stock_page_url(name=n))}" '
             f'target="_blank" rel="noopener">{label}</a>'
+            f'{naver_n_icon(name=n)}</span>'
         )
     return f'<div class="kw-stocks">{"".join(parts)}</div>' if parts else ""
 
