@@ -3,7 +3,7 @@
 설계(★silent-fail 방지 · 너 원칙대로)
   · '스파인'(목록·시총·현재가·등락·상장일)은 100% 확정 API인 금융위 주식시세정보만으로 만든다.
       - 최근 2년 신규상장 판별 = 오늘 스냅샷 − 2년전 스냅샷의 종목코드 차집합
-      - 시총 필터 = mrktTotAmt ≥ 2,000억
+      - 시총 필터 = mrktTotAmt ≥ 5,000억
       - 상장일 = 그 종목의 시세 첫 등장일(min basDt). (getCorpOutline가 활성이면 그 값 우선)
   · '살'(회사소개·보호예수)은 best-effort. 활성/엔드포인트가 확인되면 채우고, 아니면 빈값으로
       두되 단계별 커버리지를 로그로 분명히 찍는다(조용히 빈값 위장 금지).
@@ -39,7 +39,7 @@ _LOCK_OPS = ["getMnatryHldDpsRtrInfo", "getMandatoryDpsRtrInfo",
 _DART = "https://opendart.fss.or.kr/api"
 _DART_LIST = f"{_DART}/list.json"
 
-CAP_MIN = 200_000_000_000          # 2,000억 (원)
+CAP_MIN = 200_000_000_000          # 5,000억 (원)
 RECENT_DAYS = 731                  # 최근 2년(+1)
 MAX_RECENT = 60                    # 뷰어 표시 상한
 _EXCLUDE = ("스팩", "기업인수목적")
@@ -316,7 +316,7 @@ def collect() -> dict:
         if past_codes and str(x.get("srtnCd")) in past_codes:
             continue
         cands.append(x)
-    _log(f"시총≥2000억 & 최근상장 후보 {len(cands)}종목")
+    _log(f"시총≥5000억 & 최근상장 후보 {len(cands)}종목")
 
     recent, n_listed, n_intro, n_lock = [], 0, 0, 0
     cutoff = (date.today() - timedelta(days=RECENT_DAYS)).strftime("%Y%m%d")
@@ -381,7 +381,7 @@ def collect() -> dict:
 if __name__ == "__main__":
     try:
         import json
-        print(json.dumps(collect(), ensure_ascii=False)[:2000])
+        print(json.dumps(collect(), ensure_ascii=False)[:5000])
     except Exception:
         traceback.print_exc()
         sys.exit(1)
