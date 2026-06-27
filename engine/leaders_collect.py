@@ -11,8 +11,19 @@ GitHub Actions(.github/workflows/leaders.yml)의 일일 스케줄 또는 수동 
 
 "주도" 점수 (종목, 0~100) = 가중합
   모멘텀 0.35 · 상대강도 0.20 · 추세지속성 0.20 · 유동성 0.15 · 신고가근접 0.10
-하드 필터: 시총 ≥ MCAP_MIN_EOK · 평균거래대금 ≥ TURNOVER_MIN_EOK · 우선주/스팩/리츠/ETF 제외 ·
-           3개월 수익률 산출 가능한 시계열 길이.
+하드 필터(=정밀스캔 대상): 시총 ≥ MCAP_MIN_EOK · 평균거래대금 ≥ TURNOVER_MIN_EOK ·
+           우선주/스팩/리츠/ETF 제외 · 3개월 수익률 산출 가능한 시계열 길이.
+
+★ 주도 게이트(is_leader) — '분석 대상'과 '주도주'를 구분하는 추가 관문.
+  하드 필터만으론 횡보·하락 종목까지 모두 '후보'로 남아 매트릭스가 과밀해진다.
+  주도주의 본질(시장보다 강하게·신고가 근처에서·추세를 타고·거래를 동반해 오름)을
+  통과 조건으로 건다. GATE_PRESET('약'/'중'/'강')으로 강도 조절(기본 '중').
+    · 약 : RS_3m>0 and mom_3m>0
+    · 중 : 약 + high_ratio≥80 and above_ma60 and turnover≥50  (권장)
+    · 강 : 중 + aligned(정배열) and high_ratio≥90 and turnover≥80
+  폭주장 대비 상한 LEADER_CAP(점수순)으로 표시 개수 천장을 둔다.
+  ※ 섹터 점수·폭(breadth)은 게이트와 무관하게 정밀스캔 전체로 계산(섹터 통계 보존).
+     게이트는 stocks[].is_leader 플래그로만 표시되고, 뷰어가 이 플래그로 추려 보여준다.
 
 주도 섹터(=업종) 점수 = 0.5·상위5종목 평균점수 + 0.3·breadth + 0.2·업종모멘텀순위
   breadth = 업종 내 (1개월 수익률>0 & 종가>20일선) 종목 비율. 구성종목 SECTOR_MIN_N개 미만 업종은
@@ -53,6 +64,41 @@ SECTOR_TOPK = 5            # 섹터 점수 = 상위 K 종목 평균
 TOP_STOCKS_PER_SECTOR = 6  # 섹터에 묶어 저장할 종목 수(뷰어 표시용 상한)
 
 WEIGHTS = {"mom": 0.35, "rs": 0.20, "trend": 0.20, "liq": 0.15, "high": 0.10}
+
+# ── 주도 게이트(is_leader 판정) ──────────────────────────────────────
+# '분석 대상(후보)'과 '실제 주도주'를 가르는 추가 관문. GATE_PRESET로 강도 조절.
+#   약 : 시장 대비 강세 + 절대 상승만        (느슨 · 통과 多)
+#   중 : 약 + 고점권 + 추세생존 + 유동성 상향 (권장)
+#   강 : 중 + 정배열 + 신고가 임박 + 유동성↑↑ (엄격 · 통과 少)
+# 환경변수 LEADERS_GATE 로도 덮어쓸 수 있다(예: LEADERS_GATE=강).
+GATE_PRESET = os.environ.get("LEADERS_GATE", "중").strip()
+_GATE_TABLE = {
+    "약": {"rs_min": 0.0, "mom3_min": 0.0, "high_min": 0.0,
+           "above_ma60": False, "aligned": False, "turnover_min": TURNOVER_MIN_EOK},
+    "중": {"rs_min": 0.0, "mom3_min": 0.0, "high_min": 80.0,
+           "above_ma60": True, "aligned": False, "turnover_min": 50.0},
+    "강": {"rs_min": 0.0, "mom3_min": 0.0, "high_min": 90.0,
+           "above_ma60": True, "aligned": True, "turnover_min": 80.0},
+}
+GATE = _GATE_TABLE.get(GATE_PRESET, _GATE_TABLE["중"])
+LEADER_CAP = int(os.environ.get("LEADERS_CAP", "160"))  # 주도주 표시 상한(점수순) — 폭주장 안전장치
+
+
+def _passes_gate(m, rs_3m):
+    """주도 게이트 통과 여부. m=metrics(_metrics 결과), rs_3m=시장대비 3개월 초과수익."""
+    if (rs_3m or 0) <= GATE["rs_min"]:
+        return False
+    if (m.get("ret_3m") or 0) <= GATE["mom3_min"]:
+        return False
+    if (m.get("high_ratio") or 0) < GATE["high_min"]:
+        return False
+    if GATE["above_ma60"] and not m.get("above_ma60"):
+        return False
+    if GATE["aligned"] and not m.get("aligned"):
+        return False
+    if (m.get("turnover_eok") or 0) < GATE["turnover_min"]:
+        return False
+    return True
 
 # 세분 업종(79) → 색·그룹용 대표 카테고리 (substring 규칙 · 못 맞추면 '기타')
 COARSE_RULES = [
@@ -393,12 +439,22 @@ def score(cands, mkt_ret):
             "mcap_eok": round(c["mcap_eok"]),
             "turnover_eok": m["turnover_eok"],
             "high_ratio": m["high_ratio"], "aligned": m["aligned"],
+            "above_ma60": bool(m.get("above_ma60")),
             "streak": m["streak"], "spark": m.get("spark") or [],
+            "is_leader": _passes_gate(m, rs_raw[i]),
             "comp": {"mom": round(mom_s[i], 1), "rs": round(rs_s[i], 1),
                      "trend": trend_s, "liq": round(liq_s[i], 1),
                      "high": round(high_s, 1)},
         })
     out.sort(key=lambda x: x["score"], reverse=True)
+
+    # 폭주장 안전장치: 게이트 통과분이 LEADER_CAP을 넘으면 점수 하위부터 주도 해제
+    seen = 0
+    for s in out:
+        if s["is_leader"]:
+            seen += 1
+            if seen > LEADER_CAP:
+                s["is_leader"] = False
     return out
 
 
@@ -483,6 +539,7 @@ def collect():
     sectors = build_sectors(stocks)
 
     now = datetime.now(_KST)
+    n_leaders = sum(1 for s in stocks if s.get("is_leader"))
     payload = {
         "asof": now.strftime("%Y-%m-%d %H:%M"),
         "asof_date": now.strftime("%Y-%m-%d"),
@@ -490,13 +547,15 @@ def collect():
             "weights": WEIGHTS, "mcap_min_eok": MCAP_MIN_EOK,
             "turnover_min_eok": TURNOVER_MIN_EOK, "sector_min_n": SECTOR_MIN_N,
             "universe_n": len(uni), "scanned_n": len(cand),
-            "qualified_n": len(stocks), "fetch_fail": fail,
+            "qualified_n": len(stocks), "leaders_n": n_leaders,
+            "gate_preset": GATE_PRESET, "gate": GATE, "leader_cap": LEADER_CAP,
+            "fetch_fail": fail,
         },
         "sectors": sectors,
         "stocks": stocks,
     }
     print(f"[collect] 완료 · 섹터 {len(sectors)} · 종목 {len(stocks)} · "
-          f"{time.time()-t0:.0f}s")
+          f"주도 {n_leaders}(게이트 '{GATE_PRESET}') · {time.time()-t0:.0f}s")
     return payload
 
 
