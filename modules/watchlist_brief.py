@@ -39,7 +39,7 @@ import requests
 import streamlit as st
 from lxml import html as lxml_html
 
-from modules.stocks import naver_stock_url
+from modules.stocks import naver_stock_url, naver_stock_page_url, naver_n_icon
 from modules.watchlist import load_watchlist, save_watchlist
 from modules.indices import fetch_intraday, fetch_history
 
@@ -68,6 +68,10 @@ _WB_CSS = """
 .wb-chead .nm{font-size:12px;color:var(--muted,#9a9b92);font-weight:600;}
 .wb-chead .nm a{color:var(--ink,#34352f);text-decoration:none;}
 .wb-chead .nm a:hover{text-decoration:underline;}
+.wb-chead .nv{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;flex:none;
+  border-radius:4px;background:#03C75A;color:#fff;font-size:10px;font-weight:900;
+  text-decoration:none;margin-left:5px;vertical-align:1px;line-height:1;}
+.wb-chead .nv:hover{filter:brightness(.92);}
 .wb-chead .val{font-size:24px;font-weight:700;color:var(--ink,#34352f);letter-spacing:-.02em;}
 .wb-chead .chg{font-size:13px;font-weight:700;margin-left:2px;}
 .wb-chead .chg.up{color:var(--up,#B65F5A);} .wb-chead .chg.down{color:var(--down,#5A7CA0);}
@@ -534,11 +538,12 @@ def _chart_head(name, code, cur, change, pct, sub=""):
     cls = "up" if up else "down"
     arrow = "▲" if change > 0 else ("▼" if change < 0 else "▬")
     nm = html.escape(name)
+    _nv = naver_n_icon(name=name, code=code)
     if code:
-        nm_inner = (f'<a href="{html.escape(naver_stock_url(name))}" '
-                    f'target="_blank" rel="noopener">⭐ {nm}</a>')
+        nm_inner = (f'<a href="{html.escape(naver_stock_page_url(name=name, code=code))}" '
+                    f'target="_blank" rel="noopener">⭐ {nm}</a>{_nv}')
     else:
-        nm_inner = f'⭐ {nm}'
+        nm_inner = f'⭐ {nm}{_nv}'
     sub_html = f' · {html.escape(sub)}' if sub else ''
     return (f'<div class="wb-chead">'
             f'<span class="nm">{nm_inner}{sub_html}</span><br>'
