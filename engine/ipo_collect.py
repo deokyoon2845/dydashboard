@@ -59,13 +59,21 @@ def _log(msg):
 
 
 # ── data.go.kr 공통 ──
-def _get(url, params, timeout=15):
-    r = requests.get(url, params=params, headers=_UA, timeout=timeout)
-    r.raise_for_status()
-    txt = r.text.strip()
-    if txt.startswith("<"):
-        raise RuntimeError(f"비-JSON 응답(인증/권한/파라미터): {txt[:160]}")
-    return r.json()
+def _get(url, params, timeout=30, retries=3):
+    """GET → JSON. 네트워크 타임아웃·연결오류만 재시도(HTTP 4xx/비-JSON은 즉시 전파)."""
+    last = None
+    for i in range(retries):
+        try:
+            r = requests.get(url, params=params, headers=_UA, timeout=timeout)
+            r.raise_for_status()
+            txt = r.text.strip()
+            if txt.startswith("<"):
+                raise RuntimeError(f"비-JSON 응답(인증/권한/파라미터): {txt[:160]}")
+            return r.json()
+        except (requests.Timeout, requests.ConnectionError) as e:
+            last = e
+            time.sleep(1.5 * (i + 1))
+    raise last
 
 
 def _items(data):
@@ -99,9 +107,18 @@ def _fmt_date(yyyymmdd):
 
 # ── 시세정보: 최신 영업일 / 스냅샷 / 상장일 ──
 def _latest_basdt(key):
-    it, _ = _items(_get(_PRICE, {"serviceKey": key, "resultType": "json",
-                                 "numOfRows": 1, "pageNo": 1}))
-    return it[0]["basDt"] if it else None
+    """오늘부터 거꾸로 explicit basDt로 조회(인덱스 사용→빠름). 데이터 있는 첫 날 반환.
+       basDt 없이 호출하면 전체(수백만건)를 스캔해 느리므로 절대 그렇게 하지 않는다."""
+    for i in range(0, 12):
+        d = (date.today() - timedelta(days=i)).strftime("%Y%m%d")
+        try:
+            it, _ = _items(_get(_PRICE, {"serviceKey": key, "resultType": "json",
+                                         "numOfRows": 1, "pageNo": 1, "basDt": d}))
+        except Exception:
+            continue
+        if it:
+            return d
+    return None
 
 
 def _snapshot(key, basdt, rows=5000):
