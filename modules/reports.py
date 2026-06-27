@@ -34,6 +34,7 @@ from pathlib import Path
 import streamlit as st
 
 from modules.stocks import naver_stock_url
+from modules.ui import tab_header
 from modules.mood import MOOD_KO, mood_css
 from modules import db
 
@@ -767,20 +768,14 @@ def _render_delete_ui(files):
 # ── 메인: 리포트 표시 (탭 상단) ──────────────────────────────
 
 def render_reports():
-    st.markdown(_RPT_CSS, unsafe_allow_html=True)
     files = list_reports()
 
     sel_date = _selected_date(files)
-    st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
 
-    # 제목 우측에 ⓘ 보고서 보는 법 팝오버 배치
-    title_col, help_col = st.columns([0.82, 0.18])
-    with title_col:
-        st.markdown(f'<div class="rpt2-date">{_fmt_date_ko(sel_date)}</div>'
-                    f'<div class="rpt2-title">전략·시황 보고서</div>',
-                    unsafe_allow_html=True)
-    with help_col:
-        _render_report_help_popover()
+    # 초록 바 + 날짜 + 제목을 한 블록 마스트헤드로(다른 탭 h1과 동일 크기·간격).
+    tab_header("전략·시황 보고서", eyebrow=_fmt_date_ko(sel_date), css=_RPT_CSS)
+    # 제목 아래에 '보고서 보는 법' 팝오버 배치(예전엔 제목 우측 컬럼).
+    _render_report_help_popover()
 
     if not files:
         st.markdown(
