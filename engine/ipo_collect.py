@@ -1,24 +1,33 @@
 """[엔진] 증시 IPO 탭 데이터 수집 → dict 반환 (저장은 ipo_run이 담당).
 
-설계(★silent-fail 방지 · 너 원칙대로)
-  · '스파인'(목록·시총·현재가·등락·상장일)은 100% 확정 API인 금융위 주식시세정보만으로 만든다.
+설계(★silent-fail 방지 · 엔진-퍼스트)
+  · '스파인'(목록·시총·현재가·등락·상장일·상장후 추이)은 100% 확정 API인
+    금융위 주식시세정보(getStockPriceInfo)만으로 만든다.
       - 최근 2년 신규상장 판별 = 오늘 스냅샷 − 2년전 스냅샷의 종목코드 차집합
-      - 시총 필터 = mrktTotAmt ≥ 5,000억
-      - 상장일 = 그 종목의 시세 첫 등장일(min basDt). (getCorpOutline가 활성이면 그 값 우선)
-  · '살'(회사소개·보호예수)은 best-effort. 활성/엔드포인트가 확인되면 채우고, 아니면 빈값으로
-      두되 단계별 커버리지를 로그로 분명히 찍는다(조용히 빈값 위장 금지).
-  · 향후 IPO = DART 증권신고서(지분증권) 접수목록(미상장 corp_cls=E).
+      - 시총 필터 = mrktTotAmt ≥ CAP_MIN(기본 5,000억)
+      - 상장일 = 기업기본정보 enpKrxLstgDt/enpKosdaqLstgDt → 없으면 시세 첫 등장일
+      - 추이 스파크라인 = 상장일~최신 일별 종가(srtnCd 필터)를 다운샘플(약 60p)
+  · '살'(회사소개·보호예수)은 활성 API로 채운다.
+      - 회사소개·상장일·crno = 기업기본정보(getCorpOutline_V2, 15043184)  ← 승인됨
+      - 보호예수 = 주식발행정보 V3(GetStocIssuInfoService_V3, 15043423)   ← 승인됨
+        · V3 오퍼레이션명이 공식 명세에 미노출 → 후보 자동탐지 + 첫 성공 응답의
+          키/샘플을 로그로 남긴다(필드명 확정용). 조용히 빈값 위장 금지.
+  · 향후 IPO = DART 증권신고서(지분증권) 접수목록(미상장 corp_cls=E) + 기업소개.
+        상장예정일은 접수일 기준 통상 4~6주 후 '예상'으로 표기(원문 파싱 미사용).
+
+  ※ 상장방식·밸류(공모가/PER)는 금융위 API에 없어 필드 자체를 제외함(2025.06 결정).
 
 키(엔진 규칙: 환경변수)
   DATA_GO_KR_KEY (없으면 MOLIT_API_KEY)  · DART_API_KEY
 
 확정 필드(프로브 검증)
   시세정보 item: basDt, srtnCd, isinCd, itmsNm, mrktCtg, clpr, fltRt, lstgStCnt, mrktTotAmt
+  기업기본정보 item: crno, corpNm, enpMainBizNm, enpKrxLstgDt, enpKosdaqLstgDt, sicNm ...
   DART list:    corp_code, corp_name, stock_code, corp_cls, report_nm, rcept_no, rcept_dt, flr_nm
-  getCorpOutline_V2(실측): crno, corpNm, enpMainBizNm, enpKrxLstgDt, enpKosdaqLstgDt, sicNm ...
 """
 
 import os
+import re
 import sys
 import time
 import traceback
@@ -30,18 +39,25 @@ _UA = {"User-Agent": "Mozilla/5.0 (compatible; DYMonitoring-IPO/1.0)"}
 
 _DATAGO = "https://apis.data.go.kr/1160100/service"
 _PRICE = f"{_DATAGO}/GetStockSecuritiesInfoService/getStockPriceInfo"
-_CORP = f"{_DATAGO}/GetCorpBasicInfoService_V2/getCorpOutline_V2"   # 기업기본정보(활성 필요)
-# 주식발행정보 의무보호예수 — 오퍼레이션명이 문서상 불명확 → 1회 자동탐지
-_ISSU_SERVICES = ["GetStocIssuInfoService", "GetStockIssuInfoService"]
-_LOCK_OPS = ["getMnatryHldDpsRtrInfo", "getMandatoryDpsRtrInfo",
-             "getMandatoryDepositReturnInfo", "getOblgDpsRtrInfo", "getHldDpsRtrInfo"]
+_CORP = f"{_DATAGO}/GetCorpBasicInfoService_V2/getCorpOutline_V2"   # 기업기본정보(승인됨)
+
+# 주식발행정보 V3 — Base가 /service/ 없이 바로 서비스명. 오퍼레이션명은 자동탐지.
+_ISSU_BASE = "https://apis.data.go.kr/1160100/GetStocIssuInfoService_V3"
+# 의무보호예수반환정보 조회 후보 오퍼레이션명(첫 성공 1개를 캐시)
+_LOCK_OPS = [
+    "getOblgItemDpsRtrInfo", "getMandatoryDpsRtrInfo", "getOblgDpsRtrInfo",
+    "getMnatryHldDpsRtrInfo", "getMandatoryDepositReturnInfo",
+    "getHldDpsRtrInfo", "getStockOblgDpsRtrInfo", "getOblgRtrInfo",
+    "getMandatoryHoldDepositReturnInfo", "getDpsRtrInfo",
+]
 
 _DART = "https://opendart.fss.or.kr/api"
 _DART_LIST = f"{_DART}/list.json"
 
-CAP_MIN = 200_000_000_000          # 5,000억 (원)
+CAP_MIN = 500_000_000_000          # 5,000억 (원) — 종목 수 과다 방지(2,000억으로 낮추려면 200_000_000_000)
 RECENT_DAYS = 731                  # 최근 2년(+1)
-MAX_RECENT = 60                    # 뷰어 표시 상한
+MAX_RECENT = 40                    # 뷰어 표시 상한
+SPARK_POINTS = 60                  # 스파크라인 다운샘플 점 수
 _EXCLUDE = ("스팩", "기업인수목적")
 
 
@@ -105,10 +121,19 @@ def _fmt_date(yyyymmdd):
     return f"{s[:4]}.{s[4:6]}.{s[6:8]}" if len(s) >= 8 else ""
 
 
-# ── 시세정보: 최신 영업일 / 스냅샷 / 상장일 ──
+def _downsample(vals, n=SPARK_POINTS):
+    """리스트를 균등 간격 n개로 다운샘플(처음·끝 보존)."""
+    vals = [v for v in vals if v is not None]
+    if len(vals) <= n:
+        return [round(float(v), 2) for v in vals]
+    step = (len(vals) - 1) / (n - 1)
+    out = [vals[round(i * step)] for i in range(n)]
+    out[-1] = vals[-1]
+    return [round(float(v), 2) for v in out]
+
+
+# ── 시세정보: 최신 영업일 / 스냅샷 ──
 def _latest_basdt(key):
-    """오늘부터 거꾸로 explicit basDt로 조회(인덱스 사용→빠름). 데이터 있는 첫 날 반환.
-       basDt 없이 호출하면 전체(수백만건)를 스캔해 느리므로 절대 그렇게 하지 않는다."""
     for i in range(0, 12):
         d = (date.today() - timedelta(days=i)).strftime("%Y%m%d")
         try:
@@ -144,41 +169,57 @@ def _nearest_past_basdt(key, target_date):
     return None
 
 
-def _listing_date_via_price(key, srtn):
-    """그 종목 시세의 첫 등장일(min basDt) ≈ 상장일. srtnCd 필터가 무시되면 None."""
-    start = (date.today() - timedelta(days=RECENT_DAYS + 60)).strftime("%Y%m%d")
-    end = date.today().strftime("%Y%m%d")
-    try:
-        it, _ = _items(_get(_PRICE, {"serviceKey": key, "resultType": "json",
-                                     "numOfRows": 900, "pageNo": 1, "srtnCd": srtn,
-                                     "beginBasDt": start, "endBasDt": end}))
-    except Exception:
-        return None
-    if not it:
-        return None
-    codes = {str(x.get("srtnCd")) for x in it}
-    if codes != {str(srtn)}:            # 필터 미적용(전체가 섞임) → 신뢰 불가
-        return None
-    ds = [x.get("basDt") for x in it if x.get("basDt")]
-    return min(ds) if ds else None
+def _daily_series(key, srtn, start_basdt, end_basdt):
+    """그 종목의 일별 종가 시리즈(srtnCd 필터). 필터 미적용 시 []를 반환(신뢰 불가).
+       반환: [(basDt, clpr)] basDt 오름차순."""
+    rows, page = [], 1
+    while page <= 3:
+        try:
+            it, body = _items(_get(_PRICE, {"serviceKey": key, "resultType": "json",
+                                            "numOfRows": 600, "pageNo": page, "srtnCd": srtn,
+                                            "beginBasDt": start_basdt, "endBasDt": end_basdt}))
+        except Exception:
+            break
+        if not it:
+            break
+        codes = {str(x.get("srtnCd")) for x in it}
+        if codes - {str(srtn)}:            # 다른 종목이 섞임 → 필터 미적용
+            return []
+        for x in it:
+            d = x.get("basDt")
+            c = _f(x.get("clpr"))
+            if d and c is not None:
+                rows.append((str(d), c))
+        total = int(body.get("totalCount") or 0)
+        if page * 600 >= total:
+            break
+        page += 1
+    rows.sort(key=lambda r: r[0])
+    return rows
 
 
-# ── 기업기본정보(getCorpOutline): 회사소개 + 상장일 + crno (활성 필요) ──
+# ── 기업기본정보(getCorpOutline): 회사소개 + 상장일 + crno ──
+_corp_fail = 0
 _corp_disabled = False
 
 
 def _corp_outline(key, corp_nm):
-    global _corp_disabled
+    """승인된 기업기본정보. 일시 오류엔 관대하게(연속 4회 인증오류 시에만 비활성)."""
+    global _corp_fail, _corp_disabled
     if _corp_disabled or not corp_nm:
         return None
     try:
         it, _ = _items(_get(_CORP, {"serviceKey": key, "resultType": "json",
                                     "numOfRows": 3, "pageNo": 1, "corpNm": corp_nm}))
+        _corp_fail = 0
     except Exception as e:
-        if "403" in str(e) or "비-JSON" in str(e):
-            _corp_disabled = True
-            _log("기업기본정보 비활성/권한오류 → 회사소개·crno 생략 "
-                 f"(활용신청: data.go.kr 15043184). 상세: {str(e)[:80]}")
+        auth = ("403" in str(e)) or ("비-JSON" in str(e)) or ("SERVICE_KEY" in str(e).upper())
+        if auth:
+            _corp_fail += 1
+            if _corp_fail >= 4:
+                _corp_disabled = True
+                _log("기업기본정보 연속 인증오류 4회 → 회사소개·상장일·crno 생략. "
+                     f"활용신청/키 확인 필요. 상세: {str(e)[:80]}")
         return None
     nq = "".join(str(corp_nm).split())
     for x in it:
@@ -188,56 +229,65 @@ def _corp_outline(key, corp_nm):
     return it[0] if it else None
 
 
-# ── 보호예수: 1회 엔드포인트 자동탐지 후 crno로 조회 ──
-_lock_endpoint = "unset"   # "unset" | None | "https://.../op"
+# ── 보호예수: 주식발행정보 V3 · 1회 오퍼레이션 자동탐지 + 첫 성공 응답 로깅 ──
+_lock_op = "unset"   # "unset" | None | "https://.../op"
 
 
-def _discover_lock_endpoint(key, sample_crno):
-    global _lock_endpoint
-    if _lock_endpoint != "unset":
-        return _lock_endpoint
-    for svc in _ISSU_SERVICES:
-        for op in _LOCK_OPS:
-            url = f"{_DATAGO}/{svc}/{op}"
-            try:
-                _items(_get(url, {"serviceKey": key, "resultType": "json",
-                                  "numOfRows": 1, "pageNo": 1, "crno": sample_crno}))
-                _lock_endpoint = url
-                _log(f"보호예수 엔드포인트 확인: {svc}/{op}")
-                return url
-            except Exception:
-                continue
-    _lock_endpoint = None
-    _log("보호예수 엔드포인트 자동탐지 실패 → 이번 수집은 보호예수 생략(후보 5종 모두 오류). "
-         "주식발행정보(15043423) 활용신청 여부·오퍼레이션명을 알려주면 확정할게.")
+def _discover_lock_op(key, sample_crno):
+    global _lock_op
+    if _lock_op != "unset":
+        return _lock_op
+    if not sample_crno:
+        return None
+    for op in _LOCK_OPS:
+        url = f"{_ISSU_BASE}/{op}"
+        try:
+            it, _ = _items(_get(url, {"serviceKey": key, "resultType": "json",
+                                      "numOfRows": 5, "pageNo": 1, "crno": sample_crno}))
+        except Exception:
+            continue
+        _lock_op = url
+        keys = sorted((it[0] if it else {}).keys()) if it else []
+        sample = (str(it[0])[:300] if it else "(빈 응답)")
+        _log(f"보호예수 V3 오퍼레이션 확인: {op}")
+        _log(f"보호예수 응답 키: {keys}")
+        _log(f"보호예수 샘플: {sample}")
+        return url
+    _lock_op = None
+    _log("보호예수 V3 오퍼레이션 자동탐지 실패(후보 전부 오류). "
+         f"Swagger의 '의무보호예수반환정보 조회' 영문 op명을 알려주면 확정할게. 후보: {_LOCK_OPS}")
     return None
+
+
+_DATE_KEY_HINT = re.compile(r"(rtr|dps|rls|until|hld|반환|해제)", re.I)
 
 
 def _lockup(key, crno):
     if not crno:
         return ""
-    url = _discover_lock_endpoint(key, crno)
+    url = _discover_lock_op(key, crno)
     if not url:
         return ""
     try:
         it, _ = _items(_get(url, {"serviceKey": key, "resultType": "json",
-                                  "numOfRows": 50, "pageNo": 1, "crno": crno}))
+                                  "numOfRows": 80, "pageNo": 1, "crno": crno}))
     except Exception:
         return ""
     if not it:
         return ""
     today = date.today().strftime("%Y%m%d")
-    future = []
+    # 1순위: 반환/해제 의미 키의 미래 날짜. 없으면 전체 값에서 미래 날짜 스캔.
+    hinted, fallback = [], []
     for x in it:
-        for k in ("rtrDt", "rtrnDt", "depoRtrDt", "scrsDepoRtrDt", "untilDt", "rlsDt"):
-            v = x.get(k)
-            if v and str(v) >= today:
-                future.append(str(v))
-                break
+        for k, v in x.items():
+            s = re.sub(r"[^0-9]", "", str(v))
+            if len(s) == 8 and s.isdigit() and "19000101" < s < "21001231":
+                if s >= today:
+                    (hinted if _DATE_KEY_HINT.search(str(k)) else fallback).append(s)
+    future = sorted(hinted) or sorted(fallback)
     if future:
-        future.sort()
         return f"미해제 {len(future)}건 · 최근 해제 {_fmt_date(future[0])}"
-    return f"등록 {len(it)}건"
+    return f"보호예수 {len(it)}건 등록"
 
 
 # ── DART: 향후 IPO(증권신고서 지분증권 · 미상장) ──
@@ -267,10 +317,19 @@ def _dart_upcoming(key, days=75):
             if not nm or nm in seen or any(t in nm for t in _EXCLUDE):
                 continue
             seen.add(nm)
+            rcept = r.get("rcept_dt", "")
+            # 접수일 기준 통상 4~6주 후 상장 예상(원문 파싱 미사용 · 어디까지나 추정)
+            est = ""
+            try:
+                d0 = datetime.strptime(str(rcept), "%Y%m%d").date()
+                est = (f"{(d0 + timedelta(days=28)):%m.%d}~{(d0 + timedelta(days=42)):%m.%d} 예상")
+            except Exception:
+                pass
             out.append({
                 "name": nm,
-                "state": f"증권신고서 접수 {_fmt_date(r.get('rcept_dt'))}",
-                "dday": "", "under": "", "method": "", "intro": "", "soon": False,
+                "state": f"증권신고서 접수 {_fmt_date(rcept)}",
+                "est_listing": est,       # 상장 예상 구간(추정)
+                "dday": "접수", "under": "", "intro": "", "soon": False,
                 "dart_url": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={r.get('rcept_no','')}",
             })
         total = int(data.get("total_count") or 0)
@@ -316,10 +375,11 @@ def collect() -> dict:
         if past_codes and str(x.get("srtnCd")) in past_codes:
             continue
         cands.append(x)
-    _log(f"시총≥5000억 & 최근상장 후보 {len(cands)}종목")
+    _log(f"시총≥{_fmt_cap(CAP_MIN)} & 최근상장 후보 {len(cands)}종목")
 
-    recent, n_listed, n_intro, n_lock = [], 0, 0, 0
+    recent, n_listed, n_intro, n_lock, n_spark = [], 0, 0, 0, 0
     cutoff = (date.today() - timedelta(days=RECENT_DAYS)).strftime("%Y%m%d")
+    win_start = (date.today() - timedelta(days=RECENT_DAYS + 90)).strftime("%Y%m%d")
     for x in cands:
         srtn = str(x.get("srtnCd"))
         nm = str(x.get("itmsNm", ""))
@@ -333,11 +393,21 @@ def collect() -> dict:
         if outline:
             lstg = ((outline.get("enpKosdaqLstgDt") if mkt == "코스닥" else outline.get("enpKrxLstgDt"))
                     or outline.get("enpKrxLstgDt") or outline.get("enpKosdaqLstgDt") or "")
-        if not lstg:
-            lstg = _listing_date_via_price(key, srtn) or ""
+        lstg = re.sub(r"[^0-9]", "", str(lstg))[:8]
+
+        # 일별 시리즈(상장후 추이 + 상장일 보강) — 한 번 호출로 두 용도
+        series = _daily_series(key, srtn, win_start, basdt)
+        if series and not lstg:
+            lstg = series[0][0]
         if lstg and lstg < cutoff:
             continue
 
+        spark = []
+        if series:
+            closes = [c for d, c in series if (not lstg) or d >= lstg]
+            spark = _downsample(closes)
+        if spark:
+            n_spark += 1
         if lstg:
             n_listed += 1
         if intro:
@@ -347,12 +417,11 @@ def collect() -> dict:
             n_lock += 1
 
         recent.append({
-            "name": nm, "code": srtn, "market": mkt, "sector": mkt,
+            "name": nm, "code": srtn, "market": mkt,
             "listed": _fmt_date(lstg), "_lstg": lstg,
             "cap": _fmt_cap(cap), "cap_won": cap,
             "price": f"{int(_f(x.get('clpr')) or 0):,}", "pct": _f(x.get("fltRt")),
-            "method": "", "ipo_price": "", "valuation": "",
-            "lockup": lock, "intro": intro,
+            "lockup": lock, "intro": intro, "spark": spark,
         })
         time.sleep(0.05)
 
@@ -367,7 +436,8 @@ def collect() -> dict:
         if o and o.get("enpMainBizNm"):
             u["intro"] = o["enpMainBizNm"]
 
-    _log(f"완료: 최근상장 {len(recent)}종목 (상장일 {n_listed} · 회사소개 {n_intro} · 보호예수 {n_lock}) "
+    _log(f"완료: 최근상장 {len(recent)}종목 "
+         f"(상장일 {n_listed} · 회사소개 {n_intro} · 보호예수 {n_lock} · 추이 {n_spark}) "
          f"/ 향후 {len(upcoming)}건")
 
     return {
