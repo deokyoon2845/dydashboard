@@ -349,3 +349,45 @@ def load_ipo() -> dict | None:
            .limit(1)
            .execute())
     return res.data[0] if res.data else None
+
+
+# ── 주도주 스냅샷: 읽기·쓰기 ──────────────────────────────────
+# leaders 테이블에 날짜(asof_date)별로 전종목 스캔·점수화 결과를 payload(jsonb)로 upsert.
+# 뷰어(modules/leaders.py)는 최신 1행만 읽어 '항상 실데이터'를 보장.
+# payload 구조: {asof, asof_date, params, sectors[], stocks[]}
+ 
+def save_leaders(payload: dict, asof: str | None = None,
+                 asof_date: str | None = None) -> str:
+    """주도주 스냅샷 저장(upsert, asof_date 단일행). payload는 collect() 결과 dict."""
+    now = datetime.now()
+    asof = asof or (payload or {}).get("asof") or now.strftime("%Y-%m-%d %H:%M")
+    asof_date = asof_date or (payload or {}).get("asof_date") or asof[:10]
+    row = {
+        "asof_date": asof_date,
+        "asof": asof,
+        "payload": payload,
+        "updated_at": now.isoformat(),
+    }
+    _client().table(LEADERS_TABLE).upsert(row, on_conflict="asof_date").execute()
+    return asof_date
+ 
+ 
+def load_leaders() -> dict | None:
+    """가장 최신 주도주 스냅샷 payload를 반환. 행이 없으면 None.
+       반환 dict: {asof, asof_date, params, sectors[], stocks[]}."""
+    res = (_client().table(LEADERS_TABLE)
+           .select("asof,payload")
+           .order("asof_date", desc=True)
+           .limit(1)
+           .execute())
+    if not res.data:
+        return None
+    row = res.data[0]
+    payload = row.get("payload") or {}
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            payload = {}
+    payload.setdefault("asof", row.get("asof"))
+    return payload
