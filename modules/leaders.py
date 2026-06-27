@@ -23,21 +23,13 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from modules.stocks import naver_stock_url
+from modules.stocks import naver_stock_url, naver_stock_page_url, naver_n_icon
 from modules.ui import tab_header
 
 
-def _naver_item_url(code: str) -> str:
-    """종목코드(6자리) → 네이버 증권 종목페이지. 코드가 없으면 빈 문자열."""
-    c = "".join(ch for ch in str(code or "") if ch.isdigit())[:6]
-    return f"https://finance.naver.com/item/main.naver?code={c}" if len(c) == 6 else ""
-
-
 def _nv_icon(s) -> str:
-    """종목별 네이버 증권 N 아이콘(코드 있으면 종목페이지, 없으면 검색)."""
-    url = _naver_item_url(s.get("code", "")) or naver_stock_url(s.get("name", ""))
-    return (f'<a class="nv" href="{html.escape(url)}" target="_blank" '
-            f'rel="noopener" title="네이버 증권에서 보기">N</a>')
+    """종목별 네이버 N 아이콘(네이버페이 증권 종목페이지, 코드 없으면 검색)."""
+    return naver_n_icon(name=s.get("name", ""), code=s.get("code", ""))
 
 LEADERBOARD_N = 12         # 통합 리더보드 종목 수
 MATRIX_LIMIT = 160         # 매트릭스에 찍을 상위 주도주 수(=게이트 cap과 동률)
@@ -242,7 +234,7 @@ def _leaders(stocks):
 
 def _stock_card_html(s):
     nm = html.escape(s.get("name", ""))
-    url = html.escape(naver_stock_url(s.get("name", "")))
+    url = html.escape(naver_stock_page_url(name=s.get("name", ""), code=s.get("code", "")))
     new = '<span class="ldr-new">NEW</span>' if s.get("is_new") else ""
     aligned = ' · <span style="color:var(--sage-deep)">정배열</span>' if s.get("aligned") else ""
     cap = s.get("mcap_eok")
@@ -267,7 +259,7 @@ def _leaderboard_compact(leaders, n=LEADERBOARD_N):
     rows = ""
     for i, s in enumerate(leaders[:n]):
         nm = html.escape(s.get("name", ""))
-        url = html.escape(naver_stock_url(s.get("name", "")))
+        url = html.escape(naver_stock_page_url(name=s.get("name", ""), code=s.get("code", "")))
         new = '<span class="ldr-new">N</span>' if s.get("is_new") else ""
         rank_col = "top" if i < 3 else ""
         up3 = (s.get("mom_3m") or 0) >= 0
