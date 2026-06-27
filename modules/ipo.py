@@ -109,6 +109,10 @@ _CSS = """
 .mk.kospi{background:#EBF1F5;color:#3E6488;} .mk.kosdaq{background:#F0E9F3;color:#6B4A7C;}
 .sct{font-size:10px;font-weight:700;padding:1px 6px;border-radius:5px;
   background:#EDF1EA;color:#5C7060;}
+.nv{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
+  border-radius:4px;background:#03C75A;color:#fff;font-size:10px;font-weight:900;
+  text-decoration:none;margin-left:5px;vertical-align:1px;line-height:1;}
+.nv:hover{filter:brightness(.92);}
 .up{color:var(--up,#B65F5A);} .down{color:var(--down,#5A7CA0);}
 .sp .na{font-size:11px;color:var(--muted,#9a9b92);}
 /* 펼침 상세 */
@@ -131,7 +135,12 @@ _CSS = """
 </style>
 """
 
-_SORTS = ["상장일순", "시총순", "등락순", "공모가대비순"]
+_SORTS = ["상장일순", "시총순", "등락순", "상장후수익률순"]
+
+
+def _naver_item_url(code: str) -> str:
+    c = "".join(ch for ch in str(code or "") if ch.isdigit())[:6]
+    return f"https://finance.naver.com/item/main.naver?code={c}" if len(c) == 6 else ""
 
 
 # ── DB 로드 ────────────────────────────────────────────────────
@@ -288,11 +297,28 @@ def _live_spark(name: str, days: int):
     return [round(float(vals[round(i * step)]), 2) for i in range(60)]
 
 
+def _get_spark(s: dict):
+    """상장후 일별 종가(다운샘플). 엔진 저장값 우선, 없으면 라이브 1회(캐시)."""
+    sp = s.get("spark") or []
+    if not sp:
+        sp = _live_spark(s.get("name", ""), _days_since(s.get("listed", "")))
+    return sp or []
+
+
+def _since_return(s: dict):
+    """상장일 종가 대비 현재가 수익률(%). 공모가 무료소스 부재로 이 지표로 대체."""
+    sp = _get_spark(s)
+    if len(sp) < 2 or not sp[0]:
+        return None
+    cur = s.get("price_won") or sp[-1]
+    try:
+        return (float(cur) / float(sp[0]) - 1) * 100
+    except (TypeError, ZeroDivisionError, ValueError):
+        return None
+
+
 def _row_spark(s: dict) -> str:
-    spark = s.get("spark") or []
-    if not spark:
-        spark = _live_spark(s.get("name", ""), _days_since(s.get("listed", "")))
-    return _spark_svg(spark)
+    return _spark_svg(_get_spark(s))
 
 
 # ── 큰 차트 ────────────────────────────────────────────────────
@@ -353,19 +379,22 @@ def _ret_cls(v):
 
 
 def _price_cell(s: dict) -> str:
-    """현재가(상단) + 공모가·수익률(하단). 공모가 없으면 전일등락."""
+    """현재가(상단) + 수익률(하단). 공모가 있으면 공모대비, 없으면 상장일 종가 대비."""
     now = f'<div class="now">{html.escape(str(s.get("price", "-")))}<small>원</small></div>'
     ipo = s.get("ipo_price")
-    ret = s.get("ipo_return")
     if ipo:
-        rtxt = ""
-        if ret is not None:
-            rtxt = f' · <b class="{_ret_cls(ret)}">{"+" if ret >= 0 else ""}{ret:.1f}%</b>'
+        ret = s.get("ipo_return")
+        rtxt = (f' · <b class="{_ret_cls(ret)}">{"+" if ret >= 0 else ""}{ret:.1f}%</b>'
+                if ret is not None else "")
         was = f'<div class="was">공모 {html.escape(str(ipo))}{rtxt}</div>'
     else:
-        pct = s.get("pct")
-        was = (f'<div class="was">전일 <b class="{_ret_cls(pct)}">{"+" if pct >= 0 else ""}{pct:.1f}%</b></div>'
-               if isinstance(pct, (int, float)) else '<div class="was">공모가 –</div>')
+        sr = _since_return(s)
+        if sr is not None:
+            was = f'<div class="was">상장일比 <b class="{_ret_cls(sr)}">{"+" if sr >= 0 else ""}{sr:.1f}%</b></div>'
+        else:
+            pct = s.get("pct")
+            was = (f'<div class="was">전일 <b class="{_ret_cls(pct)}">{"+" if pct >= 0 else ""}{pct:.1f}%</b></div>'
+                   if isinstance(pct, (int, float)) else '<div class="was">—</div>')
     return f'<div class="cmp">{now}{was}</div>'
 
 
@@ -378,12 +407,13 @@ def _cap_cell(s: dict) -> str:
 
 def _row_html(s: dict) -> str:
     nm = html.escape(s.get("name", ""))
-    link = html.escape(naver_stock_url(s.get("name", "")))
     sector = s.get("sector")
     sct = f'<span class="sct">{html.escape(sector)}</span>' if sector else ""
+    item = _naver_item_url(s.get("code", "")) or naver_stock_url(s.get("name", ""))
+    nv = f'<a class="nv" href="{html.escape(item)}" target="_blank" rel="noopener" title="네이버 증권에서 보기">N</a>'
     return (
         '<div class="ipo-row">'
-        f'<div class="nm"><a href="{link}" target="_blank" rel="noopener">{nm}</a>'
+        f'<div class="nm"><a href="{html.escape(item)}" target="_blank" rel="noopener">{nm}</a>{nv}'
         f'<div class="meta">{_mk_chip(s.get("market",""))}{sct}</div></div>'
         f'<div class="dt">{html.escape(str(s.get("listed","-")))}</div>'
         f'{_price_cell(s)}{_cap_cell(s)}'
@@ -403,8 +433,10 @@ def _apply(recent, market, sector, sort):
         out.sort(key=lambda r: r.get("cap_won") or 0, reverse=True)
     elif sort == "등락순":
         out.sort(key=lambda r: r["pct"] if isinstance(r.get("pct"), (int, float)) else -1e9, reverse=True)
-    elif sort == "공모가대비순":
-        out.sort(key=lambda r: r["ipo_return"] if isinstance(r.get("ipo_return"), (int, float)) else -1e9, reverse=True)
+    elif sort == "상장후수익률순":
+        keyed = [(r, _since_return(r)) for r in out]
+        keyed.sort(key=lambda t: t[1] if t[1] is not None else -1e9, reverse=True)
+        out = [r for r, _ in keyed]
     else:  # 상장일순
         out.sort(key=lambda r: r.get("listed", ""), reverse=True)
     return out
@@ -435,9 +467,12 @@ def render_ipo_tab():
             cls = "soon" if u.get("soon") else ("tbd" if dday == "접수" else "")
             sub = " · ".join(x for x in [u.get("state", ""), u.get("under", "")] if x)
             est = u.get("est_listing", "")
+            nv = (f'<a class="nv" href="{html.escape(naver_stock_url(u.get("name","")))}" '
+                  f'target="_blank" rel="noopener" title="네이버 증권에서 검색">N</a>')
             cards += (
                 '<div class="ipo-up"><div class="nm">'
-                f'{html.escape(u.get("name",""))}<span class="dday {cls}">{html.escape(dday)}</span></div>'
+                f'<span>{html.escape(u.get("name",""))}{nv}</span>'
+                f'<span class="dday {cls}">{html.escape(dday)}</span></div>'
                 f'<div class="sub">{html.escape(sub)}</div>'
                 f'<div class="ds">{html.escape(u.get("intro",""))}</div>'
                 + (f'<div class="est">📅 상장 {html.escape(est)}</div>' if est else "")
@@ -449,7 +484,7 @@ def render_ipo_tab():
 
     # ② 최근 상장 — 필터/정렬
     st.markdown('<div class="ipo-sec">최근 상장 종목 '
-                '<span class="mut">· 주가·시총은 공모→현재 · 추이=상장후 전체</span></div>',
+                '<span class="mut">· 현재가 옆 상장일比=상장일 종가 대비 · 추이=상장후 전체 · N=네이버</span></div>',
                 unsafe_allow_html=True)
     if not recent:
         st.markdown('<div class="ipo-cna">표시할 종목이 없어요.</div>', unsafe_allow_html=True)
@@ -474,25 +509,36 @@ def render_ipo_tab():
             _ipo_chart(s.get("name", ""), s.get("listed", ""), mode)
             st.markdown(_detail_html(s), unsafe_allow_html=True)
 
-    st.caption("주가·시총: 공모(상장 시) → 현재 비교. 공모가·공모시총은 주식발행정보 연동 시 채워져요. "
-               "추이=상장후 전체(엔진/라이브). 큰 차트=네이버 일별(약 15분 지연). 종목명 클릭=네이버 시세.")
+    st.caption("현재가 옆 ‘상장일比’ = 상장 첫날 종가 대비 현재 수익률(공모가는 무료 API 부재로 미제공). "
+               "추이=상장후 전체(엔진/라이브). 큰 차트=네이버 일별(약 15분 지연). N 아이콘·종목명=네이버 증권 종목페이지.")
 
 
 def _detail_html(s: dict) -> str:
-    ret = s.get("ipo_return")
-    ret_html = ""
-    if ret is not None:
-        ret_html = f'<span class="ret {_ret_cls(ret)}">{"+" if ret >= 0 else ""}{ret:.1f}%</span>'
-    price_pair = (
-        f'<span class="pair">{html.escape(str(s.get("ipo_price") or "–"))}'
-        f'<span class="arw">→</span>{html.escape(str(s.get("price","-")))}원</span>')
-    cap_pair = (
-        f'<span class="pair">{html.escape(str(s.get("offer_cap") or "–"))}'
-        f'<span class="arw">→</span>{html.escape(str(s.get("cap","-")))}</span>')
+    sr = _since_return(s)
+    sp = _get_spark(s)
+    base_close = f"{int(sp[0]):,}원" if sp else "–"
+    ipo = s.get("ipo_price")
+    if ipo:
+        # 진짜 공모가가 들어온 경우(향후 DART 연동)
+        ret = s.get("ipo_return")
+        ret_html = (f'<span class="ret {_ret_cls(ret)}">{"+" if ret >= 0 else ""}{ret:.1f}%</span>'
+                    if ret is not None else "<span></span>")
+        head_k, base_txt = "공모가→현재", html.escape(str(ipo))
+        cap_k = "공모시총→현재"
+        cap_pair = (f'<span class="pair">{html.escape(str(s.get("offer_cap") or "–"))}'
+                    f'<span class="arw">→</span>{html.escape(str(s.get("cap","-")))}</span>')
+    else:
+        ret_html = (f'<span class="ret {_ret_cls(sr)}">{"+" if sr >= 0 else ""}{sr:.1f}%</span>'
+                    if sr is not None else "<span></span>")
+        head_k, base_txt = "상장일종가→현재", base_close
+        cap_k = "현재시총"
+        cap_pair = f'<span class="pair">{html.escape(str(s.get("cap","-")))}</span>'
+    price_pair = (f'<span class="pair">{base_txt}'
+                  f'<span class="arw">→</span>{html.escape(str(s.get("price","-")))}원</span>')
     return (
         '<div class="ipo-cmp2">'
-        f'<span class="k">공모가→현재</span>{price_pair}{ret_html or "<span></span>"}'
-        f'<span class="k">공모시총→현재</span>{cap_pair}<span></span>'
+        f'<span class="k">{head_k}</span>{price_pair}{ret_html}'
+        f'<span class="k">{cap_k}</span>{cap_pair}<span></span>'
         '</div>'
         '<div class="ipo-meta">'
         f'<span class="k">상장일</span><span class="v">{html.escape(str(s.get("listed","-")))}</span>'
