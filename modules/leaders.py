@@ -27,7 +27,7 @@ from modules.stocks import naver_stock_url
 
 LEADERBOARD_N = 12         # 통합 리더보드 종목 수
 MATRIX_LIMIT = 160         # 매트릭스에 찍을 상위 주도주 수(=게이트 cap과 동률)
-MATRIX_HEIGHT = 400        # 매트릭스 높이(px) — 900 → 400으로 압축
+MATRIX_HEIGHT = 600        # 매트릭스 높이(px) — 우측 리더보드 12행과 높이 맞춤
 SECTOR_BARS = 10           # 섹터 강도 막대 개수
 CARDS_PER_SECTOR = 8       # 섹터 expander당 주도주 카드 수
 DETAIL_SECTORS = 6         # 보조(접힘) 섹터 상세 개수
