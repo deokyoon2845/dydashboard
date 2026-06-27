@@ -33,7 +33,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from modules.stocks import naver_stock_url
+from modules.stocks import naver_stock_url, naver_stock_page_url, naver_n_icon
 from modules.ui import tab_header
 from modules.mood import MOOD_KO, mood_css
 from modules import db
@@ -187,6 +187,11 @@ div[data-testid="stSegmentedControl"]{margin-bottom:14px;}
 .tp-stk{font-size:11px;font-weight:600;text-decoration:none;background:var(--pill-bg,#F1F2EC);
   color:var(--pill-ink,#5d6258);border:1px solid var(--line,#ECEDE7);padding:2px 8px;border-radius:7px;}
 .tp-stk:hover{border-color:var(--sage,#A7BBA9);}
+.tp-stkwrap{display:inline-flex;align-items:center;}
+.nv{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;flex:none;
+  border-radius:4px;background:#03C75A;color:#fff;font-size:10px;font-weight:900;
+  text-decoration:none;margin-left:5px;vertical-align:1px;line-height:1;}
+.nv:hover{filter:brightness(.92);}
 
 /* 목적별 꼬리 (outlook) */
 .ol{background:var(--summary-bg,#F6F7F2);border:1px solid var(--line,#ECEDE7);border-radius:13px;
@@ -543,8 +548,10 @@ def _topics_html(topics: list) -> str:
         stocks_html = ""
         if stocks:
             chips = "".join(
-                f'<a class="tp-stk" href="{naver_stock_url(s)}" target="_blank" '
-                f'rel="noopener">{html.escape(s)}</a>' for s in stocks)
+                f'<span class="tp-stkwrap">'
+                f'<a class="tp-stk" href="{html.escape(naver_stock_page_url(name=s))}" '
+                f'target="_blank" rel="noopener">{html.escape(s)}</a>'
+                f'{naver_n_icon(name=s)}</span>' for s in stocks)
             stocks_html = f'<div class="tp-stocks">{chips}</div>'
 
         cards.append(
