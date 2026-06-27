@@ -58,6 +58,7 @@
       updated_at timestamptz default now()
     );
 """
+import json
 import os
 import re
 from datetime import datetime
@@ -70,6 +71,7 @@ WL_ID = 1
 RE_TABLE = "realestate_snapshots"
 KW_TABLE = "keywords"
 IPO_TABLE = "ipo_snapshots"
+LEADERS_TABLE = "leaders"
 _CLIENT: Client | None = None
 
 
