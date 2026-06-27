@@ -13,7 +13,7 @@
 
 데이터
   · 목록·메타·spark·재무·밸류 : Supabase ipo_snapshots(엔진). 없으면 임베드 샘플 폴백
-  · N 아이콘 : 네이버 증권 종목페이지(finance.naver.com/item)
+  · N 아이콘 : 네이버페이 증권 종목페이지(stock.naver.com/domestic/stock/{코드}/price)
   · 큰 차트 시세 : 뷰어 직접 — 네이버 siseJson, 실패 시 yfinance
 """
 
@@ -26,7 +26,7 @@ import pandas as pd
 import requests
 import streamlit as st
 
-from modules.stocks import naver_stock_url
+from modules.stocks import naver_stock_url, naver_stock_page_url, naver_n_icon
 from modules.ui import tab_header
 
 _UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -146,11 +146,6 @@ _CSS = """
 """
 
 _SORTS = ["상장일순", "시총순", "등락순", "상장후수익률순"]
-
-
-def _naver_item_url(code: str) -> str:
-    c = "".join(ch for ch in str(code or "") if ch.isdigit())[:6]
-    return f"https://finance.naver.com/item/main.naver?code={c}" if len(c) == 6 else ""
 
 
 # ── DB 로드 ────────────────────────────────────────────────────
@@ -413,8 +408,8 @@ def _row_html(s: dict) -> str:
     nm = html.escape(s.get("name", ""))
     sector = s.get("sector")
     sct = f'<span class="sct">{html.escape(sector)}</span>' if sector else ""
-    item = _naver_item_url(s.get("code", "")) or naver_stock_url(s.get("name", ""))
-    nv = f'<a class="nv" href="{html.escape(item)}" target="_blank" rel="noopener" title="네이버 증권에서 보기">N</a>'
+    item = naver_stock_page_url(name=s.get("name", ""), code=s.get("code", ""))
+    nv = naver_n_icon(name=s.get("name", ""), code=s.get("code", ""))
     return (
         '<div class="ipo-row">'
         f'<div class="nm"><a href="{html.escape(item)}" target="_blank" rel="noopener">{nm}</a>{nv}'
@@ -469,8 +464,7 @@ def render_ipo_tab():
             cls = "soon" if u.get("soon") else ("tbd" if dday == "접수" else "")
             sub = " · ".join(x for x in [u.get("state", ""), u.get("under", "")] if x)
             est = u.get("est_listing", "")
-            nv = (f'<a class="nv" href="{html.escape(naver_stock_url(u.get("name","")))}" '
-                  f'target="_blank" rel="noopener" title="네이버 증권에서 검색">N</a>')
+            nv = naver_n_icon(name=u.get("name", ""), code=u.get("code", ""))
             cards += (
                 '<div class="ipo-up"><div class="nm">'
                 f'<span>{html.escape(u.get("name",""))}{nv}</span>'
