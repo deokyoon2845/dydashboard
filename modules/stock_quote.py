@@ -33,6 +33,16 @@ def _name_to_ticker_map():
     return {}
 
 
+def code_for_name(name: str):
+    """종목명 → 6자리 코드(없으면 None). 캐시된 KRX 사전을 사용."""
+    if not name:
+        return None
+    try:
+        return _name_to_ticker_map().get(name.strip())
+    except Exception:
+        return None
+
+
 @st.cache_data(ttl=600)
 def fetch_stock_change(name: str):
     """종목명의 당일 등락률(%) 반환. 실패 시 None."""
