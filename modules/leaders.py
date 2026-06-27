@@ -24,6 +24,20 @@ import pandas as pd
 import streamlit as st
 
 from modules.stocks import naver_stock_url
+from modules.ui import tab_header
+
+
+def _naver_item_url(code: str) -> str:
+    """종목코드(6자리) → 네이버 증권 종목페이지. 코드가 없으면 빈 문자열."""
+    c = "".join(ch for ch in str(code or "") if ch.isdigit())[:6]
+    return f"https://finance.naver.com/item/main.naver?code={c}" if len(c) == 6 else ""
+
+
+def _nv_icon(s) -> str:
+    """종목별 네이버 증권 N 아이콘(코드 있으면 종목페이지, 없으면 검색)."""
+    url = _naver_item_url(s.get("code", "")) or naver_stock_url(s.get("name", ""))
+    return (f'<a class="nv" href="{html.escape(url)}" target="_blank" '
+            f'rel="noopener" title="네이버 증권에서 보기">N</a>')
 
 LEADERBOARD_N = 12         # 통합 리더보드 종목 수
 MATRIX_LIMIT = 160         # 매트릭스에 찍을 상위 주도주 수(=게이트 cap과 동률)
@@ -55,6 +69,10 @@ _CSS = """
 .ldr-sub{font-size:10.5px;color:var(--muted);font-weight:600;}
 .ldr-new{display:inline-block;background:#eef4ef;color:var(--sage-deep);font-size:9.5px;font-weight:700;
   padding:1px 5px;border-radius:5px;margin-left:5px;vertical-align:1px;}
+.nv{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;flex:none;
+  border-radius:4px;background:#03C75A;color:#fff;font-size:10px;font-weight:900;
+  text-decoration:none;margin-left:5px;vertical-align:1px;line-height:1;}
+.nv:hover{filter:brightness(.92);}
 .ldr-pill{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;}
 .ldr-up{color:var(--up);font-weight:700;} .ldr-down{color:var(--down);font-weight:700;}
 
@@ -64,8 +82,8 @@ _CSS = """
 .ldr-lb-row:last-child{border-bottom:none;}
 .ldr-lb-row .rk{width:16px;text-align:center;font-size:12px;font-weight:800;color:var(--muted);flex:none;}
 .ldr-lb-row .rk.top{color:var(--up);}
-.ldr-lb-row .nm{width:84px;flex:none;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.ldr-lb-row .nm a{color:var(--ink);text-decoration:none;} .ldr-lb-row .nm a:hover{text-decoration:underline;}
+.ldr-lb-row .nm{width:96px;flex:none;display:flex;align-items:center;font-size:13px;font-weight:700;}
+.ldr-lb-row .nm a{color:var(--ink);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;} .ldr-lb-row .nm a:hover{text-decoration:underline;}
 .ldr-lb-row .spk{width:118px;flex:none;height:24px;}
 .ldr-lb-row .spk svg{width:118px;height:24px;display:block;}
 .ldr-lb-row .m3{flex:1;text-align:right;font-size:11.5px;font-weight:700;min-width:54px;}
@@ -233,7 +251,7 @@ def _stock_card_html(s):
     turn_txt = f"{turn:,.0f}억" if turn else "–"
     return (
         '<div class="ldr-card">'
-        f'<div class="top"><div class="nm"><a href="{url}" target="_blank" rel="noopener">{nm}</a>{new}</div>'
+        f'<div class="top"><div class="nm"><a href="{url}" target="_blank" rel="noopener">{nm}</a>{_nv_icon(s)}{new}</div>'
         f'<div class="sc">{s.get("score","")}점</div></div>'
         f'{_bar(s.get("score"))}'
         f'<div class="met"><span>3M {_pc(s.get("mom_3m"))}</span>'
@@ -258,7 +276,7 @@ def _leaderboard_compact(leaders, n=LEADERBOARD_N):
         rows += (
             '<div class="ldr-lb-row">'
             f'<div class="rk {rank_col}">{i+1}</div>'
-            f'<div class="nm"><a href="{url}" target="_blank" rel="noopener">{nm}</a>{new}</div>'
+            f'<div class="nm"><a href="{url}" target="_blank" rel="noopener">{nm}</a>{_nv_icon(s)}{new}</div>'
             f'<div class="spk">{spark}</div>'
             f'<div class="m3">{_pc(s.get("mom_3m"))}</div>'
             f'<div class="d1">{_d1(s.get("mom_1d"))}<div class="d1l">전일</div></div>'
@@ -380,9 +398,7 @@ def _render_sector_detail(rank, sec, leaders_by_upj):
 # ── 메인 ─────────────────────────────────────────────────────────────
 
 def render_leaders():
-    st.markdown(_CSS, unsafe_allow_html=True)
-    st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
-    st.title("주도주")
+    tab_header("주도주", css=_CSS)
 
     with st.expander("ⓘ 주도주 보는 법", expanded=False):
         st.markdown('<div class="ldr-help">', unsafe_allow_html=True)
