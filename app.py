@@ -64,6 +64,8 @@ html, body, [data-testid="stAppViewContainer"] { font-family: 'Hanken Grotesk','
 .stMainBlockContainer { padding-top: 3.5rem !important; }
 h1,h2,h3 { font-family: 'Fraunces','Noto Sans KR',serif !important; letter-spacing:-.01em; color:var(--ink); }
 h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 !important; margin:0 0 .4rem !important; }
+.th-eyebrow { font-family:'Fraunces','Noto Sans KR',serif; font-size:15px; font-weight:600; color:var(--sage-deep); letter-spacing:.02em; margin:0 0 2px; }
+.th-title { font-family:'Fraunces','Noto Sans KR',serif !important; font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 !important; letter-spacing:-.01em; color:var(--ink); margin:0 0 .4rem !important; }
 .stTabs [data-baseweb="tab-list"] { gap:4px; flex-wrap:wrap; }
 .stTabs [data-baseweb="tab"] { white-space:nowrap; padding:8px 14px; height:auto; min-width:max-content; }
 .stTabs [data-baseweb="tab"] p { font-size:15px; margin:0; white-space:nowrap; }
