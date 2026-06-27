@@ -1,22 +1,25 @@
-"""[뷰어] 증시 › IPO 탭 (C안 · 대시보드 그리드).
+"""[뷰어] 증시 › IPO 탭 (A안 · 컴팩트 리스트).
 
 구성
-  ① 향후 IPO 일정 : D-day 스트립(가로) — 주관사·상장방식·회사소개·청약일정
-  ② 최근 상장 종목 : 2열 그리드 타일(시총·등락·상장일·상장방식·보호예수·밸류 칩)
-       각 타일 아래 '차트·상세 보기' 펼침 → 큰 차트 + 상장 개요 + 회사소개
+  ① 향후 IPO 일정 : D-day 스트립 — 회사소개 + 상장 예상구간(추정)
+  ② 최근 상장 종목 : 한 종목 = 한 행(컴팩트 리스트)
+        행에 항상: 종목명·시장칩 · 상장일 · 시총 · 등락 · 보호예수 · 추이(상장후 전체 미니 스파크라인)
+        아래 '차트·상세 보기' 펼침 → 큰 차트 + 상장 개요 + 회사소개
 
-차트(요청 반영)
-  · 가로축: 날짜 라벨 표시 + '보름(15일)' 단위 눈금
-  · 세로축: 종가 라벨 표시 + 최솟값~최댓값으로 '꽉 차게'(여백 없음, nice=False)
-  · 면적+선 + 마우스 십자선(지수/관심종목 차트와 같은 인터랙션)
-  · 기간 라디오(1개월/3개월/6개월/1년) 공용 — 모든 종목 차트에 함께 적용
+추이 미니 스파크라인
+  · 상장일~수집일 일별 종가를 엔진이 다운샘플(spark)로 저장 → 즉시 렌더(네트워크 0)
+  · 저장값이 없으면 뷰어가 라이브(네이버 siseJson, 상장일~오늘)로 1회 산출(캐시)
+
+큰 차트(펼침)
+  · 기간 라디오: 상장후(기본)/3개월/6개월/1년 — 종목별 상장일 기준
+  · 면적+선 + 마우스 십자선 · 가로축 보름(15일) 눈금 · 세로축 최솟값~최댓값 꽉차게
 
 데이터
-  · 종목 목록·메타 : Supabase ipo_snapshots(엔진이 적재). 없으면 임베드 샘플로 폴백
-        (※ 샘플일 때는 상단에 '샘플 데이터' 안내가 뜬다)
-  · 차트 시세      : 뷰어에서 직접 — 네이버 자동완성(코드해석) + 네이버 siseJson(일별),
-                     실패 시 yfinance. (Streamlit Cloud는 네이버/yfinance 접근 가능)
-  · 종목명 클릭    : 네이버 시세 검색
+  · 종목 목록·메타·spark : Supabase ipo_snapshots(엔진 적재). 없으면 임베드 샘플 폴백
+  · 큰 차트 시세 : 뷰어 직접 — 네이버 자동완성(코드해석)+siseJson(일별), 실패 시 yfinance
+  · 종목명 클릭 : 네이버 시세 검색
+
+※ 상장방식·밸류(공모가/PER) 칩은 제외(2025.06 결정 — 금융위 API에 소스 없음).
 """
 
 import html
@@ -32,7 +35,6 @@ from modules.stocks import naver_stock_url
 
 _UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                      "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"}
-_PERIODS = {"1개월": 31, "3개월": 92, "6개월": 183, "1년": 366}
 _UP_C, _DOWN_C = "#B65F5A", "#5A7CA0"
 _AXIS_C, _GRID_C = "#9a9b92", "#ECEDE7"
 
@@ -40,46 +42,26 @@ _AXIS_C, _GRID_C = "#9a9b92", "#ECEDE7"
 _SAMPLE = {
     "asof": "샘플",
     "recent": [
-        {"name": "시프트업", "code": "462870", "sector": "게임·콘텐츠", "listed": "2024.07.11",
-         "cap": "3.2조", "pct": 1.8, "method": "일반상장",
-         "ipo_price": "공모가 60,000원 (밴드 상단)", "valuation": "PER 약 39x",
-         "lockup": "최대주주 6M · 기관확약 39%",
-         "intro": "서브컬처 게임 ‘니케’·‘스텔라 블레이드’ 개발사. 높은 영업이익률이 강점."},
-        {"name": "에이피알", "code": "278470", "sector": "뷰티 디바이스", "listed": "2024.02.27",
-         "cap": "2.1조", "pct": -0.7, "method": "일반상장",
-         "ipo_price": "공모가 250,000원 (밴드 상단)", "valuation": "PER 약 21x",
-         "lockup": "최대주주 6M · 기관확약 28%",
-         "intro": "뷰티 디바이스 ‘메디큐브 에이지알’·화장품 운영. 해외 매출 확대가 동력."},
-        {"name": "산일전기", "code": "062040", "sector": "전력기기", "listed": "2024.07.30",
-         "cap": "9,000억", "pct": -1.1, "method": "일반상장",
-         "ipo_price": "공모가 35,000원 (밴드 상단)", "valuation": "PER 약 17x",
-         "lockup": "최대주주 6M · 기관확약 35%",
-         "intro": "변압기·리액터 제조사. 북미 전력 인프라·데이터센터 전력 수요 수혜."},
-        {"name": "더본코리아", "code": "475560", "sector": "외식 프랜차이즈", "listed": "2024.11.06",
-         "cap": "4,800억", "pct": 0.9, "method": "일반상장",
-         "ipo_price": "공모가 34,000원 (밴드 상단)", "valuation": "PER 약 14x",
-         "lockup": "최대주주 6M · 기관확약 22%",
-         "intro": "빽다방·홍콩반점 등 외식 브랜드 운영. 가맹 확장과 소스·HMR 유통이 축."},
-        {"name": "셀비온", "code": "308430", "sector": "방사성의약품", "listed": "2024.10.21",
-         "cap": "2,600억", "pct": 2.0, "method": "기술특례상장",
-         "ipo_price": "공모가 13,000원 (밴드 상단 초과)", "valuation": "적자 · PSR 기반",
-         "lockup": "최대주주 6M~3Y · 기관확약 12%",
-         "intro": "방사성 동위원소 기반 항암 치료제 개발. 전립선암 치료제가 핵심 파이프라인."},
-        {"name": "클로봇", "code": "466100", "sector": "로봇 소프트웨어", "listed": "2024.10.28",
-         "cap": "2,400억", "pct": 3.2, "method": "기술특례상장",
-         "ipo_price": "공모가 13,000원 (밴드 상단 초과)", "valuation": "적자 · 매출성장",
-         "lockup": "최대주주 6M~2Y · 기관확약 9%",
-         "intro": "자율주행 로봇용 소프트웨어 플랫폼. 이종 로봇 통합 관제가 차별점."},
+        {"name": "시프트업", "code": "462870", "market": "코스피", "listed": "2024.07.11",
+         "cap": "3.2조", "pct": 1.8, "lockup": "미해제 2건 · 최근 해제 2025.01.11",
+         "intro": "서브컬처 게임 ‘니케’·‘스텔라 블레이드’ 개발사. 높은 영업이익률이 강점.",
+         "spark": [60000, 62500, 58000, 55500, 57800, 61200, 63400, 60100, 59000, 61800]},
+        {"name": "더본코리아", "code": "475560", "market": "코스피", "listed": "2024.11.06",
+         "cap": "4,800억", "pct": 0.9, "lockup": "미해제 1건 · 최근 해제 2025.05.06",
+         "intro": "빽다방·홍콩반점 등 외식 브랜드 운영. 가맹 확장과 소스·HMR 유통이 축.",
+         "spark": [34000, 41000, 38500, 36000, 39200, 42100, 40500, 41800]},
+        {"name": "셀비온", "code": "308430", "market": "코스닥", "listed": "2024.10.21",
+         "cap": "2,600억", "pct": 2.0, "lockup": "미해제 4건 · 최근 해제 2025.04.21",
+         "intro": "방사성 동위원소 기반 항암 치료제 개발. 전립선암 치료제가 핵심 파이프라인.",
+         "spark": [13000, 14200, 12500, 11800, 12900, 13600, 14100, 13900]},
     ],
     "upcoming": [
         {"name": "○○바이오", "dday": "D-3", "state": "청약 06.29~30", "under": "한국투자증권",
-         "method": "기술특례", "soon": True, "intro": "항암 신약 타깃 단백질 분해(TPD) 플랫폼. 코스닥 예정."},
-        {"name": "△△로보틱스", "dday": "D-1", "state": "수요예측 마감", "under": "미래에셋증권",
-         "method": "일반상장", "soon": True, "intro": "협동로봇·물류 자동화. 공모가 밴드 18,000~22,000원."},
-        {"name": "□□에너지솔루션", "dday": "D-9", "state": "청약 07.06~07", "under": "NH투자증권·KB증권",
-         "method": "일반상장", "soon": False, "intro": "산업용 ESS·전력변환장치(PCS). 코스피 이전상장."},
-        {"name": "◇◇소프트", "dday": "D-15", "state": "수요예측 07.10~11", "under": "삼성증권",
-         "method": "기술특례", "soon": False, "intro": "기업용 생성형 AI 에이전트 플랫폼. 코스닥 기술특례."},
+         "est_listing": "07.12~07.26 예상", "soon": True,
+         "intro": "항암 신약 타깃 단백질 분해(TPD) 플랫폼. 코스닥 예정."},
+        {"name": "◇◇소프트", "dday": "접수", "state": "증권신고서 접수 06.18", "under": "삼성증권",
+         "est_listing": "07.16~07.30 예상", "soon": False,
+         "intro": "기업용 생성형 AI 에이전트 플랫폼. 코스닥 기술특례."},
     ],
 }
 
@@ -93,31 +75,39 @@ _CSS = """
 /* 향후 일정 스트립 */
 .ipo-strip{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 10px;}
 .ipo-strip::-webkit-scrollbar{height:5px;} .ipo-strip::-webkit-scrollbar-thumb{background:var(--line,#ECEDE7);border-radius:5px;}
-.ipo-up{flex:0 0 auto;min-width:190px;max-width:230px;background:var(--summary-bg,#F6F7F2);
+.ipo-up{flex:0 0 auto;min-width:198px;max-width:230px;background:var(--summary-bg,#F6F7F2);
   border:1px solid var(--line,#ECEDE7);border-radius:12px;padding:11px 13px;}
 .ipo-up .nm{font-size:13px;font-weight:800;display:flex;justify-content:space-between;gap:8px;align-items:center;}
-.ipo-up .sub{font-size:10.5px;color:var(--muted,#9a9b92);margin-top:4px;line-height:1.55;}
-.ipo-up .ds{font-size:11px;color:var(--pill-ink,#5d6258);margin-top:5px;line-height:1.5;word-break:keep-all;}
+.ipo-up .sub{font-size:10.5px;color:var(--muted,#9a9b92);margin-top:5px;line-height:1.5;}
+.ipo-up .ds{font-size:11px;color:var(--pill-ink,#5d6258);margin-top:7px;line-height:1.5;word-break:keep-all;
+  border-top:1px dashed var(--line,#ECEDE7);padding-top:6px;}
+.ipo-up .est{font-size:10.5px;color:var(--sage-deep,#7E9A83);font-weight:700;margin-top:6px;}
 .dday{font-size:10.5px;font-weight:800;color:#fff;background:var(--sage-deep,#7E9A83);
   padding:3px 8px;border-radius:6px;flex:none;}
 .dday.soon{background:#C2410C;}
-/* 최근 상장 타일 (요약 — 펼침 위에 항상 보임) */
-.ipo-tile{background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);border-radius:13px 13px 0 0;
-  border-bottom:none;padding:13px 15px 9px;}
-.ipo-tile .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
-.ipo-tile .nm{font-size:14.5px;font-weight:800;}
-.ipo-tile .nm a{color:var(--ink,#34352f);text-decoration:none;}
-.ipo-tile .nm a:hover{text-decoration:underline;}
-.ipo-tile .ss{font-size:11px;color:var(--muted,#9a9b92);margin-top:2px;}
-.ipo-tile .cap{font-size:15px;font-weight:800;text-align:right;white-space:nowrap;}
-.ipo-tile .cap .d{font-size:11px;font-weight:700;margin-top:1px;}
-.ipo-tile .chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:9px;}
+.dday.tbd{background:#B7BCB3;}
+/* 최근 상장 — 컴팩트 리스트 행 */
+.ipo-row{background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);border-radius:11px;
+  padding:11px 14px;display:grid;grid-template-columns:1.8fr .9fr .8fr 1.15fr 70px;
+  gap:10px;align-items:center;margin-bottom:-6px;}
+.ipo-row .nm{font-size:14px;font-weight:800;line-height:1.25;}
+.ipo-row .nm a{color:var(--ink,#34352f);text-decoration:none;}
+.ipo-row .nm a:hover{text-decoration:underline;}
+.ipo-row .nm .meta{font-size:10.5px;font-weight:600;color:var(--muted,#9a9b92);margin-top:2px;
+  display:flex;align-items:center;gap:5px;}
+.ipo-row .dt{font-size:12px;color:var(--pill-ink,#5d6258);font-weight:600;}
+.ipo-row .cap{font-size:13.5px;font-weight:800;text-align:right;white-space:nowrap;}
+.ipo-row .cap .d{font-size:11px;font-weight:700;margin-left:4px;}
+.ipo-row .lk{text-align:right;}
+.ipo-row .sp{text-align:right;line-height:0;}
+.mk{font-size:10px;font-weight:700;padding:1px 6px;border-radius:5px;}
+.mk.kospi{background:#EBF1F5;color:#3E6488;}
+.mk.kosdaq{background:#F0E9F3;color:#6B4A7C;}
+.lock-chip{font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap;
+  background:#F3EEE6;color:#7C5F2C;}
+.lk .na{font-size:11px;color:var(--muted,#9a9b92);}
+.sp .na{font-size:11px;color:var(--muted,#9a9b92);}
 .up{color:var(--up,#B65F5A);} .down{color:var(--down,#5A7CA0);}
-.chip{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:6px;white-space:nowrap;}
-.chip.tech{background:#F0E9F3;color:#6B4A7C;}
-.chip.normal{background:#EBF3EC;color:#4A6B4F;}
-.chip.lock{background:#F3EEE6;color:#7C5F2C;}
-.chip.val{background:#FDEEE3;color:#C2410C;}
 /* 펼침 안 상세 메타 */
 .ipo-meta{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:12.5px;align-items:baseline;margin-top:2px;}
 .ipo-meta .k{color:var(--muted,#9a9b92);font-weight:600;white-space:nowrap;}
@@ -125,6 +115,10 @@ _CSS = """
 .ipo-intro{font-size:12px;color:var(--pill-ink,#5d6258);line-height:1.6;margin-top:11px;
   background:var(--summary-bg,#F6F7F2);border:1px solid var(--line,#ECEDE7);border-radius:9px;padding:9px 11px;word-break:keep-all;}
 .ipo-cna{font-size:12px;color:var(--muted,#9a9b92);padding:16px 2px;}
+@media(max-width:680px){
+  .ipo-row{grid-template-columns:1.6fr 1fr 64px;}
+  .ipo-row .dt,.ipo-row .lk{display:none;}
+}
 </style>
 """
 
@@ -228,7 +222,7 @@ def _yf_daily(code: str, suffix: str, days: int):
         return None
     for tk in (f"{code}{suffix}", f"{code}{'.KQ' if suffix == '.KS' else '.KS'}"):
         try:
-            s = fetch_history(tk)  # 일별 종가 시리즈/DF 가정
+            s = fetch_history(tk)
             ser = s["Close"] if hasattr(s, "columns") and "Close" in getattr(s, "columns", []) else s
             ser = pd.Series(ser).dropna()
             if len(ser) >= 2:
@@ -243,8 +237,59 @@ def _yf_daily(code: str, suffix: str, days: int):
     return None
 
 
-# ── 커스텀 축 차트 (보름 x · 꽉찬 y) ───────────────────────────
-def _ipo_chart(name: str, days: int):
+# ── 상장일 → 경과일수 ──
+def _days_since(listed: str) -> int:
+    try:
+        d = datetime.strptime(str(listed), "%Y.%m.%d").date()
+        return max((date.today() - d).days, 7)
+    except Exception:
+        return 366
+
+
+# ── 미니 스파크라인 SVG (저장 spark 우선, 없으면 라이브) ──
+def _spark_svg(vals, w=66, h=26) -> str:
+    vals = [float(v) for v in (vals or []) if v is not None]
+    if len(vals) < 2:
+        return '<span class="na">—</span>'
+    lo, hi = min(vals), max(vals)
+    rng = (hi - lo) or 1.0
+    n = len(vals)
+    step = (w - 4) / (n - 1)
+    pts = [(2 + i * step, h - 3 - ((v - lo) / rng) * (h - 6)) for i, v in enumerate(vals)]
+    up = vals[-1] >= vals[0]
+    col = _UP_C if up else _DOWN_C
+    d = " ".join(("M" if i == 0 else "L") + f"{x:.1f} {y:.1f}" for i, (x, y) in enumerate(pts))
+    area = d + f" L {pts[-1][0]:.1f} {h} L {pts[0][0]:.1f} {h} Z"
+    return (f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}">'
+            f'<path d="{area}" fill="{col}" opacity="0.12"/>'
+            f'<path d="{d}" fill="none" stroke="{col}" stroke-width="1.5"/></svg>')
+
+
+@st.cache_data(ttl=1800)
+def _live_spark(name: str, days: int):
+    code, suffix = _resolve_code(name)
+    if not code:
+        return []
+    df = _daily(code, suffix or ".KS", days)
+    if df is None or df.empty:
+        return []
+    vals = list(df["종가"].values)
+    if len(vals) <= 60:
+        return [round(float(v), 2) for v in vals]
+    step = (len(vals) - 1) / 59
+    return [round(float(vals[round(i * step)]), 2) for i in range(60)]
+
+
+def _row_spark(s: dict) -> str:
+    spark = s.get("spark") or []
+    if not spark:                       # 저장값 없으면 라이브 1회(캐시)
+        spark = _live_spark(s.get("name", ""), _days_since(s.get("listed", "")))
+    return _spark_svg(spark)
+
+
+# ── 큰 차트 (펼침) : 보름 x · 꽉찬 y ───────────────────────────
+def _ipo_chart(name: str, listed: str, mode: str):
+    days = _days_since(listed) if mode == "상장후" else {"3개월": 92, "6개월": 183, "1년": 366}[mode]
     code, suffix = _resolve_code(name)
     if not code:
         st.markdown('<div class="ipo-cna">시세를 찾지 못했어요 (상장명 확인 필요).</div>',
@@ -262,10 +307,10 @@ def _ipo_chart(name: str, days: int):
 
     x_enc = alt.X("날짜:T", axis=alt.Axis(
         title=None, format="%m/%d", labelColor=_AXIS_C, grid=False,
-        tickCount={"interval": "day", "step": 15},   # ← 보름(15일) 단위
+        tickCount={"interval": "day", "step": 15},
         domain=True, domainColor=_GRID_C, ticks=True, tickColor=_GRID_C, labelAngle=0))
     y_enc = alt.Y("종가:Q", scale=alt.Scale(
-        domain=[lo, hi], nice=False, zero=False, clamp=True),  # ← 최솟값~최댓값 꽉차게
+        domain=[lo, hi], nice=False, zero=False, clamp=True),
         axis=alt.Axis(title=None, format=",.0f", labelColor=_AXIS_C,
                       gridColor=_GRID_C, domain=True, domainColor=_GRID_C))
     tip = [alt.Tooltip("날짜:T", format="%Y-%m-%d"), alt.Tooltip("종가:Q", format=",.0f")]
@@ -296,39 +341,41 @@ def _ipo_chart(name: str, days: int):
     st.altair_chart(chart, use_container_width=True)
 
 
-# ── 칩 HTML ────────────────────────────────────────────────────
-def _method_chip(m: str) -> str:
-    cls = "tech" if "특례" in (m or "") else "normal"
-    return f'<span class="chip {cls}">{html.escape(m or "일반상장")}</span>'
+# ── 행 HTML ────────────────────────────────────────────────────
+def _mk_chip(market: str) -> str:
+    k = "kosdaq" if "닥" in (market or "") else "kospi"
+    t = "코스닥" if k == "kosdaq" else "코스피"
+    return f'<span class="mk {k}">{t}</span>'
 
 
-def _tile_summary(s: dict) -> str:
+def _row_html(s: dict) -> str:
     pct = s.get("pct")
     pct_html = ""
     if isinstance(pct, (int, float)):
         cls = "up" if pct >= 0 else "down"
-        pct_html = f'<div class="d {cls}">{"+" if pct >= 0 else ""}{pct:.1f}%</div>'
+        pct_html = f'<span class="d {cls}">{"+" if pct >= 0 else ""}{pct:.1f}%</span>'
     nm = html.escape(s.get("name", ""))
     link = html.escape(naver_stock_url(s.get("name", "")))
-    chips = _method_chip(s.get("method"))
-    if s.get("lockup"):
-        chips += f'<span class="chip lock">🔒 {html.escape(_short_lock(s["lockup"]))}</span>'
-    if s.get("valuation"):
-        chips += f'<span class="chip val">{html.escape(s["valuation"])}</span>'
+    lock = s.get("lockup")
+    lock_html = (f'<span class="lock-chip">🔒 {html.escape(_short_lock(lock))}</span>'
+                 if lock else '<span class="na">—</span>')
     return (
-        '<div class="ipo-tile"><div class="top">'
-        f'<div><div class="nm"><a href="{link}" target="_blank" rel="noopener">{nm}</a></div>'
-        f'<div class="ss">{html.escape(s.get("sector",""))} · 상장 {html.escape(s.get("listed",""))}</div></div>'
+        '<div class="ipo-row">'
+        f'<div class="nm"><a href="{link}" target="_blank" rel="noopener">{nm}</a>'
+        f'<div class="meta">{_mk_chip(s.get("market",""))}</div></div>'
+        f'<div class="dt">{html.escape(str(s.get("listed","-")))}</div>'
         f'<div class="cap">{html.escape(str(s.get("cap","-")))}{pct_html}</div>'
-        f'</div><div class="chips">{chips}</div></div>'
+        f'<div class="lk">{lock_html}</div>'
+        f'<div class="sp">{_row_spark(s)}</div>'
+        '</div>'
     )
 
 
 def _short_lock(lock: str) -> str:
     for tok in str(lock).replace(" ", "").split("·"):
-        if "확약" in tok:
+        if "미해제" in tok:
             return tok
-    return (str(lock)[:14] + "…") if len(str(lock)) > 15 else str(lock)
+    return (str(lock)[:12] + "…") if len(str(lock)) > 13 else str(lock)
 
 
 # ── 메인 렌더 ─────────────────────────────────────────────────
@@ -341,23 +388,29 @@ def render_ipo_tab():
     recent = data.get("recent") or []
     upcoming = data.get("upcoming") or []
     asof = data.get("asof", "")
-    cap_txt = f"기준 {asof} · 최근 2년 내 상장(현재 시총 5,000억원 이상) · 최신순"
+    cap_txt = f"기준 {asof} · 최근 2년 내 상장(시총 5,000억원 이상) · 최신순"
     if data.get("_sample"):
         cap_txt = "샘플 데이터 — 엔진(ipo_run) 첫 실행 후 실데이터로 대체돼요 · " + cap_txt
     st.caption(cap_txt)
 
     # ① 향후 IPO 일정
-    st.markdown('<div class="ipo-sec">향후 IPO 일정</div>', unsafe_allow_html=True)
+    st.markdown('<div class="ipo-sec">향후 IPO 일정 '
+                '<span class="mut">· 회사소개 · 상장 예상구간은 접수일 기준 추정</span></div>',
+                unsafe_allow_html=True)
     if upcoming:
         cards = ""
         for u in upcoming:
-            soon = " soon" if u.get("soon") else ""
+            dday = u.get("dday", "") or "접수"
+            cls = "soon" if u.get("soon") else ("tbd" if dday == "접수" else "")
+            sub = " · ".join(x for x in [u.get("state", ""), u.get("under", "")] if x)
+            est = u.get("est_listing", "")
             cards += (
                 '<div class="ipo-up"><div class="nm">'
-                f'{html.escape(u.get("name",""))}<span class="dday{soon}">{html.escape(u.get("dday",""))}</span></div>'
-                f'<div class="sub">{html.escape(u.get("state",""))} · {html.escape(u.get("under",""))}<br>'
-                f'{html.escape(u.get("method",""))}</div>'
-                f'<div class="ds">{html.escape(u.get("intro",""))}</div></div>'
+                f'{html.escape(u.get("name",""))}<span class="dday {cls}">{html.escape(dday)}</span></div>'
+                f'<div class="sub">{html.escape(sub)}</div>'
+                f'<div class="ds">{html.escape(u.get("intro",""))}</div>'
+                + (f'<div class="est">📅 상장 {html.escape(est)}</div>' if est else "")
+                + '</div>'
             )
         st.markdown(f'<div class="ipo-strip">{cards}</div>', unsafe_allow_html=True)
     else:
@@ -365,33 +418,29 @@ def render_ipo_tab():
 
     # ② 최근 상장 종목
     st.markdown('<div class="ipo-sec">최근 상장 종목 '
-                '<span class="mut">· 타일 아래 ‘차트·상세 보기’를 누르면 차트가 펼쳐져요</span></div>',
+                '<span class="mut">· 추이=상장후 전체 · ‘차트·상세 보기’로 큰 차트가 펼쳐져요</span></div>',
                 unsafe_allow_html=True)
     if not recent:
         st.markdown('<div class="ipo-cna">표시할 종목이 없어요.</div>', unsafe_allow_html=True)
         return
 
-    period = st.radio("조회 기간", list(_PERIODS.keys()), index=2, horizontal=True,
-                      key="ipo_period", label_visibility="collapsed")
-    days = _PERIODS[period]
+    mode = st.radio("차트 기간", ["상장후", "3개월", "6개월", "1년"], index=0, horizontal=True,
+                    key="ipo_mode", label_visibility="collapsed")
 
-    cols = st.columns(2, gap="medium")
-    for i, s in enumerate(recent):
-        with cols[i % 2]:
-            st.markdown(_tile_summary(s), unsafe_allow_html=True)
-            with st.expander("차트·상세 보기"):
-                _ipo_chart(s.get("name", ""), days)
-                meta = (
-                    '<div class="ipo-meta">'
-                    f'<span class="k">상장일</span><span class="v">{html.escape(str(s.get("listed","-")))}</span>'
-                    f'<span class="k">시가총액</span><span class="v">{html.escape(str(s.get("cap","-")))}</span>'
-                    f'<span class="k">상장방식</span><span class="v">{html.escape(str(s.get("method","-")))}</span>'
-                    f'<span class="k">밸류</span><span class="v">{html.escape(str(s.get("ipo_price","-")))} · {html.escape(str(s.get("valuation","-")))}</span>'
-                    f'<span class="k">보호예수</span><span class="v">{html.escape(str(s.get("lockup","-")))}</span>'
-                    '</div>'
-                    f'<div class="ipo-intro">{html.escape(str(s.get("intro","")))}</div>'
-                )
-                st.markdown(meta, unsafe_allow_html=True)
+    for s in recent:
+        st.markdown(_row_html(s), unsafe_allow_html=True)
+        with st.expander("차트·상세 보기"):
+            _ipo_chart(s.get("name", ""), s.get("listed", ""), mode)
+            meta = (
+                '<div class="ipo-meta">'
+                f'<span class="k">상장일</span><span class="v">{html.escape(str(s.get("listed","-")))}</span>'
+                f'<span class="k">시가총액</span><span class="v">{html.escape(str(s.get("cap","-")))}</span>'
+                f'<span class="k">보호예수</span><span class="v">{html.escape(str(s.get("lockup","-") or "-"))}</span>'
+                '</div>'
+                f'<div class="ipo-intro">{html.escape(str(s.get("intro","") or "회사소개 정보가 아직 없어요."))}</div>'
+            )
+            st.markdown(meta, unsafe_allow_html=True)
 
-    st.caption("차트: 면적+선 · 마우스 십자선 · 가로축 보름(15일) 눈금 · 세로축 최솟값~최댓값 꽉차게 · "
-               "종목명 클릭=네이버 시세. 시세는 네이버 siseJson(일별) 기준 약 15분 지연.")
+    st.caption("미니 추이: 상장일~수집일 일별 종가(엔진 저장, 없으면 라이브). "
+               "큰 차트: 네이버 siseJson(일별, 약 15분 지연)·면적+선·십자선·보름 눈금·꽉찬 세로축. "
+               "종목명 클릭=네이버 시세.")
