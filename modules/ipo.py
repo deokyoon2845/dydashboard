@@ -1,19 +1,19 @@
 """[뷰어] 증시 › IPO 탭 (A안 · 컴팩트 리스트 + 필터/정렬).
 
 구성
-  ① 향후 IPO 일정 : D-day 스트립 — 회사소개 + 상장 예상구간(추정)
-  ② 필터/정렬 바  : 시장(전체/코스피/코스닥) · 섹터 · 정렬(상장일/시총/등락/공모가대비)
+  ① 향후 IPO 일정 : D-day 스트립 — 회사소개 + 상장 예상구간(추정) + N(네이버) 아이콘
+  ② 필터/정렬 바  : 시장(전체/코스피/코스닥) · 섹터 · 정렬(상장일/시총/등락/상장후수익률)
   ③ 최근 상장 종목 : 한 종목 = 한 행
-        행에 항상: 종목·시장·섹터 · 상장일 · 주가(공모→현재) · 시총(공모→현재) · 추이
-        펼치면: 공모가↔현재가 수익률 · 공모시총↔현재시총 · 보호예수 · 회사소개 · 큰 차트
+        행에 항상: 종목·시장·섹터·N아이콘 · 상장일 · 현재가(+상장일比) · 현재시총(+PER) · 추이
+        펼치면: PER·PBR·PSR · 매출·영업이익·당기순이익 · 상장일종가↔현재 · 섹터·보호예수 · 회사소개 · 큰 차트
 
-추이 미니 스파크라인 = 상장후 전체(엔진 저장 spark 우선, 없으면 라이브 1회 폴백).
+상장일比 = 상장 첫날 종가 대비 현재가 수익률(공모가는 무료 API 부재로 대체 지표).
+추이 스파크라인 = 상장후 전체(엔진 저장 spark 우선, 없으면 라이브 1회 폴백).
 큰 차트 = 네이버 siseJson(일별) · 면적+선 · 십자선 · 보름 눈금 · 꽉찬 세로축.
-        기간 라디오: 상장후(기본)/3·6·12개월.
 
 데이터
-  · 목록·메타·spark : Supabase ipo_snapshots(엔진). 없으면 임베드 샘플 폴백
-  · 공모가·공모시총 : 엔진이 주식발행정보 V3로 채움(op 확정 전엔 '-')
+  · 목록·메타·spark·재무·밸류 : Supabase ipo_snapshots(엔진). 없으면 임베드 샘플 폴백
+  · N 아이콘 : 네이버 증권 종목페이지(finance.naver.com/item)
   · 큰 차트 시세 : 뷰어 직접 — 네이버 siseJson, 실패 시 yfinance
 """
 
@@ -40,21 +40,24 @@ _SAMPLE = {
         {"name": "시프트업", "code": "462870", "market": "코스피", "sector": "소프트웨어·IT서비스",
          "listed": "2024.07.11", "cap": "3.2조", "cap_won": 3.2e12,
          "price": "62,400", "price_won": 62400, "pct": 1.8,
-         "ipo_price": "60,000", "ipo_price_won": 60000, "offer_cap": "2.9조", "ipo_return": 4.0,
+         "revenue": "1,686억", "op_income": "1,110억", "net_income": "846억",
+         "per": 38.5, "pbr": 12.1, "psr": 19.0,
          "lockup": "미해제 2건 · 최근 해제 2025.01.11",
          "intro": "서브컬처 게임 ‘니케’·‘스텔라 블레이드’ 개발사.",
          "spark": [60000, 62500, 58000, 55500, 57800, 61200, 63400, 60100, 59000, 62400]},
         {"name": "더본코리아", "code": "475560", "market": "코스피", "sector": "숙박·음식",
          "listed": "2024.11.06", "cap": "5,400억", "cap_won": 5.4e11,
          "price": "38,200", "price_won": 38200, "pct": 0.9,
-         "ipo_price": "34,000", "ipo_price_won": 34000, "offer_cap": "4,800억", "ipo_return": 12.4,
+         "revenue": "4,107억", "op_income": "409억", "net_income": "327억",
+         "per": 16.5, "pbr": 3.4, "psr": 1.3,
          "lockup": "미해제 1건 · 최근 해제 2025.05.06",
          "intro": "빽다방·홍콩반점 등 외식 브랜드 운영.",
          "spark": [34000, 41000, 38500, 36000, 39200, 42100, 40500, 38200]},
         {"name": "셀비온", "code": "308430", "market": "코스닥", "sector": "제약·바이오",
          "listed": "2024.10.21", "cap": "2,600억", "cap_won": 2.6e11,
          "price": "13,900", "price_won": 13900, "pct": 2.0,
-         "ipo_price": "", "ipo_price_won": None, "offer_cap": "", "ipo_return": None,
+         "revenue": "12억", "op_income": "-95억", "net_income": "-88억",
+         "per": None, "pbr": 8.7, "psr": 216.7,
          "lockup": "미해제 4건 · 최근 해제 2025.04.21",
          "intro": "방사성 동위원소 기반 항암 치료제 개발.",
          "spark": [13000, 14200, 12500, 11800, 12900, 13600, 14100, 13900]},
@@ -123,6 +126,12 @@ _CSS = """
 .ipo-cmp2 .pair .arw{color:var(--muted,#9a9b92);margin:0 6px;}
 .ipo-cmp2 .ret{font-weight:800;}
 .ipo-meta{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:12.5px;align-items:baseline;margin-top:8px;}
+.ipo-mx{display:flex;flex-wrap:wrap;gap:7px;margin:9px 0 2px;}
+.ipo-mx .cell{flex:1 1 76px;background:var(--summary-bg,#F6F7F2);border:1px solid var(--line,#ECEDE7);
+  border-radius:8px;padding:6px 9px;text-align:center;}
+.ipo-mx .cell .k{font-size:10px;font-weight:700;color:var(--muted,#9a9b92);}
+.ipo-mx .cell .v{font-size:13.5px;font-weight:800;margin-top:2px;}
+.ipo-mx .cell .v.na{color:var(--muted,#9a9b92);font-weight:700;}
 .ipo-meta .k{color:var(--muted,#9a9b92);font-weight:600;white-space:nowrap;}
 .ipo-meta .v{font-weight:700;color:var(--ink,#34352f);}
 .ipo-intro{font-size:12px;color:var(--pill-ink,#5d6258);line-height:1.6;margin-top:11px;
@@ -379,29 +388,23 @@ def _ret_cls(v):
 
 
 def _price_cell(s: dict) -> str:
-    """현재가(상단) + 수익률(하단). 공모가 있으면 공모대비, 없으면 상장일 종가 대비."""
+    """현재가(상단) + 상장일 종가 대비 수익률(하단)."""
     now = f'<div class="now">{html.escape(str(s.get("price", "-")))}<small>원</small></div>'
-    ipo = s.get("ipo_price")
-    if ipo:
-        ret = s.get("ipo_return")
-        rtxt = (f' · <b class="{_ret_cls(ret)}">{"+" if ret >= 0 else ""}{ret:.1f}%</b>'
-                if ret is not None else "")
-        was = f'<div class="was">공모 {html.escape(str(ipo))}{rtxt}</div>'
+    sr = _since_return(s)
+    if sr is not None:
+        was = f'<div class="was">상장일比 <b class="{_ret_cls(sr)}">{"+" if sr >= 0 else ""}{sr:.1f}%</b></div>'
     else:
-        sr = _since_return(s)
-        if sr is not None:
-            was = f'<div class="was">상장일比 <b class="{_ret_cls(sr)}">{"+" if sr >= 0 else ""}{sr:.1f}%</b></div>'
-        else:
-            pct = s.get("pct")
-            was = (f'<div class="was">전일 <b class="{_ret_cls(pct)}">{"+" if pct >= 0 else ""}{pct:.1f}%</b></div>'
-                   if isinstance(pct, (int, float)) else '<div class="was">—</div>')
+        pct = s.get("pct")
+        was = (f'<div class="was">전일 <b class="{_ret_cls(pct)}">{"+" if pct >= 0 else ""}{pct:.1f}%</b></div>'
+               if isinstance(pct, (int, float)) else '<div class="was">—</div>')
     return f'<div class="cmp">{now}{was}</div>'
 
 
 def _cap_cell(s: dict) -> str:
     now = f'<div class="now">{html.escape(str(s.get("cap", "-")))}</div>'
-    oc = s.get("offer_cap")
-    was = (f'<div class="was">공모 {html.escape(str(oc))}</div>' if oc else '<div class="was">현재시총</div>')
+    per = s.get("per")
+    was = (f'<div class="was">PER {per:.1f}</div>' if isinstance(per, (int, float))
+           else '<div class="was">현재시총</div>')
     return f'<div class="cmp">{now}{was}</div>'
 
 
@@ -509,36 +512,47 @@ def render_ipo_tab():
             _ipo_chart(s.get("name", ""), s.get("listed", ""), mode)
             st.markdown(_detail_html(s), unsafe_allow_html=True)
 
-    st.caption("현재가 옆 ‘상장일比’ = 상장 첫날 종가 대비 현재 수익률(공모가는 무료 API 부재로 미제공). "
-               "추이=상장후 전체(엔진/라이브). 큰 차트=네이버 일별(약 15분 지연). N 아이콘·종목명=네이버 증권 종목페이지.")
+    st.caption("현재가 옆 ‘상장일比’=상장 첫날 종가 대비 · 시총 옆 PER. 펼치면 PER·PBR·PSR과 매출·영업이익·당기순이익(DART 최근 연간). "
+               "추이=상장후 전체. 큰 차트=네이버 일별(약 15분 지연). N 아이콘·종목명=네이버 증권. 공모가·회사소개는 무료 소스 부재로 미표시.")
 
 
 def _detail_html(s: dict) -> str:
     sr = _since_return(s)
     sp = _get_spark(s)
     base_close = f"{int(sp[0]):,}원" if sp else "–"
-    ipo = s.get("ipo_price")
-    if ipo:
-        # 진짜 공모가가 들어온 경우(향후 DART 연동)
-        ret = s.get("ipo_return")
-        ret_html = (f'<span class="ret {_ret_cls(ret)}">{"+" if ret >= 0 else ""}{ret:.1f}%</span>'
-                    if ret is not None else "<span></span>")
-        head_k, base_txt = "공모가→현재", html.escape(str(ipo))
-        cap_k = "공모시총→현재"
-        cap_pair = (f'<span class="pair">{html.escape(str(s.get("offer_cap") or "–"))}'
-                    f'<span class="arw">→</span>{html.escape(str(s.get("cap","-")))}</span>')
-    else:
-        ret_html = (f'<span class="ret {_ret_cls(sr)}">{"+" if sr >= 0 else ""}{sr:.1f}%</span>'
-                    if sr is not None else "<span></span>")
-        head_k, base_txt = "상장일종가→현재", base_close
-        cap_k = "현재시총"
-        cap_pair = f'<span class="pair">{html.escape(str(s.get("cap","-")))}</span>'
-    price_pair = (f'<span class="pair">{base_txt}'
+    ret_html = (f'<span class="ret {_ret_cls(sr)}">{"+" if sr >= 0 else ""}{sr:.1f}%</span>'
+                if sr is not None else "<span></span>")
+    price_pair = (f'<span class="pair">{base_close}'
                   f'<span class="arw">→</span>{html.escape(str(s.get("price","-")))}원</span>')
+
+    def _num(v, fmt):
+        return f'<div class="v">{fmt.format(v)}</div>' if isinstance(v, (int, float)) else '<div class="v na">적자·N/A</div>'
+
+    def _amt(v):
+        v = str(v or "")
+        cls = "v"
+        if v.startswith("-"):
+            cls = "v"  # 적자도 검정 유지(라벨로 구분); 색 강조는 생략
+        return f'<div class="{cls}">{html.escape(v) if v else "–"}</div>'
+
+    valuation = (
+        '<div class="ipo-mx">'
+        f'<div class="cell"><div class="k">PER</div>{_num(s.get("per"), "{:.1f}")}</div>'
+        f'<div class="cell"><div class="k">PBR</div>{_num(s.get("pbr"), "{:.2f}")}</div>'
+        f'<div class="cell"><div class="k">PSR</div>{_num(s.get("psr"), "{:.2f}")}</div>'
+        '</div>'
+    )
+    financials = (
+        '<div class="ipo-mx">'
+        f'<div class="cell"><div class="k">매출액</div>{_amt(s.get("revenue"))}</div>'
+        f'<div class="cell"><div class="k">영업이익</div>{_amt(s.get("op_income"))}</div>'
+        f'<div class="cell"><div class="k">당기순이익</div>{_amt(s.get("net_income"))}</div>'
+        '</div>'
+    )
     return (
+        valuation + financials +
         '<div class="ipo-cmp2">'
-        f'<span class="k">{head_k}</span>{price_pair}{ret_html}'
-        f'<span class="k">{cap_k}</span>{cap_pair}<span></span>'
+        f'<span class="k">상장일종가→현재</span>{price_pair}{ret_html}'
         '</div>'
         '<div class="ipo-meta">'
         f'<span class="k">상장일</span><span class="v">{html.escape(str(s.get("listed","-")))}</span>'
