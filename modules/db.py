@@ -74,6 +74,7 @@ IPO_TABLE = "ipo_snapshots"
 LEADERS_TABLE = "leaders"
 SM_TABLE = "stock_master"
 IPO_ABOUT_TABLE = "ipo_about"
+MFLOW_TABLE = "market_flow"
 _CLIENT: Client | None = None
 
 
@@ -508,3 +509,37 @@ def load_ipo_about_map() -> dict:
             break
         start += step
     return out
+
+
+# ── 수급 상위 종목(market_flow): 읽기·쓰기 ────────────────────
+# market_flow 테이블에 날짜별로 외국인·기관 거래대금 상위 종목 payload(jsonb)를 저장.
+# 엔진(engine/market_flow.py)이 pykrx로 채우고, 뷰어(modules/indices.py)가 최신 1행을 읽는다.
+#
+# 최초 1회 아래 SQL로 테이블 생성:
+#   create table if not exists market_flow (
+#     asof_date  text primary key,
+#     payload    jsonb,
+#     updated_at timestamptz default now()
+#   );
+
+def save_market_flow(payload: dict, asof_date: str | None = None) -> str:
+    """수급 상위 payload를 날짜 기준 upsert."""
+    asof_date = asof_date or datetime.now().strftime("%Y-%m-%d")
+    _client().table(MFLOW_TABLE).upsert({
+        "asof_date": asof_date,
+        "payload": payload,
+        "updated_at": datetime.now().isoformat(),
+    }, on_conflict="asof_date").execute()
+    return asof_date
+
+
+def load_market_flow() -> dict | None:
+    """가장 최신 수급 상위 payload(dict)를 반환. 없으면 None."""
+    res = (_client().table(MFLOW_TABLE)
+           .select("payload")
+           .order("asof_date", desc=True)
+           .limit(1)
+           .execute())
+    if res.data and res.data[0].get("payload"):
+        return res.data[0]["payload"]
+    return None
