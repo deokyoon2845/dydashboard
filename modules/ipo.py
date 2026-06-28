@@ -147,6 +147,23 @@ _CSS = """
 """
 
 _SORTS = ["상장일순", "시총순", "등락순", "상장후수익률순"]
+_SORT_SHORT = {"상장일순": "상장일", "시총순": "시총", "등락순": "등락", "상장후수익률순": "수익률"}
+
+# 안3(미니멀 밑줄) — 라디오를 밑줄 탭으로, 셀렉트박스를 고스트 드롭다운으로.
+# st.container(key="ipo_filters") 안에서만 적용되도록 .st-key-ipo_filters로 스코프.
+_FILTER_CSS = """
+<style>
+.st-key-ipo_filters [data-testid="stRadio"] > label p,
+.st-key-ipo_filters [data-testid="stSelectbox"] > label p{font-size:11px;color:var(--muted,#9a9b92);font-weight:400;margin-bottom:3px;}
+.st-key-ipo_filters [data-testid="stRadio"] [role="radiogroup"]{gap:15px;align-items:center;}
+.st-key-ipo_filters [data-testid="stRadio"] [role="radiogroup"] > label{margin:0;align-items:center;}
+.st-key-ipo_filters [data-testid="stRadio"] [role="radiogroup"] > label > div:first-child{display:none;}
+.st-key-ipo_filters [data-testid="stRadio"] [role="radiogroup"] > label p{font-size:14px;color:var(--muted,#9a9b92);margin:0;padding-bottom:3px;line-height:1.2;}
+.st-key-ipo_filters [data-testid="stRadio"] [role="radiogroup"] > label:has(input:checked) p{color:var(--ink,#34352f);font-weight:600;border-bottom:2px solid var(--sage,#A7BBA9);}
+.st-key-ipo_filters [data-testid="stSelectbox"] div[data-baseweb="select"] > div{border:none;background:transparent;box-shadow:none;min-height:30px;}
+.st-key-ipo_filters [data-testid="stSelectbox"] div[data-baseweb="select"] svg{color:var(--muted,#9a9b92);}
+</style>
+"""
 
 
 # ── DB 로드 ────────────────────────────────────────────────────
@@ -491,11 +508,19 @@ def render_ipo_tab():
         return
 
     sectors = sorted({(r.get("sector") or "기타") for r in recent})
-    c1, c2, c3, c4 = st.columns([1.25, 1.2, 1.35, 1.1])
-    market = c1.radio("시장", ["전체", "코스피", "코스닥"], horizontal=True, key="ipo_mkt")
-    sector = c2.selectbox("섹터", ["전체"] + sectors, key="ipo_sct")
-    sort = c3.radio("정렬", _SORTS, horizontal=True, key="ipo_sort")
-    mode = c4.radio("차트 기간", ["상장후", "3개월", "6개월", "1년"], key="ipo_mode")
+    with st.container(key="ipo_filters"):
+        st.markdown(_FILTER_CSS, unsafe_allow_html=True)
+        cL, cR = st.columns([1.7, 1])
+        with cL:
+            cm, cs = st.columns([1, 1.4])
+            market = cm.radio("시장", ["전체", "코스피", "코스닥"],
+                              horizontal=True, key="ipo_mkt")
+            sort = cs.radio("정렬", _SORTS, horizontal=True,
+                            format_func=lambda x: _SORT_SHORT.get(x, x), key="ipo_sort")
+        with cR:
+            cse, cmo = st.columns([1.3, 1])
+            sector = cse.selectbox("섹터", ["전체"] + sectors, key="ipo_sct")
+            mode = cmo.selectbox("차트 기간", ["상장후", "3개월", "6개월", "1년"], key="ipo_mode")
 
     rows = _apply(recent, market, sector, sort)
     st.caption(f"{len(rows)}종목")
