@@ -72,6 +72,7 @@ RE_TABLE = "realestate_snapshots"
 KW_TABLE = "keywords"
 IPO_TABLE = "ipo_snapshots"
 LEADERS_TABLE = "leaders"
+SM_TABLE = "stock_master"
 _CLIENT: Client | None = None
 
 
@@ -393,3 +394,67 @@ def load_leaders() -> dict | None:
             payload = {}
     payload.setdefault("asof", row.get("asof"))
     return payload
+
+
+# ── 종목 마스터(종목명 ↔ 종목코드): 읽기·쓰기 ────────────────
+# stock_master 테이블에 전 종목을 code(단축코드) 기준으로 upsert.
+# 엔진(engine/stock_master.py)이 data.go.kr KRX상장종목정보로 채우고,
+# 뷰어(modules/stock_quote.py)가 읽어 '종목명 → 코드'를 해석한다(pykrx 대체).
+#
+# 최초 1회 아래 SQL로 테이블 생성:
+#   create table if not exists stock_master (
+#     code       text primary key,
+#     name       text not null,
+#     corp_name  text,
+#     market     text,
+#     isin       text,
+#     bas_dt     text,
+#     updated_at timestamptz default now()
+#   );
+#   create index if not exists stock_master_name_idx on stock_master (name);
+
+def save_stock_master(rows: list, basdt: str | None = None) -> int:
+    """종목 마스터 행 목록을 code 기준 upsert. 저장한 행 수 반환.
+       rows 각 항목: {code, name, corp_name, market, isin}."""
+    now = datetime.now().isoformat()
+    payload = []
+    for r in rows or []:
+        code = str(r.get("code") or "").strip()
+        name = str(r.get("name") or "").strip()
+        if not code or not name:
+            continue
+        payload.append({
+            "code": code,
+            "name": name,
+            "corp_name": str(r.get("corp_name") or "").strip(),
+            "market": str(r.get("market") or "").strip(),
+            "isin": str(r.get("isin") or "").strip(),
+            "bas_dt": str(basdt or "").strip(),
+            "updated_at": now,
+        })
+    if not payload:
+        return 0
+    # Supabase 요청 크기 제한을 피하려 청크 단위 upsert
+    tbl = _client().table(SM_TABLE)
+    for i in range(0, len(payload), 500):
+        tbl.upsert(payload[i:i + 500], on_conflict="code").execute()
+    return len(payload)
+
+
+def load_stock_master() -> list[dict]:
+    """종목 마스터 전체 행을 반환(없으면 빈 리스트). 각 행: {code,name,corp_name,market}.
+       Supabase 기본 응답 한도를 고려해 페이지 단위로 모두 읽는다."""
+    out: list[dict] = []
+    step = 1000
+    start = 0
+    while True:
+        res = (_client().table(SM_TABLE)
+               .select("code,name,corp_name,market")
+               .range(start, start + step - 1)
+               .execute())
+        batch = res.data or []
+        out.extend(batch)
+        if len(batch) < step:
+            break
+        start += step
+    return out
