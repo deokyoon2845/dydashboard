@@ -69,4 +69,5 @@ jobs:
           DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
           MOLIT_API_KEY: ${{ secrets.MOLIT_API_KEY }}
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python -m engine.ipo_run
