@@ -1,63 +1,111 @@
-"""[엔진 진입점] 수급 상위 종목(외국인·기관) 수집 → Supabase(market_flow) 저장.
+"""[엔진 진입점] 수급 상위 종목(외국인·기관 순매수) 수집 → Supabase(market_flow) 저장.
 
-뷰어(Streamlit Cloud)에서는 pykrx가 해외 IP 차단으로 막히므로, 엔진(GitHub Actions)에서
-pykrx로 코스피·코스닥의 외국인·기관 거래대금 상위 종목을 모아 Supabase에 저장한다.
-뷰어(modules/indices.py)는 이 테이블을 읽어 '수급 상위 종목'을 표시한다.
+KRX/pykrx가 로그인 요구·차단으로 막혀, 네이버 금융 '외국인·기관 순매매 거래 상위'를
+스크래핑한다(supply_trend.py와 동일한 euc-kr + pandas.read_html 방식).
+뷰어(modules/indices.py)는 Supabase의 최신 payload를 읽어 '수급 상위 종목'을 표시한다.
 
 GitHub Actions(market_flow.yml)에서 `python -m engine.market_flow` 로 실행.
-※ 최초 1회 Supabase에 market_flow 테이블 생성 필요(modules/db.py 상단 SQL).
+키 불필요(SUPABASE만). ※ 최초 1회 Supabase에 market_flow 테이블 생성 필요.
 
-※ 이 잡은 'pykrx가 Actions에서 동작하는지'의 시험도 겸한다. 로그에
-   '코스피 외국인 5 · 기관 5' 처럼 건수가 찍히면 정상, 0이면 pykrx가 Actions에서도
-   막히는 것이므로 다른 소스(예: 한국투자증권 Open API)로 전환해야 한다.
+비공식 스크래핑이라 네이버가 레이아웃을 바꾸면 깨질 수 있다. 그 경우 빈 값으로
+안전하게 떨어지고, 진단 로그(표 개수·컬럼·샘플)를 남겨 파서를 바로 고칠 수 있게 한다.
+값 단위: 네이버 순매매대금은 '백만원' 표기 → 억원으로 환산(÷100).
 """
 
+import re
 import sys
 import traceback
-from datetime import datetime, timedelta
+from datetime import datetime
+from io import StringIO
+from zoneinfo import ZoneInfo
+
+import pandas as pd
+import requests
+
+_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+# 네이버 '외국인·기관 순매매 거래상위' (sosok: 01=코스피, 02=코스닥)
+_URL = "https://finance.naver.com/sise/sise_deal_rank.naver?sosok={sosok}"
+_MARKETS = (("01", "코스피"), ("02", "코스닥"))
 
 
 def _log(msg):
     print(f"[market_flow] {msg}", flush=True)
 
 
-def collect():
-    """{'코스피': {'date','외국인':[(name,억원)...],'기관':[...]}, '코스닥': {...}} 반환.
-       (뷰어의 기존 fetch_supply_demand_summary 로직과 동일 — pykrx 거래대금 상위)."""
-    result = {}
-    from pykrx import stock
-    end = datetime.now()
-    start = end - timedelta(days=10)
-    start_str = start.strftime("%Y%m%d")
-    end_str = end.strftime("%Y%m%d")
+def _to_eok(x):
+    """네이버 표기(백만원 등) → 억원 정수. 부호 유지. 실패 시 None."""
+    try:
+        s = str(x).replace(",", "").replace("+", "").strip()
+        if s in ("", "-", "nan", "None"):
+            return None
+        v = float(s)
+        return int(round(v / 100.0))   # 백만원 → 억원
+    except Exception:
+        return None
 
-    for mkt, label in (("KOSPI", "코스피"), ("KOSDAQ", "코스닥")):
-        try:
-            df = stock.get_market_trading_value_by_ticker(start_str, end_str, mkt)
-            if df is None or df.empty:
-                _log(f"{label}: 빈 응답")
+
+def _name_cell(x):
+    """종목명 셀 정리(공백/숫자만 제거). 종목명 같지 않으면 ''."""
+    s = re.sub(r"\s+", " ", str(x or "")).strip()
+    if not s or s in ("종목명", "nan", "None") or s.replace(".", "").isdigit():
+        return ""
+    return s
+
+
+def _scrape_market(sosok, label):
+    """한 시장의 외국인·기관 순매수 상위 5종목을 파싱.
+       반환: {'date':..., '외국인':[(name,억)..], '기관':[..]} 또는 None."""
+    url = _URL.format(sosok=sosok)
+    try:
+        r = requests.get(url, headers=_HEADERS, timeout=12)
+        r.encoding = "euc-kr"
+        tables = pd.read_html(StringIO(r.text))
+    except Exception as e:
+        _log(f"{label} 요청/파싱 실패: {str(e)[:90]}")
+        return None
+
+    # 진단: 표 개수·각 표의 컬럼/shape (첫 실행 확인용)
+    _log(f"{label} 표 {len(tables)}개")
+    for i, tb in enumerate(tables):
+        cols = " | ".join(str(c) for c in list(tb.columns)[:8])
+        _log(f"  표[{i}] shape={tb.shape} cols={cols[:160]}")
+
+    out = {"date": datetime.now(ZoneInfo('Asia/Seoul')).strftime('%Y-%m-%d')}
+    # 휴리스틱: '외국인'/'기관'이 컬럼명에 있고 종목명 컬럼이 있는 표에서 상위 5
+    for col_key in ("외국인", "기관"):
+        picked = []
+        for tb in tables:
+            cols = [str(c) for c in tb.columns]
+            name_col = next((c for c in tb.columns
+                             if "종목" in str(c) or "종목명" in str(c)), None)
+            val_col = next((c for c in tb.columns if col_key in str(c)
+                            and ("순매수" in str(c) or "순매매" in str(c) or "금액" in str(c) or "대금" in str(c))), None)
+            if name_col is None or val_col is None:
                 continue
-            frg_col = next((c for c in df.columns if "외국인" in c), None)
-            ins_col = next((c for c in df.columns if "기관" in c), None)
-            mkt_result = {"date": f"{end_str[:4]}-{end_str[4:6]}-{end_str[6:]}"}
-            counts = []
-            for col_key, col in (("외국인", frg_col), ("기관", ins_col)):
-                if col is None:
-                    continue
-                items = []
-                for ticker, row in df.nlargest(5, col).iterrows():
-                    try:
-                        name = stock.get_market_ticker_name(ticker)
-                    except Exception:
-                        name = ticker
-                    items.append([name, int(row[col] / 1e8)])   # 억원
-                mkt_result[col_key] = items
-                counts.append(f"{col_key} {len(items)}")
-            result[label] = mkt_result
-            _log(f"{label} " + " · ".join(counts) if counts else f"{label}: 컬럼 없음")
-        except Exception as e:
-            _log(f"{label} 수집 오류: {str(e)[:100]}")
-            continue
+            for _, row in tb.iterrows():
+                nm = _name_cell(row.get(name_col))
+                val = _to_eok(row.get(val_col))
+                if nm and val is not None:
+                    picked.append((nm, val))
+            if picked:
+                break
+        if picked:
+            picked.sort(key=lambda t: t[1], reverse=True)
+            out[col_key] = [[n, v] for n, v in picked[:5]]
+            sample = picked[0]
+            _log(f"{label} {col_key} {len(out[col_key])}종목 (예: {sample[0]} {sample[1]}억)")
+    if out.get("외국인") or out.get("기관"):
+        return out
+    _log(f"{label}: 외국인/기관 컬럼을 가진 표를 못 찾음 — 위 진단 로그로 파서 보정 필요")
+    return None
+
+
+def collect():
+    result = {}
+    for sosok, label in _MARKETS:
+        data = _scrape_market(sosok, label)
+        if data:
+            result[label] = data
     return result
 
 
@@ -70,20 +118,17 @@ def main():
     if not db.supabase_configured():
         print("[market_flow] SUPABASE 미설정 — 건너뜀.", flush=True)
         return 1
-
     try:
         payload = collect()
     except Exception:
-        print("[market_flow] 수집 실패(pykrx가 Actions에서 막혔을 수 있음):", flush=True)
+        print("[market_flow] 수집 실패:", flush=True)
         traceback.print_exc()
         return 1
-
     if not payload:
         print("[market_flow] 수집 결과가 비어 있음 — 저장 건너뜀(기존 데이터 보존).", flush=True)
         return 1
-
     try:
-        asof = datetime.now().strftime("%Y-%m-%d")
+        asof = datetime.now(ZoneInfo('Asia/Seoul')).strftime("%Y-%m-%d")
         db.save_market_flow(payload, asof_date=asof)
         print(f"[market_flow] 저장 완료 asof={asof} · 시장 {len(payload)}", flush=True)
         return 0
