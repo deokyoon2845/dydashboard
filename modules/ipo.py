@@ -20,6 +20,7 @@
 import html
 import json
 from datetime import date, datetime, timedelta
+from urllib.parse import quote
 
 import altair as alt
 import pandas as pd
@@ -464,7 +465,10 @@ def render_ipo_tab():
             cls = "soon" if u.get("soon") else ("tbd" if dday == "접수" else "")
             sub = " · ".join(x for x in [u.get("state", ""), u.get("under", "")] if x)
             est = u.get("est_listing", "")
-            nv = naver_n_icon(name=u.get("name", ""), code=u.get("code", ""))
+            # 미상장 종목 — 종목페이지가 없으므로 '○○ 상장' 검색으로 연결
+            _up_url = "https://search.naver.com/search.naver?query=" + quote(f"{u.get('name','')} 상장")
+            nv = (f'<a class="nv" href="{html.escape(_up_url)}" target="_blank" '
+                  f'rel="noopener" title="네이버에서 \'상장\' 검색">N</a>')
             cards += (
                 '<div class="ipo-up"><div class="nm">'
                 f'<span>{html.escape(u.get("name",""))}{nv}</span>'
