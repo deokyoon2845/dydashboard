@@ -591,7 +591,7 @@ def collect() -> dict:
     _log(f"시총≥{_fmt_cap(CAP_MIN)} & 최근상장 후보 {len(cands)}종목")
 
     recent = []
-    n_listed = n_intro = n_lock = n_spark = n_crno = n_sect = 0
+    n_listed = n_intro = n_spark = n_crno = n_sect = 0
     cutoff = (date.today() - timedelta(days=RECENT_DAYS)).strftime("%Y%m%d")
     win_start = (date.today() - timedelta(days=RECENT_DAYS + 90)).strftime("%Y%m%d")
     for x in cands:
@@ -626,8 +626,6 @@ def collect() -> dict:
         n_listed += 1 if lstg else 0
         n_intro += 1 if intro else 0
         n_spark += 1 if spark else 0
-        lock = _lockup(key, crno)
-        n_lock += 1 if lock else 0
         sector = _dart_sector(_dartk(), srtn)
         if sector:
             n_sect += 1
@@ -644,7 +642,7 @@ def collect() -> dict:
             # 재무·밸류 — 아래 배치(DART fnlttMultiAcnt)에서 채움
             "revenue": "", "op_income": "", "net_income": "",
             "per": None, "pbr": None, "psr": None,
-            "lockup": lock, "intro": intro, "spark": spark,
+            "intro": intro, "spark": spark,
         })
         time.sleep(0.05)
 
@@ -686,7 +684,7 @@ def collect() -> dict:
         _log(f"회사소개 보강 건너뜀: {str(e)[:80]}")
 
     _log(f"완료: 최근상장 {len(recent)}종목 "
-         f"(crno {n_crno} · 상장일 {n_listed} · 섹터 {n_sect} · 재무 {n_fin} · 회사소개 {n_intro} · 보호예수 {n_lock} · 추이 {n_spark}) "
+         f"(crno {n_crno} · 상장일 {n_listed} · 섹터 {n_sect} · 재무 {n_fin} · 회사소개 {n_intro} · 추이 {n_spark}) "
          f"/ 향후 {len(upcoming)}건")
 
     return {
