@@ -1,6 +1,33 @@
-"""종목명 → 당일 등락률 인라인 조회 (pykrx 기반, 캐시)."""
+"""종목명 → 코드/등락률 조회.
+
+종목명 → 코드: ① Supabase 종목 마스터(stock_master, 클라우드에서도 동작)
+              ② pykrx 사전(로컬 폴백). 등락률: pykrx(있을 때).
+"""
 
 import streamlit as st
+
+
+@st.cache_data(ttl=3600)
+def _db_name_map():
+    """Supabase stock_master → {종목명: 코드} (법인명도 보조키). DB 미설정/실패 시 빈 dict."""
+    try:
+        from modules import db
+        if not db.supabase_configured():
+            return {}
+        m = {}
+        for r in db.load_stock_master():
+            code = str(r.get("code") or "").strip()
+            if not code:
+                continue
+            nm = str(r.get("name") or "").strip()
+            if nm:
+                m.setdefault(nm, code)
+            cn = str(r.get("corp_name") or "").strip()
+            if cn:
+                m.setdefault(cn, code)
+        return m
+    except Exception:
+        return {}
 
 
 @st.cache_data(ttl=1800)
@@ -34,11 +61,19 @@ def _name_to_ticker_map():
 
 
 def code_for_name(name: str):
-    """종목명 → 6자리 코드(없으면 None). 캐시된 KRX 사전을 사용."""
+    """종목명 → 6자리 코드(없으면 None).
+       ① Supabase 종목 마스터(클라우드 동작) → ② pykrx 사전(로컬 폴백)."""
     if not name:
         return None
+    key = name.strip()
     try:
-        return _name_to_ticker_map().get(name.strip())
+        code = _db_name_map().get(key)
+        if code:
+            return code
+    except Exception:
+        pass
+    try:
+        return _name_to_ticker_map().get(key)
     except Exception:
         return None
 
