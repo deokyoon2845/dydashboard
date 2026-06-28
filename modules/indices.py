@@ -195,9 +195,12 @@ def fetch_index(ticker: str):
         return None
 
 
-@st.cache_data(ttl=1800)  # 30분 캐시 — pykrx 호출 비용 고려
+@st.cache_data(ttl=1800)  # 30분 캐시
 def fetch_supply_demand_summary():
-    """외국인·기관 순매수 상위 5종목 (최근 거래일).
+    """외국인·기관 거래대금 상위 5종목 (최근 거래일).
+
+    ① Supabase market_flow(엔진 pykrx 수집, 클라우드에서도 동작)
+    ② pykrx 직접(로컬 폴백).
 
     반환값: {
         "코스피": {"외국인": [("삼성전자", +1200), ...], "기관": [...], "date": "2024-01-15"},
@@ -205,6 +208,28 @@ def fetch_supply_demand_summary():
     }
     실패 시 빈 dict 반환.
     """
+    # ① Supabase 우선 — 엔진(engine/market_flow.py)이 적재한 최신 payload
+    try:
+        from modules import db
+        if db.supabase_configured():
+            payload = db.load_market_flow()
+            if payload:
+                # JSON 저장 시 (name, val)이 [name, val] 리스트로 오므로 튜플로 정규화
+                out = {}
+                for mkt, data in payload.items():
+                    if not isinstance(data, dict):
+                        continue
+                row = {"date": data.get("date", "")}
+                for col in ("외국인", "기관"):
+                    items = data.get(col) or []
+                    row[col] = [(str(it[0]), it[1]) for it in items if isinstance(it, (list, tuple)) and len(it) >= 2]
+                out[mkt] = row
+                if out:
+                    return out
+    except Exception:
+        pass
+
+    # ② pykrx 폴백(로컬/엔진)
     result = {}
     try:
         from pykrx import stock
