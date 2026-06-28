@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 
 from modules.indices import (
     INDEX_GROUPS, fetch_index, sparkline_points, sparkline_axis_html,
-    fetch_supply_demand_summary, fetch_history, fetch_intraday,
+    fetch_history, fetch_intraday,
     is_kr_market_open,
 )
 from modules.calendar_view import render_calendar
@@ -64,8 +64,6 @@ html, body, [data-testid="stAppViewContainer"] { font-family: 'Hanken Grotesk','
 .stMainBlockContainer { padding-top: 3.5rem !important; }
 h1,h2,h3 { font-family: 'Fraunces','Noto Sans KR',serif !important; letter-spacing:-.01em; color:var(--ink); }
 h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 !important; margin:0 0 .4rem !important; }
-.th-eyebrow { font-family:'Fraunces','Noto Sans KR',serif; font-size:15px; font-weight:600; color:var(--sage-deep); letter-spacing:.02em; margin:0 0 2px; }
-.th-title { font-family:'Fraunces','Noto Sans KR',serif !important; font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 !important; letter-spacing:-.01em; color:var(--ink); margin:0 0 .4rem !important; }
 .stTabs [data-baseweb="tab-list"] { gap:4px; flex-wrap:wrap; }
 .stTabs [data-baseweb="tab"] { white-space:nowrap; padding:8px 14px; height:auto; min-width:max-content; }
 .stTabs [data-baseweb="tab"] p { font-size:15px; margin:0; white-space:nowrap; }
@@ -382,38 +380,6 @@ def _heat_html(datas, histories=None):
     return f'<div class="mkt-grid">{tiles}</div>'
 
 
-# ── 수급 상위 종목 HTML ──
-def _supply_html(supply_data: dict) -> str:
-    if not supply_data:
-        return ""
-    parts = []
-    for mkt_label, mkt_data in supply_data.items():
-        rows_html = ""
-        for investor in ("외국인", "기관"):
-            items = mkt_data.get(investor, [])
-            if not items:
-                continue
-            stocks_html = ""
-            for name, val in items:
-                val_cls = "supply-val-pos" if val >= 0 else "supply-val-neg"
-                stocks_html += (f'<span class="supply-stock-item">'
-                                f'{name} <span class="{val_cls}">{val:+,}억</span>'
-                                f'</span>')
-            rows_html += (f'<div class="supply-row">'
-                          f'<span class="supply-type">{investor}</span>'
-                          f'<span class="supply-stocks">{stocks_html}</span>'
-                          f'</div>')
-        if rows_html:
-            parts.append(
-                f'<div class="supply-wrap">'
-                f'<div class="supply-mkt">{mkt_label} · 순매수 상위 5종목</div>'
-                f'{rows_html}'
-                f'<div class="supply-note">⚠️ 전일 확정 데이터 · 당일 수급과 다를 수 있음</div>'
-                f'</div>'
-            )
-    return "".join(parts)
-
-
 # ── 국내 지수 대형 차트 ──
 _KRX_PERIODS = {"1일": 1, "1개월": 31, "3개월": 92, "6개월": 183, "1년": 366}
 
@@ -683,12 +649,6 @@ def _render_indices_body():
 
     from modules.supply_trend import render_supply_trend
     render_supply_trend()
-
-    # 외국인·기관 순매수 상위 종목 (pykrx 가능 시) — 수급 추세 바로 아래로 통합
-    supply = fetch_supply_demand_summary()
-    if supply:
-        st.markdown('<div class="mkt-group">💰 수급 상위 종목</div>', unsafe_allow_html=True)
-        st.markdown(_supply_html(supply), unsafe_allow_html=True)
 
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     from modules.market_breadth import render_market_breadth
