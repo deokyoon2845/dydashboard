@@ -510,7 +510,7 @@ def render_ipo_tab():
             st.markdown(_detail_html(s), unsafe_allow_html=True)
 
     st.caption("현재가 옆 ‘상장일比’=상장 첫날 종가 대비 · 시총 옆 PER. 펼치면 PER·PBR·PSR과 매출·영업이익·당기순이익(DART 최근 연간). "
-               "추이=상장후 전체. 큰 차트=네이버 일별(약 15분 지연). N 아이콘·종목명=네이버 증권. 공모가·회사소개는 무료 소스 부재로 미표시.")
+               "추이=상장후 전체. 큰 차트=네이버 일별(약 15분 지연). N 아이콘·종목명=네이버 증권. 회사소개=DART 공시 기반 AI 요약. 공모가는 추후 제공.")
 
 
 def _detail_html(s: dict) -> str:
@@ -556,5 +556,5 @@ def _detail_html(s: dict) -> str:
         f'<span class="k">섹터</span><span class="v">{html.escape(str(s.get("sector") or "-"))}</span>'
         f'<span class="k">보호예수</span><span class="v">{html.escape(str(s.get("lockup") or "-"))}</span>'
         '</div>'
-        f'<div class="ipo-intro">{html.escape(str(s.get("intro") or "회사소개 정보가 아직 없어요."))}</div>'
+        f'<div class="ipo-intro">{html.escape(str(s.get("about") or s.get("intro") or "회사소개 정보가 아직 없어요."))}</div>'
     )
