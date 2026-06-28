@@ -73,6 +73,7 @@ KW_TABLE = "keywords"
 IPO_TABLE = "ipo_snapshots"
 LEADERS_TABLE = "leaders"
 SM_TABLE = "stock_master"
+IPO_ABOUT_TABLE = "ipo_about"
 _CLIENT: Client | None = None
 
 
@@ -454,6 +455,55 @@ def load_stock_master() -> list[dict]:
                .execute())
         batch = res.data or []
         out.extend(batch)
+        if len(batch) < step:
+            break
+        start += step
+    return out
+
+
+# ── IPO 회사소개(about) 캐시: 읽기·쓰기 ───────────────────────
+# ipo_about 테이블에 종목코드별로 Haiku 요약 회사소개를 1회 저장(영구 캐시).
+# 엔진(engine/ipo_about.py)이 DART 문서 → Haiku 요약 → 여기에 저장하고,
+# 같은 종목은 재호출하지 않는다(신규 IPO만 생성).
+#
+# 최초 1회 아래 SQL로 테이블 생성:
+#   create table if not exists ipo_about (
+#     code       text primary key,
+#     name       text,
+#     about      text,
+#     source     text,
+#     updated_at timestamptz default now()
+#   );
+
+def save_ipo_about(code: str, name: str = "", about: str = "", source: str = "") -> None:
+    """종목코드별 회사소개를 upsert(빈 about도 저장 → 반복 생성 비용 방지)."""
+    code = str(code or "").strip()
+    if not code:
+        return
+    _client().table(IPO_ABOUT_TABLE).upsert({
+        "code": code,
+        "name": str(name or "").strip(),
+        "about": str(about or "").strip(),
+        "source": str(source or "").strip(),
+        "updated_at": datetime.now().isoformat(),
+    }, on_conflict="code").execute()
+
+
+def load_ipo_about_map() -> dict:
+    """{종목코드: 회사소개} 전체를 반환(없으면 빈 dict). 빈 about도 키로 포함."""
+    out: dict = {}
+    step = 1000
+    start = 0
+    while True:
+        res = (_client().table(IPO_ABOUT_TABLE)
+               .select("code,about")
+               .range(start, start + step - 1)
+               .execute())
+        batch = res.data or []
+        for row in batch:
+            c = str(row.get("code") or "").strip()
+            if c:
+                out[c] = str(row.get("about") or "").strip()
         if len(batch) < step:
             break
         start += step
