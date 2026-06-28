@@ -677,6 +677,14 @@ def collect() -> dict:
         if o and o.get("enpMainBizNm"):
             u["intro"] = o["enpMainBizNm"]
 
+    # 회사소개(about) 보강 — DART 문서 → Haiku 요약 → Supabase 캐시(코드별 1회).
+    # 키/네트워크 문제로 실패해도 IPO 수집은 그대로 진행.
+    try:
+        from engine import ipo_about
+        ipo_about.enrich(recent)
+    except Exception as e:
+        _log(f"회사소개 보강 건너뜀: {str(e)[:80]}")
+
     _log(f"완료: 최근상장 {len(recent)}종목 "
          f"(crno {n_crno} · 상장일 {n_listed} · 섹터 {n_sect} · 재무 {n_fin} · 회사소개 {n_intro} · 보호예수 {n_lock} · 추이 {n_spark}) "
          f"/ 향후 {len(upcoming)}건")
