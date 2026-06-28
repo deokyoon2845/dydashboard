@@ -64,11 +64,15 @@ def _scrape_market(sosok, label):
         _log(f"{label} 요청/파싱 실패: {str(e)[:90]}")
         return None
 
-    # 진단: 표 개수·각 표의 컬럼/shape (첫 실행 확인용)
+    # 진단: 표 개수·각 표의 shape + 실제 행 내용(첫 실행 확인용)
     _log(f"{label} 표 {len(tables)}개")
     for i, tb in enumerate(tables):
-        cols = " | ".join(str(c) for c in list(tb.columns)[:8])
-        _log(f"  표[{i}] shape={tb.shape} cols={cols[:160]}")
+        _log(f"  표[{i}] shape={tb.shape}")
+        for j, (_, row) in enumerate(tb.iterrows()):
+            if j >= 8:
+                break
+            cells = " ¦ ".join(str(v) for v in list(row.values)[:6])
+            _log(f"    [{i}.{j}] {cells[:200]}")
 
     out = {"date": datetime.now(ZoneInfo('Asia/Seoul')).strftime('%Y-%m-%d')}
     # 휴리스틱: '외국인'/'기관'이 컬럼명에 있고 종목명 컬럼이 있는 표에서 상위 5
