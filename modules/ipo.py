@@ -5,7 +5,7 @@
   ② 필터/정렬 바  : 시장(전체/코스피/코스닥) · 섹터 · 정렬(상장일/시총/등락/상장후수익률)
   ③ 최근 상장 종목 : 한 종목 = 한 행
         행에 항상: 종목·시장·섹터·N아이콘 · 상장일 · 현재가(+상장일比) · 현재시총(+PER) · 추이
-        펼치면: PER·PBR·PSR · 매출·영업이익·당기순이익 · 상장일종가↔현재 · 섹터·보호예수 · 회사소개 · 큰 차트
+        펼치면: PER·PBR·PSR · 매출·영업이익·당기순이익 · 상장일종가↔현재 · 섹터 · 회사소개 · 큰 차트
 
 상장일比 = 상장 첫날 종가 대비 현재가 수익률(공모가는 무료 API 부재로 대체 지표).
 추이 스파크라인 = 상장후 전체(엔진 저장 spark 우선, 없으면 라이브 1회 폴백).
@@ -473,7 +473,7 @@ def render_ipo_tab():
 
     # ① 향후 IPO 일정
     st.markdown('<div class="ipo-sec">향후 IPO 일정 '
-                '<span class="mut">· 회사소개 · 상장 예상구간은 접수일 기준 추정</span></div>',
+                '<span class="mut">· 회사소개 · 상장일은 미정</span></div>',
                 unsafe_allow_html=True)
     if upcoming:
         cards = ""
@@ -481,7 +481,6 @@ def render_ipo_tab():
             dday = u.get("dday", "") or "접수"
             cls = "soon" if u.get("soon") else ("tbd" if dday == "접수" else "")
             sub = " · ".join(x for x in [u.get("state", ""), u.get("under", "")] if x)
-            est = u.get("est_listing", "")
             # 미상장 종목 — 종목페이지가 없으므로 '○○ 상장' 검색으로 연결
             _up_url = "https://search.naver.com/search.naver?query=" + quote(f"{u.get('name','')} 상장")
             nv = (f'<a class="nv" href="{html.escape(_up_url)}" target="_blank" '
@@ -492,7 +491,6 @@ def render_ipo_tab():
                 f'<span class="dday {cls}">{html.escape(dday)}</span></div>'
                 f'<div class="sub">{html.escape(sub)}</div>'
                 f'<div class="ds">{html.escape(u.get("intro",""))}</div>'
-                + (f'<div class="est">📅 상장 {html.escape(est)}</div>' if est else "")
                 + '</div>'
             )
         st.markdown(f'<div class="ipo-strip">{cards}</div>', unsafe_allow_html=True)
@@ -579,7 +577,6 @@ def _detail_html(s: dict) -> str:
         '<div class="ipo-meta">'
         f'<span class="k">상장일</span><span class="v">{html.escape(str(s.get("listed","-")))}</span>'
         f'<span class="k">섹터</span><span class="v">{html.escape(str(s.get("sector") or "-"))}</span>'
-        f'<span class="k">보호예수</span><span class="v">{html.escape(str(s.get("lockup") or "-"))}</span>'
         '</div>'
         f'<div class="ipo-intro">{html.escape(str(s.get("about") or s.get("intro") or "회사소개 정보가 아직 없어요."))}</div>'
     )
