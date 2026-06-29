@@ -1,5 +1,6 @@
 """시장 현황 대시보드 - Streamlit 메인 앱 (라이트 단일 테마, 통일 헤더)."""
 
+import json
 import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -425,6 +426,84 @@ _IDX_CHART_CSS = """
 """
 
 
+def _svg_index_chart(labels, ys, line_color, prev_close=None, height=260):
+    """코스피/코스닥 차트를 SVG로 직접 렌더.
+
+    라인이 좌→우로 그려지고 area가 함께 차오르는 단일 등장 애니메이션(0.85s)을
+    SVG clip-reveal로 구현해 Altair/Vega의 렌더 지연으로 생기던 '딱딱 끊김'을 없앴다.
+    crosshair hover(세로선·점·값 툴팁)와 반응형(폭 변화 시 재계산)을 자체 제공한다.
+    """
+    hx = line_color.lstrip("#")
+    r, g, b = int(hx[0:2], 16), int(hx[2:4], 16), int(hx[4:6], 16)
+    tpl = r'''<!doctype html><html><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+<style>
+html,body{margin:0;background:transparent;}
+#host{width:100%;height:__H__px;}
+svg{display:block;width:100%;height:__H__px;overflow:visible;}
+text{font-family:Pretendard,'Noto Sans KR',sans-serif;}
+.ic-line{fill:none;stroke:__COLOR__;stroke-width:2;stroke-linejoin:round;stroke-linecap:round;}
+</style></head><body><div id="host"></div>
+<script>
+var YS=__YS__, LB=__LB__, PREV=__PREV__, H=__H__, COLOR="__COLOR__", RGB="__RGB__", first=true;
+var REDUCE = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function draw(){
+  var host=document.getElementById('host');
+  var W=Math.max(280, host.clientWidth||700);
+  var ml=50,mr=14,mt=12,mb=24, pw=W-ml-mr, ph=H-mt-mb;
+  var lo=Math.min.apply(null,YS), hi=Math.max.apply(null,YS);
+  if(PREV!=null){lo=Math.min(lo,PREV);hi=Math.max(hi,PREV);}
+  var pad=(hi-lo)*0.10||hi*0.005||1; lo-=pad; hi+=pad; var sp=(hi-lo)||1, n=YS.length;
+  function X(i){return ml+(n>1?i/(n-1):0)*pw;}
+  function Y(v){return mt+(1-(v-lo)/sp)*ph;}
+  var line='M'+YS.map(function(v,i){return X(i).toFixed(1)+','+Y(v).toFixed(1);}).join(' L');
+  var area=line+' L'+X(n-1).toFixed(1)+','+(mt+ph).toFixed(1)+' L'+X(0).toFixed(1)+','+(mt+ph).toFixed(1)+' Z';
+  var yg='';
+  for(var k=0;k<5;k++){var v=lo+sp*k/4, y=Y(v).toFixed(1);
+    yg+='<line x1='+ml+' y1='+y+' x2='+(ml+pw)+' y2='+y+' stroke="#ECEDE7"/>';
+    yg+='<text x='+(ml-8)+' y='+(parseFloat(y)+3.5).toFixed(1)+' text-anchor="end" font-size="11" fill="#9a9b92">'+Math.round(v).toLocaleString()+'</text>';}
+  var xg='', step=Math.max(1,Math.floor(n/6));
+  for(var i=0;i<n;i+=step){xg+='<text x='+X(i).toFixed(1)+' y='+(H-7)+' text-anchor="middle" font-size="11" fill="#9a9b92">'+LB[i]+'</text>';}
+  var pv='';
+  if(PREV!=null){var py=Y(PREV).toFixed(1);
+    pv='<line x1='+ml+' y1='+py+' x2='+(ml+pw)+' y2='+py+' stroke="#9a9b92" stroke-dasharray="4 4" opacity="0.6"/>';}
+  var doAnim = first && !REDUCE;
+  var aw = doAnim ? '<animate attributeName="width" from="0" to="'+pw+'" dur="0.85s" calcMode="spline" keyTimes="0;1" keySplines="0.22 0.61 0.36 1" fill="freeze"/>' : '';
+  var rw = doAnim ? 0 : pw;
+  var svg='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">'
+    +'<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba('+RGB+',0.20)"/><stop offset="1" stop-color="rgba('+RGB+',0)"/></linearGradient>'
+    +'<clipPath id="rv"><rect x="'+ml+'" y="0" width="'+rw+'" height="'+H+'">'+aw+'</rect></clipPath></defs>'
+    +yg+pv
+    +'<g clip-path="url(#rv)"><path d="'+area+'" fill="url(#g)"/><path d="'+line+'" class="ic-line"/></g>'
+    +xg
+    +'<g id="cr" style="display:none"><line id="vl" y1="'+mt+'" y2="'+(mt+ph)+'" stroke="#9a9b92" stroke-dasharray="3 3"/><circle id="dt" r="4" fill="'+COLOR+'"/><g id="tp"><rect id="tb" rx="4" height="18" fill="#34352f"/><text id="tt" font-size="11" font-weight="700" fill="#fff" text-anchor="middle"></text></g></g>'
+    +'<rect id="ht" x="'+ml+'" y="'+mt+'" width="'+pw+'" height="'+ph+'" fill="transparent" style="cursor:crosshair"/>'
+    +'</svg>';
+  host.innerHTML=svg; first=false;
+  var root=host.querySelector('svg'),cr=root.querySelector('#cr'),vl=root.querySelector('#vl'),dt=root.querySelector('#dt'),tb=root.querySelector('#tb'),tt=root.querySelector('#tt'),ht=root.querySelector('#ht');
+  var P=YS.map(function(v,i){return [X(i),Y(v),v,LB[i]];});
+  ht.addEventListener('mousemove',function(e){
+    var r=root.getBoundingClientRect(), mx=(e.clientX-r.left)/r.width*W, bi=0, bd=1e9;
+    for(var i=0;i<P.length;i++){var dd=Math.abs(P[i][0]-mx);if(dd<bd){bd=dd;bi=i;}}
+    var p=P[bi]; cr.style.display='';
+    vl.setAttribute('x1',p[0]);vl.setAttribute('x2',p[0]);dt.setAttribute('cx',p[0]);dt.setAttribute('cy',p[1]);
+    var txt=p[3]+'  '+p[2].toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    tt.textContent=txt; var tw=txt.length*6.7+14, tx=Math.max(ml+tw/2,Math.min(ml+pw-tw/2,p[0])), ty=Math.max(mt+13,p[1]-12);
+    tb.setAttribute('width',tw);tb.setAttribute('x',tx-tw/2);tb.setAttribute('y',ty-13);tt.setAttribute('x',tx);tt.setAttribute('y',ty);
+  });
+  ht.addEventListener('mouseleave',function(){cr.style.display='none';});
+}
+draw(); var rt; window.addEventListener('resize',function(){clearTimeout(rt);rt=setTimeout(draw,150);});
+</script></body></html>'''
+    return (tpl
+            .replace("__YS__", json.dumps([round(float(v), 2) for v in ys]))
+            .replace("__LB__", json.dumps(list(labels), ensure_ascii=False))
+            .replace("__PREV__", "null" if prev_close is None else repr(float(prev_close)))
+            .replace("__H__", str(int(height)))
+            .replace("__COLOR__", line_color)
+            .replace("__RGB__", "%d,%d,%d" % (r, g, b)))
+
+
 def _big_index_chart_intraday(name: str, ticker: str):
     d = fetch_intraday(ticker, "5m")
     if not d or d.get("series") is None or len(d["series"]) < 2:
@@ -462,68 +541,16 @@ def _big_index_chart_intraday(name: str, ticker: str):
 
     lo_v, hi_v = float(df["종가"].min()), float(df["종가"].max())
     span = (hi_v - lo_v) or (hi_v * 0.01) or 1.0
-
-    show_baseline = False
+    pv = None
     if base_is_prev and prev_close is not None and prev_close > 0:
         if (lo_v - 1.5 * span) <= prev_close <= (hi_v + 1.5 * span):
-            lo_v = min(lo_v, prev_close)
-            hi_v = max(hi_v, prev_close)
-            show_baseline = True
+            pv = float(prev_close)
 
-    pad_v = (hi_v - lo_v) * 0.10 or (hi_v * 0.01) or 1.0
-    y_dom = [lo_v - pad_v, hi_v + pad_v]
-
-    x_enc = alt.X("시각:T", axis=alt.Axis(title=None, format="%H:%M",
-                                          labelColor=axis_c, grid=False))
-    y_enc = alt.Y("종가:Q", scale=alt.Scale(domain=y_dom, nice=False, clamp=True, zero=False),
-                  axis=alt.Axis(title=None, labelColor=axis_c, gridColor=grid_c,
-                                format=",.0f"))
-    tip = [alt.Tooltip("시각:T", format="%H:%M"),
-           alt.Tooltip("종가:Q", format=",.2f")]
-
-    y_floor = y_dom[0]
-    df_a = df.copy()
-    df_a["바닥"] = y_floor
-    area = alt.Chart(df_a).mark_area(color=_area_gradient(line_c, top=0.16)).encode(
-        x=x_enc, y=y_enc, y2=alt.Y2("바닥:Q"), tooltip=tip)
-
-    layers = [area]
-    line_layer = alt.Chart(df).mark_line(color=line_c, strokeWidth=2).encode(
-        x=x_enc, y=y_enc, tooltip=tip)
-    layers.append(line_layer)
-    if show_baseline:
-        baseline = alt.Chart(pd.DataFrame({"y": [prev_close]})).mark_rule(
-            color=axis_c, strokeDash=[4, 4], opacity=0.7).encode(y="y:Q")
-        layers.insert(0, baseline)
-
-    try:
-        hover = alt.selection_point(fields=["시각"], nearest=True,
-                                    on="mouseover", empty=False)
-        selectors = alt.Chart(df).mark_point().encode(
-            x=x_enc, opacity=alt.value(0)).add_params(hover)
-        # 세로 + 가로 크로스헤어 (가로선으로 세로축 값 위치를 함께 표시)
-        vrule = alt.Chart(df).mark_rule(color=axis_c, strokeDash=[3, 3]).encode(
-            x=x_enc).transform_filter(hover)
-        hrule = alt.Chart(df).mark_rule(color=axis_c, strokeDash=[3, 3]).encode(
-            y=y_enc).transform_filter(hover)
-        hpoints = alt.Chart(df).mark_point(size=60, color=line_c, filled=True).encode(
-            x=x_enc, y=y_enc,
-            opacity=alt.condition(hover, alt.value(1), alt.value(0)))
-        htext = alt.Chart(df).mark_text(
-            align="left", dx=8, dy=-10, fontSize=12, fontWeight="bold",
-            color=line_c).encode(
-            x=x_enc, y=y_enc,
-            text=alt.condition(hover, alt.Text("종가:Q", format=",.2f"),
-                               alt.value("")))
-        chart = (alt.layer(*layers, selectors, vrule, hrule, hpoints, htext)
-                 .properties(height=260, background="transparent")
-                 .configure_view(strokeWidth=0))
-    except Exception:
-        chart = (alt.layer(*layers)
-                 .properties(height=260, background="transparent")
-                 .configure_view(strokeWidth=0))
-
-    st.altair_chart(chart, use_container_width=True)
+    labels = [t.strftime("%H:%M") for t in df["시각"]]
+    ys = [float(v) for v in df["종가"]]
+    components.html(
+        _svg_index_chart(labels, ys, line_c, prev_close=pv, height=260),
+        height=272)
 
 
 def _big_index_chart(name: str, ticker: str, days: int):
@@ -562,55 +589,11 @@ def _big_index_chart(name: str, ticker: str, days: int):
         f'<span class="mkt-chg {chg_cls}">{arrow} {change:+,.2f} ({pct:+.2f}%)</span>'
         f'</div>', unsafe_allow_html=True)
 
-    lo_v, hi_v = float(seg["종가"].min()), float(seg["종가"].max())
-    pad_v = (hi_v - lo_v) * 0.08 or 1.0
-    y_dom = [lo_v - pad_v, hi_v + pad_v]
-
-    x_enc = alt.X("날짜:T", axis=alt.Axis(title=None, format="%m/%d",
-                                          labelColor=axis_c, grid=False))
-    y_enc = alt.Y("종가:Q", scale=alt.Scale(domain=y_dom, nice=False, clamp=True, zero=False),
-                  axis=alt.Axis(title=None, labelColor=axis_c, gridColor=grid_c,
-                                format=",.0f"))
-    tip = [alt.Tooltip("날짜:T", format="%Y-%m-%d"),
-           alt.Tooltip("종가:Q", format=",.2f")]
-
-    seg_a = seg.copy()
-    seg_a["바닥"] = y_dom[0]
-    area = alt.Chart(seg_a).mark_area(color=_area_gradient(line_c, top=0.20)).encode(
-        x=x_enc, y=y_enc, y2=alt.Y2("바닥:Q"), tooltip=tip)
-    line_main = alt.Chart(seg).mark_line(color=line_c, strokeWidth=2).encode(
-        x=x_enc, y=y_enc, tooltip=tip)
-
-    try:
-        hover = alt.selection_point(fields=["날짜"], nearest=True,
-                                    on="mouseover", empty=False)
-        zoom = alt.selection_interval(bind="scales", encodings=["x"])
-        selectors = alt.Chart(seg).mark_point().encode(
-            x=x_enc, opacity=alt.value(0)).add_params(hover)
-        # 세로 + 가로 크로스헤어 (가로선으로 세로축 값 위치를 함께 표시)
-        vrule = alt.Chart(seg).mark_rule(color=axis_c, strokeDash=[3, 3]).encode(
-            x=x_enc).transform_filter(hover)
-        hrule = alt.Chart(seg).mark_rule(color=axis_c, strokeDash=[3, 3]).encode(
-            y=y_enc).transform_filter(hover)
-        hpoints = alt.Chart(seg).mark_point(size=60, color=line_c, filled=True).encode(
-            x=x_enc, y=y_enc,
-            opacity=alt.condition(hover, alt.value(1), alt.value(0)))
-        htext = alt.Chart(seg).mark_text(
-            align="left", dx=8, dy=-10, fontSize=12, fontWeight="bold",
-            color=line_c).encode(
-            x=x_enc, y=y_enc,
-            text=alt.condition(hover, alt.Text("종가:Q", format=",.2f"),
-                               alt.value("")))
-        chart = (alt.layer(area, line_main, selectors, vrule, hrule, hpoints, htext)
-                 .add_params(zoom)
-                 .properties(height=260, background="transparent")
-                 .configure_view(strokeWidth=0))
-    except Exception:
-        chart = (alt.layer(area, line_main)
-                 .properties(height=260, background="transparent")
-                 .configure_view(strokeWidth=0))
-
-    st.altair_chart(chart, use_container_width=True)
+    labels = [d.strftime("%m/%d") for d in seg["날짜"]]
+    ys = [float(v) for v in seg["종가"]]
+    components.html(
+        _svg_index_chart(labels, ys, line_c, prev_close=None, height=260),
+        height=272)
 
 
 def _render_domestic_charts():
