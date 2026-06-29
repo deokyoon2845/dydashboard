@@ -979,7 +979,6 @@ def _render_status_panel():
 
 # ── 탭 ──
 _inject_countup()
-_render_status_panel()
 top_stock, top_re = st.tabs(["주식", "부동산"])
 
 with top_stock:
@@ -1001,3 +1000,8 @@ with top_stock:
 with top_re:
     from modules.realestate import render_realestate
     render_realestate()
+
+
+# ── 수집 상태 패널: 페이지 최하단(모든 탭 콘텐츠 아래)에 배치 ──
+# 탭 with 블록 바깥 최상위에 두어, 어느 탭을 보든 본문 맨 아래에 접힌 채로 표시된다.
+_render_status_panel()
