@@ -29,6 +29,15 @@ def main():
         traceback.print_exc()
         return 1
 
+    # 회사소개(intro) 보강 — DART 사업보고서 → Haiku 요약(캐시 우선).
+    # 키(DART_API_KEY·ANTHROPIC_API_KEY)가 없으면 캐시만 사용하고 신규 생성은 건너뛴다.
+    # 실거래 수집과 독립이라 실패해도 스냅샷 저장에는 영향 없다.
+    try:
+        from engine.ipo_about import enrich
+        enrich(data.get("recent") or [])
+    except Exception as e:
+        print(f"[ipo_run] 회사소개 보강 건너뜀: {e}", flush=True)
+
     n_recent = len(data.get("recent") or [])
     n_up = len(data.get("upcoming") or [])
     if n_recent == 0 and n_up == 0:
