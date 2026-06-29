@@ -83,6 +83,7 @@ WL_TABLE = "watchlist"
 WL_ID = 1
 RE_TABLE = "realestate_snapshots"
 KW_TABLE = "keywords"
+RE_KW_TABLE = "realestate_keywords"
 IPO_TABLE = "ipo_snapshots"
 LEADERS_TABLE = "leaders"
 SM_TABLE = "stock_master"
@@ -372,6 +373,68 @@ def load_recent_keywords(limit: int = 40) -> list[dict]:
     """최근 키워드 행들을 최신순으로 반환(streak·NEW 계산용).
        각 행: {'kw_date','generated','items'}."""
     res = (_client().table(KW_TABLE)
+           .select("kw_date,generated,items")
+           .order("kw_date", desc=True)
+           .limit(limit)
+           .execute())
+    return res.data or []
+
+
+# ── 부동산 키워드: 읽기·쓰기 (증시 keywords 미러, realestate_keywords 테이블) ──
+# 증시(keywords)와 동일 스키마: kw_date(PK)·generated·items(JSONB)·updated_at.
+# 영속·누적 저장으로 streak/NEW가 끊기지 않게 한다(파일 아카이브는 휘발성).
+
+def save_realestate_keywords(items: list, generated: str | None = None,
+                             kw_date: str | None = None) -> str:
+    """오늘의 부동산 키워드를 DB에 저장(upsert, kw_date 단일행)."""
+    now = datetime.now()
+    generated = generated or now.isoformat()
+    if not kw_date:
+        m = re.search(r"(\d{4}-\d{2}-\d{2})", str(generated))
+        kw_date = m.group(1) if m else now.strftime("%Y-%m-%d")
+    row = {
+        "kw_date": kw_date,
+        "generated": str(generated),
+        "items": items or [],
+        "updated_at": now.isoformat(),
+    }
+    _client().table(RE_KW_TABLE).upsert(row, on_conflict="kw_date").execute()
+    return kw_date
+
+
+def load_realestate_keywords_latest() -> dict | None:
+    """가장 최신 부동산 키워드 1행. 없으면 None. 반환: {'kw_date','generated','items'}."""
+    res = (_client().table(RE_KW_TABLE)
+           .select("kw_date,generated,items")
+           .order("kw_date", desc=True)
+           .limit(1)
+           .execute())
+    return res.data[0] if res.data else None
+
+
+def load_realestate_keywords_by_date(kw_date: str) -> dict | None:
+    """특정 날짜(YYYY-MM-DD)의 부동산 키워드 1행. 없으면 None."""
+    res = (_client().table(RE_KW_TABLE)
+           .select("kw_date,generated,items")
+           .eq("kw_date", kw_date)
+           .limit(1)
+           .execute())
+    return res.data[0] if res.data else None
+
+
+def list_realestate_keyword_dates(limit: int = 90) -> list[str]:
+    """부동산 키워드가 저장된 날짜 목록을 최신순으로 반환(YYYY-MM-DD)."""
+    res = (_client().table(RE_KW_TABLE)
+           .select("kw_date")
+           .order("kw_date", desc=True)
+           .limit(limit)
+           .execute())
+    return [r["kw_date"] for r in (res.data or [])]
+
+
+def load_recent_realestate_keywords(limit: int = 40) -> list[dict]:
+    """최근 부동산 키워드 행들을 최신순으로 반환(streak·NEW 계산용)."""
+    res = (_client().table(RE_KW_TABLE)
            .select("kw_date,generated,items")
            .order("kw_date", desc=True)
            .limit(limit)
