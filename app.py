@@ -864,8 +864,122 @@ def _inject_countup():
     )
 
 
+# ── 수집 상태 패널(신선도·카운트 — 조용한 실패 방어) ───────────────
+@st.cache_data(ttl=600, show_spinner=False)
+def _collect_status():
+    """소스별 최신 asof·카운트 수집(10분 캐시). DB 미설정이면 None."""
+    from datetime import date
+    from modules.db import (supabase_configured, load_realestate,
+                            load_keywords_latest, list_recent,
+                            load_leaders, load_ipo)
+    if not supabase_configured():
+        return None
+    today = date.today()
+
+    def age(d):
+        try:
+            return (today - date.fromisoformat(str(d)[:10])).days
+        except Exception:
+            return None
+
+    out = []
+    try:
+        r = load_realestate() or {}
+        m = r.get("metrics") or {}
+        ad = (r.get("asof") or "")[:10]
+        out.append({"src": "부동산", "asof": ad, "age": age(ad), "limit": 2,
+                    "counts": [("주목", len(m.get("_hot") or [])),
+                               ("시총", len(m.get("_caplead") or [])),
+                               ("상승률", len(m.get("_capgain") or [])),
+                               ("특이", len(r.get("anomalies") or [])),
+                               ("지표", len(r.get("indicators") or [])),
+                               ("분양", len(r.get("subscriptions") or []))],
+                    "fallback": ["주목", "시총", "상승률", "지표"]})
+    except Exception as e:
+        out.append({"src": "부동산", "error": str(e)[:80]})
+    try:
+        rep = list_recent(1) or []
+        rd = (rep[0].get("report_date") if rep else "") or ""
+        out.append({"src": "시황 보고서", "asof": rd[:10], "age": age(rd),
+                    "limit": None, "counts": [("최근행", len(rep))]})
+    except Exception as e:
+        out.append({"src": "시황 보고서", "error": str(e)[:80]})
+    try:
+        kw = load_keywords_latest() or {}
+        out.append({"src": "키워드", "asof": (kw.get("kw_date") or "")[:10],
+                    "age": age(kw.get("kw_date")), "limit": 3,
+                    "counts": [("키워드", len(kw.get("items") or []))],
+                    "fallback": ["키워드"]})
+    except Exception as e:
+        out.append({"src": "키워드", "error": str(e)[:80]})
+    try:
+        ld = load_leaders() or {}
+        key = ld.get("asof_date") or ld.get("asof")
+        out.append({"src": "주도주", "asof": (str(key) or "")[:10], "age": age(key),
+                    "limit": 3, "counts": [("종목", len(ld.get("stocks") or [])),
+                                           ("섹터", len(ld.get("sectors") or []))],
+                    "fallback": ["종목"]})
+    except Exception as e:
+        out.append({"src": "주도주", "error": str(e)[:80]})
+    try:
+        ip = load_ipo() or {}
+        out.append({"src": "IPO", "asof": (ip.get("asof") or "")[:10],
+                    "age": age(ip.get("asof")), "limit": 3,
+                    "counts": [("최근", len(ip.get("recent") or [])),
+                               ("예정", len(ip.get("upcoming") or []))]})
+    except Exception as e:
+        out.append({"src": "IPO", "error": str(e)[:80]})
+    return out
+
+
+def _age_txt(a):
+    if a is None:
+        return "?"
+    return "오늘" if a == 0 else ("어제" if a == 1 else f"{a}일 전")
+
+
+def _render_status_panel():
+    """🩺 수집 상태 — 소스별 신선도·카운트. 0건 폴백(샘플 표시)을 드러낸다."""
+    try:
+        rows = _collect_status()
+    except Exception as e:
+        with st.expander("🩺 수집 상태", expanded=False):
+            st.caption(f"상태 확인 실패: {str(e)[:120]}")
+        return
+    with st.expander("🩺 수집 상태", expanded=False):
+        if rows is None:
+            st.caption("Supabase 미설정 — 상태를 확인할 수 없어요.")
+            return
+        lines = []
+        for r in rows:
+            if r.get("error"):
+                lines.append(f"🔴 **{r['src']}** · 로드 실패: {r['error']}")
+                continue
+            asof = r.get("asof") or ""
+            a = r.get("age")
+            lim = r.get("limit")
+            counts = r.get("counts", [])
+            fb = set(r.get("fallback") or [])
+            zeros = [k for k, v in counts if k in fb and v == 0]
+            if not asof:
+                badge = "🔴"
+            elif zeros or (lim is not None and a is not None and a > lim):
+                badge = "🟡"
+            else:
+                badge = "🟢"
+            cnt = " · ".join(f"{k} {v}" for k, v in counts)
+            ztxt = f"  ⚠️ {'·'.join(zeros)} 0건(샘플 표시 중)" if zeros else ""
+            lines.append(f"{badge} **{r['src']}** · {asof or '—'} "
+                         f"({_age_txt(a)}) · {cnt}{ztxt}")
+        st.markdown("\n\n".join(lines))
+        st.caption("🟢 신선 · 🟡 지연 또는 일부 0건(샘플 폴백) · 🔴 없음·실패 — "
+                   "0건 항목은 수집이 실패해도 화면엔 샘플이 떠서 안 보일 수 있으니 "
+                   "여기서 확인하세요. (10분 캐시)")
+
+
 # ── 탭 ──
 _inject_countup()
+_render_status_panel()
 top_stock, top_re = st.tabs(["주식", "부동산"])
 
 with top_stock:
