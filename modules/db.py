@@ -57,6 +57,19 @@
       upcoming   jsonb not null default '[]'::jsonb,
       updated_at timestamptz default now()
     );
+
+- 엔진 공용 캐시는 engine_cache 테이블에 cache_key별 jsonb로 저장된다(비용·런타임 절감용).
+  · 세대수 맵(apt_info): kaptCode→세대수/시공사. 거의 안 변해 7일 TTL로 미스만 재조회.
+  · 작년말 baseline(rtms_dec_YYYYMM): 전년 12월 실거래 평단가. 신고지연이 끝나면 고정 →
+    주 1회만 재스윕하고 평소엔 캐시 재사용(매일 49구 1개월 스윕 제거).
+  (※ 최초 1회 아래 SQL로 테이블을 만들어야 함)
+
+    create table if not exists engine_cache (
+      cache_key  text primary key,
+      payload    jsonb not null default '{}'::jsonb,
+      updated    text,
+      updated_at timestamptz default now()
+    );
 """
 import json
 import os
@@ -75,6 +88,7 @@ LEADERS_TABLE = "leaders"
 SM_TABLE = "stock_master"
 IPO_ABOUT_TABLE = "ipo_about"
 MFLOW_TABLE = "market_flow"
+CACHE_TABLE = "engine_cache"
 _CLIENT: Client | None = None
 
 
@@ -112,6 +126,48 @@ def _client() -> Client:
         key = _cfg("SUPABASE_KEY").strip()
         _CLIENT = create_client(url, key)
     return _CLIENT
+
+
+# ── 엔진 공용 캐시(engine_cache) — 세대수 맵·작년말 baseline 등 ──────
+def cache_get(key: str) -> dict | None:
+    """engine_cache에서 cache_key의 payload(dict) 반환. 없음/실패/미설정 시 None.
+    payload에 '_updated'(마지막 갱신 문자열)를 끼워 넣어 호출부 TTL 판정에 쓰게 한다."""
+    if not supabase_configured():
+        return None
+    try:
+        res = (_client().table(CACHE_TABLE)
+               .select("payload,updated")
+               .eq("cache_key", key)
+               .limit(1).execute())
+    except Exception:
+        return None
+    if not res.data:
+        return None
+    row = res.data[0]
+    payload = row.get("payload")
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            payload = None
+    if isinstance(payload, dict):
+        payload.setdefault("_updated", row.get("updated"))
+        return payload
+    return None
+
+
+def cache_set(key: str, payload: dict) -> bool:
+    """engine_cache에 cache_key=payload upsert. 성공 True, 실패/미설정 False."""
+    if not supabase_configured():
+        return False
+    try:
+        clean = {k: v for k, v in payload.items() if k != "_updated"}
+        row = {"cache_key": key, "payload": clean,
+               "updated": datetime.now().strftime("%Y-%m-%d %H:%M")}
+        _client().table(CACHE_TABLE).upsert(row, on_conflict="cache_key").execute()
+        return True
+    except Exception:
+        return False
 
 
 def _meta_from_data(data: dict):
