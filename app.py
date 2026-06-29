@@ -384,6 +384,47 @@ def _heat_html(datas, histories=None):
 _KRX_PERIODS = {"1일": 1, "1개월": 31, "3개월": 92, "6개월": 183, "1년": 366}
 
 
+def _area_gradient(hex_c: str, top: float = 0.20, bottom: float = 0.0):
+    """라인 아래 영역용 수직 그라데이션 — 위(라인 쪽)는 진하고 아래로 갈수록 투명.
+
+    hex_c(#RRGGBB) → rgba 스톱으로 변환. 단색 area보다 차분하고 입체감 있는 채우기.
+    """
+    h = hex_c.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return alt.Gradient(
+        gradient="linear", x1=1, x2=1, y1=0, y2=1,    # 수직(위→아래)
+        stops=[alt.GradientStop(color=f"rgba({r},{g},{b},{top})", offset=0),
+               alt.GradientStop(color=f"rgba({r},{g},{b},{bottom})", offset=1)],
+    )
+
+
+# 지수 메인 차트(코스피·코스닥) 등장 정책 — C안: 통일된 소프트 페이드 1회 + 호버 반응.
+# 개별 stagger·카운트업·차트 그리기 애니메이션 없이 컨테이너가 한 번 부드럽게 떠오른다.
+# .st-key-idx_domestic_charts 로 지수 차트에만 스코프(다른 탭 차트엔 영향 없음).
+_IDX_CHART_CSS = """
+<style>
+.st-key-idx_domestic_charts [data-testid="stVegaLiteChart"],
+.st-key-idx_domestic_charts [data-testid="stArrowVegaLiteChart"],
+.st-key-idx_domestic_charts .stVegaLiteChart{
+  animation: idxChartFade .42s cubic-bezier(.22,.61,.36,1) both;
+  border-radius: 12px;
+  transition: box-shadow .22s ease;
+}
+@keyframes idxChartFade{ from{opacity:0;} to{opacity:1;} }
+.st-key-idx_domestic_charts [data-testid="stVegaLiteChart"]:hover,
+.st-key-idx_domestic_charts [data-testid="stArrowVegaLiteChart"]:hover,
+.st-key-idx_domestic_charts .stVegaLiteChart:hover{
+  box-shadow: 0 8px 22px rgba(52,53,47,.07);
+}
+@media(prefers-reduced-motion:reduce){
+  .st-key-idx_domestic_charts [data-testid="stVegaLiteChart"],
+  .st-key-idx_domestic_charts [data-testid="stArrowVegaLiteChart"],
+  .st-key-idx_domestic_charts .stVegaLiteChart{ animation:none !important; }
+}
+</style>
+"""
+
+
 def _big_index_chart_intraday(name: str, ticker: str):
     d = fetch_intraday(ticker, "5m")
     if not d or d.get("series") is None or len(d["series"]) < 2:
@@ -443,7 +484,7 @@ def _big_index_chart_intraday(name: str, ticker: str):
     y_floor = y_dom[0]
     df_a = df.copy()
     df_a["바닥"] = y_floor
-    area = alt.Chart(df_a).mark_area(color=line_c, opacity=0.10).encode(
+    area = alt.Chart(df_a).mark_area(color=_area_gradient(line_c, top=0.16)).encode(
         x=x_enc, y=y_enc, y2=alt.Y2("바닥:Q"), tooltip=tip)
 
     layers = [area]
@@ -535,7 +576,7 @@ def _big_index_chart(name: str, ticker: str, days: int):
 
     seg_a = seg.copy()
     seg_a["바닥"] = y_dom[0]
-    area = alt.Chart(seg_a).mark_area(color=line_c, opacity=0.13).encode(
+    area = alt.Chart(seg_a).mark_area(color=_area_gradient(line_c, top=0.20)).encode(
         x=x_enc, y=y_enc, y2=alt.Y2("바닥:Q"), tooltip=tip)
     line_main = alt.Chart(seg).mark_line(color=line_c, strokeWidth=2).encode(
         x=x_enc, y=y_enc, tooltip=tip)
@@ -573,6 +614,7 @@ def _big_index_chart(name: str, ticker: str, days: int):
 
 
 def _render_domestic_charts():
+    st.markdown(_IDX_CHART_CSS, unsafe_allow_html=True)
     period_label = st.radio(
         "조회 기간", list(_KRX_PERIODS.keys()), index=3, horizontal=True,
         key="krx_chart_period", label_visibility="collapsed")
@@ -580,17 +622,22 @@ def _render_domestic_charts():
     is_intraday = (period_label == "1일")
     days = _KRX_PERIODS[period_label]
 
-    c1, c2 = st.columns(2, gap="medium")
-    with c1:
-        if is_intraday:
-            _big_index_chart_intraday("코스피", "^KS11")
-        else:
-            _big_index_chart("코스피", "^KS11", days)
-    with c2:
-        if is_intraday:
-            _big_index_chart_intraday("코스닥", "^KQ11")
-        else:
-            _big_index_chart("코스닥", "^KQ11", days)
+    try:
+        chart_box = st.container(key="idx_domestic_charts")
+    except TypeError:                 # 구버전 Streamlit 폴백(스코프만 생략, 동작은 정상)
+        chart_box = st.container()
+    with chart_box:
+        c1, c2 = st.columns(2, gap="medium")
+        with c1:
+            if is_intraday:
+                _big_index_chart_intraday("코스피", "^KS11")
+            else:
+                _big_index_chart("코스피", "^KS11", days)
+        with c2:
+            if is_intraday:
+                _big_index_chart_intraday("코스닥", "^KQ11")
+            else:
+                _big_index_chart("코스닥", "^KQ11", days)
 
     if is_intraday:
         st.caption("당일(휴장 시 직전 거래일) 5분봉 · 전일 종가 대비 등락(회색 점선=전일 종가) · "
