@@ -1059,14 +1059,15 @@ function drawLegend(){let h="";if(metric==="v")h=`<span>적음</span><span class
   document.getElementById("legend").innerHTML=h;}
 
 let _paths=[],_vb=[0,0,100,100];
-function pathsHTML(big){const ps=_paths.map((d,i)=>`<path class="dist" data-i="${i}" d="${d.d}" fill="${fillOf(d)}"></path>`).join("");
-  const labs=_paths.map(d=>{const fs=big?13:(d.sl.length>3?9:11);
-    return `<text class="dlabel" x="${d.cx}" y="${d.cy}" text-anchor="middle" dominant-baseline="middle" font-size="${fs}" paint-order="stroke" stroke="#FCFCFA" stroke-width="2" stroke-linejoin="round">${d.sl}</text>`;}).join("");
+function pathsHTML(big,forLens){const ps=_paths.map((d,i)=>`<path class="dist" data-i="${i}" d="${d.d}" fill="${fillOf(d)}"></path>`).join("");
+  const k=forLens?1.35:1,sw=forLens?3:2;                       // 돋보기는 라벨·외곽선을 더 키워 가독성↑
+  const labs=_paths.map(d=>{const base=big?13:(d.sl.length>3?9:11);const fs=(base*k).toFixed(1);
+    return `<text class="dlabel" x="${d.cx}" y="${d.cy}" text-anchor="middle" dominant-baseline="middle" font-size="${fs}" paint-order="stroke" stroke="#FCFCFA" stroke-width="${sw}" stroke-linejoin="round">${d.sl}</text>`;}).join("");
   return `<g id="paths">${ps}</g><g>${labs}</g>`;}
 function drawMap(){_paths=pathsOf(region);_vb=vbOf(_paths);const svg=document.getElementById("big");
   svg.setAttribute("viewBox",_vb.join(" "));const big=_paths.length<=8;
   svg.innerHTML=pathsHTML(big)+`<text id="hoverLabel" text-anchor="middle" dominant-baseline="middle" paint-order="stroke" stroke="#FCFCFA" stroke-width="2.6" stroke-linejoin="round"></text>`;
-  document.getElementById("lensSvg").innerHTML=pathsHTML(big);   // 돋보기용 동일 경로
+  document.getElementById("lensSvg").innerHTML=pathsHTML(big,true);   // 돋보기용: 라벨 확대판
   const tip=document.getElementById("tip"),area=document.getElementById("maparea"),pg=svg.querySelector("#paths"),hl=svg.querySelector("#hoverLabel");
   svg.querySelectorAll("path.dist").forEach(p=>{const d=_paths[+p.dataset.i];
     p.onmouseenter=()=>{p.style.stroke="#7E9A83";p.style.strokeWidth="1.6";pg.appendChild(p);
@@ -1078,9 +1079,13 @@ function drawMap(){_paths=pathsOf(region);_vb=vbOf(_paths);const svg=document.ge
   const lens=document.getElementById("lens"),lsvg=document.getElementById("lensSvg");
   area.onmousemove=e=>{const b=area.getBoundingClientRect();let x=e.clientX-b.left,y=e.clientY-b.top;
     let tx=x+14,ty=y+14;if(tx>b.width-176)tx-=190;if(ty>b.height-96)ty-=104;tip.style.left=tx+"px";tip.style.top=ty+"px";
-    // 돋보기: 커서의 svg 좌표 → 작은 viewBox(3배 확대)
+    // 돋보기: 화면 실제 배율(px/단위)을 측정해 'M배 확대'를 보장 (라벨도 함께 커짐)
     let p;try{const m=svg.getScreenCTM().inverse();const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;p=pt.matrixTransform(m);}catch(_){p=null;}
-    if(p){const zw=_vb[2]/3,zh=_vb[3]/3;lsvg.setAttribute("viewBox",`${p.x-zw/2} ${p.y-zh/2} ${zw} ${zh}`);
+    if(p){const r=svg.getBoundingClientRect();
+      const sc=Math.min(r.width/_vb[2],r.height/_vb[3])||0;   // 지도 화면 배율 (meet 기준)
+      const M=2.4,LP=128;                                     // 목표 확대율 · 돋보기 지름(px)
+      let zw,zh;if(sc>0){zw=LP/(M*sc);zh=LP/(M*sc);}else{zw=_vb[2]/3;zh=_vb[3]/3;}
+      lsvg.setAttribute("viewBox",`${p.x-zw/2} ${p.y-zh/2} ${zw} ${zh}`);
       let lx=x-64,ly=y-150;if(ly<6)ly=y+24;lx=Math.max(6,Math.min(b.width-134,lx));
       lens.style.left=lx+"px";lens.style.top=ly+"px";lens.style.opacity="1";}};
   area.onmouseleave=()=>{tip.style.opacity="0";hl.style.opacity="0";lens.style.opacity="0";};}
