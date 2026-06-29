@@ -180,57 +180,178 @@ def _dedupe_events(parsed, n_articles, limit=MAX_KEYWORDS):
     return result
 
 
-# ── 연속 등장 / NEW 배지 ─────────────────────────────────────
-def _compute_streaks(today_keywords, now):
-    """오늘 키워드별 '연속 등장 일수' 계산(아카이브 직전 날짜들과 비교)."""
+# ── 연속 등장 / NEW 배지 (의미 유사도 + DB 영속) ─────────────
+def _norm_kw(k) -> str:
+    return str(k).lower().replace(" ", "")
+
+
+# 부동산 키워드 토큰화용 불용어 — 매일 흔들리는 수식어를 제거해 핵심만 남긴다.
+# (예: '강남 재건축 규제 완화' → {강남, 재건축, 규제},  '강남 재건축 활성화' → {강남, 재건축})
+_KW_STOP = {
+    # 공통 시세·방향 수식어
+    "강세", "약세", "급등", "급락", "상승", "하락", "조정", "회복", "돌파", "전망",
+    "기대", "기대감", "확대", "축소", "증가", "감소", "우려", "리스크", "이슈", "관련",
+    "기록", "경신", "지속", "둔화", "개선", "부각", "주목", "전환", "고조", "재개",
+    "최고", "최대", "최저", "사상", "역대", "당일", "오늘", "이번", "지난", "최근",
+    # 부동산 특화 수식어
+    "완화", "강화", "규제완화", "활성화", "위축", "냉각", "과열", "안정", "급증", "급감",
+    "신고가", "신저가", "반등", "반락", "관망", "매수세", "매도세", "거래절벽", "들썩",
+    "대책", "방안", "추진", "검토", "발표", "예정", "전망치", "심리", "수급",
+    # 조사·단위
+    "및", "등", "와", "과", "의", "를", "을", "은", "는", "이", "가", "에", "로", "으로",
+    "만에", "만", "억", "조", "선", "개", "년", "월", "일", "원", "퍼센트",
+}
+
+
+def _kw_tokens(text: str) -> set:
+    """키워드를 핵심 토큰 집합으로. 수식어·조사·숫자토큰 제거, 접미사 어간 추출.
+
+    streak/NEW를 표현 흔들림에 강하게 만들기 위한 의미 매칭의 기본 단위.
+    """
+    text = re.sub(r"[^가-힣A-Za-z0-9 ]", " ", str(text))
+    out = set()
+    for w in text.split():
+        w = w.strip()
+        if not w:
+            continue
+        if re.fullmatch(r"[A-Za-z0-9]+", w):
+            if len(w) >= 2:
+                out.add(w.upper())
+            continue
+        if w in _KW_STOP:
+            continue
+        if re.search(r"\d", w):           # '15억'·'9억'·'3억' 등 숫자 섞인 토큰은 노이즈
+            continue
+        if len(w) >= 2:
+            out.add(w)
+        # 접미사를 떼어 어간도 함께 등록 ('재건축지구'→'재건축', '분양가상한제'는 그대로)
+        for suf in ("지구", "지역", "단지", "시장", "정책", "대출", "제도"):
+            if w.endswith(suf) and len(w) > len(suf) + 1:
+                stem = w[:-len(suf)]
+                if len(stem) >= 2 and stem not in _KW_STOP:
+                    out.add(stem)
+    return out
+
+
+def _kw_record(it: dict) -> dict:
+    """키워드 dict → 유사도 비교용 레코드 {keyword, norm, tokens, regions}."""
+    kw = str(it.get("keyword", "")).strip()
+    regions = it.get("regions") or it.get("stocks") or []     # 구버전 stocks 폴백
+    return {
+        "keyword": kw,
+        "norm": _norm_kw(kw),
+        "tokens": _kw_tokens(kw),
+        "regions": {str(r).strip() for r in regions if str(r).strip()},
+    }
+
+
+def _similar(a: dict, b: dict) -> bool:
+    """두 키워드 레코드가 '같은 주제'인지 — 표현이 흔들려도 잡아낸다.
+
+    하나라도 충족하면 같은 주제:
+      1) 정규화 완전 일치 (기존 동작 보존)
+      2) 핵심 토큰 자카드 유사도 ≥ 0.5
+      3) 한쪽 토큰이 다른 쪽에 80% 이상 포함 (짧은 키워드 ⊂ 긴 키워드)
+      4) 연결 지역 집합이 (비어있지 않게) 같고 토큰도 1개 이상 겹침
+    """
+    if a["norm"] and a["norm"] == b["norm"]:
+        return True
+    ta, tb = a["tokens"], b["tokens"]
+    if ta and tb:
+        inter = len(ta & tb)
+        if inter:
+            if inter / len(ta | tb) >= 0.5:
+                return True
+            if inter / min(len(ta), len(tb)) >= 0.8:
+                return True
+    ra, rb = a["regions"], b["regions"]
+    if ra and ra == rb and (ta & tb):
+        return True
+    return False
+
+
+def _past_keyword_sets(now, back_days: int = 35) -> dict:
+    """{date객체: [레코드, ...]} — 오늘 이전 날짜들의 키워드 레코드 목록.
+
+    ★우선 Supabase(realestate_keywords 테이블)에서 읽는다(영속·누적). DB가 비었거나
+    실패하면 파일 아카이브로 폴백. 휘발성 디스크 탓에 끊기던 streak/NEW를 복구.
+    """
+    from datetime import date as _date
+    out = {}
+
+    def _records(items):
+        recs = []
+        for it in (items or []):
+            if str(it.get("keyword", "")).strip():
+                recs.append(_kw_record(it))
+        return recs
+
+    # 1) DB 우선
+    try:
+        from modules import db
+        for row in db.load_recent_realestate_keywords(limit=back_days + 5):
+            ds = str(row.get("kw_date", ""))
+            try:
+                y, m, d = ds.split("-")
+                dt = _date(int(y), int(m), int(d))
+            except ValueError:
+                continue
+            out[dt] = _records(row.get("items"))
+    except Exception:
+        out = {}
+
+    # 2) 파일 폴백 (DB가 아무 것도 못 줄 때만)
+    if not out and RE_KW_ARCHIVE_DIR.exists():
+        for f in RE_KW_ARCHIVE_DIR.glob("*.json"):
+            try:
+                y, m, d = f.stem.split("-")
+                dt = _date(int(y), int(m), int(d))
+                past = json.loads(f.read_text(encoding="utf-8"))
+                out[dt] = _records(past.get("items"))
+            except Exception:
+                continue
+    return out
+
+
+def _compute_streaks(today_records, now, past_sets: dict):
+    """오늘 키워드별 '연속 등장 일수' 계산 (의미 유사도 기반).
+    직전 날짜부터 거슬러 올라가며, 과거 그 날의 키워드 중 하나라도 '같은 주제'면 연속 +1.
+    해당 날짜 데이터가 없으면(주말 등) 연속을 끊지 않고 건너뜀.
+
+    today_records: [{keyword, norm, tokens, regions}, ...]
+    past_sets: {date: [과거 레코드, ...]}
+    """
     from datetime import timedelta
 
-    def _norm(k):
-        return k.lower().replace(" ", "")
+    consecutive_days = {r["keyword"]: 1 for r in today_records}
+    if not past_sets:
+        return consecutive_days
 
-    if not RE_KW_ARCHIVE_DIR.exists():
-        return {k: 1 for k in today_keywords}
-
-    consecutive_days = {k: 1 for k in today_keywords}
-    still_alive = set(today_keywords)
+    still_alive = {r["keyword"]: r for r in today_records}
     cur = now.date()
     for back in range(1, 31):
         if not still_alive:
             break
         d = cur - timedelta(days=back)
-        f = RE_KW_ARCHIVE_DIR / f"{d:%Y-%m-%d}.json"
-        if not f.exists():
+        past_list = past_sets.get(d)
+        if past_list is None:          # 그 날 데이터 없음 → 건너뜀 (연속 유지)
             continue
-        try:
-            past = json.loads(f.read_text(encoding="utf-8"))
-            past_set = {_norm(it.get("keyword", "")) for it in past.get("items", [])}
-        except Exception:
-            continue
-        ended = set()
-        for k in still_alive:
-            if _norm(k) in past_set:
-                consecutive_days[k] += 1
+        ended = []
+        for kw, rec in still_alive.items():
+            if any(_similar(rec, pj) for pj in past_list):
+                consecutive_days[kw] += 1
             else:
-                ended.add(k)
-        still_alive -= ended
+                ended.append(kw)
+        for kw in ended:
+            still_alive.pop(kw, None)
 
     return consecutive_days
 
 
-def _has_prev_archive(now) -> bool:
-    """오늘 이전 날짜의 키워드 아카이브가 하나라도 있는지(NEW 오발동 방지)."""
-    if not RE_KW_ARCHIVE_DIR.exists():
-        return False
+def _has_prev_keywords(now, past_sets: dict) -> bool:
+    """오늘 이전 날짜의 키워드 기록이 하나라도 있는지(NEW 오발동 방지)."""
     today = now.date()
-    for f in RE_KW_ARCHIVE_DIR.glob("*.json"):
-        try:
-            y, m, d = f.stem.split("-")
-            from datetime import date as _date
-            if _date(int(y), int(m), int(d)) < today:
-                return True
-        except ValueError:
-            continue
-    return False
+    return any(d < today for d in past_sets)
 
 
 def build_realestate_keywords() -> dict:
@@ -338,19 +459,33 @@ def build_realestate_keywords() -> dict:
 
     now = datetime.now(KST)
 
-    streaks = _compute_streaks([it["keyword"] for it in items], now)
-    prev_exists = _has_prev_archive(now)
+    # 연속 등장(streak) 계산 — DB의 과거 키워드(없으면 파일)와 의미 유사도로 비교
+    today_records = [_kw_record(it) for it in items]
+    past_sets = _past_keyword_sets(now)
+    streaks = _compute_streaks(today_records, now, past_sets)
+    prev_exists = _has_prev_keywords(now, past_sets)
     for it in items:
         it["streak"] = streaks.get(it["keyword"], 1)
         it["is_new"] = bool(prev_exists and it["streak"] <= 1)
 
     payload = {"generated": now.isoformat(), "items": items}
-    RE_KW_PATH.parent.mkdir(exist_ok=True)
-    RE_KW_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    RE_KW_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
-    (RE_KW_ARCHIVE_DIR / f"{now:%Y-%m-%d}.json").write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    # 파일 저장 (로컬 디버깅·하위호환). Streamlit Cloud에선 휘발성이라 영속성은 DB가 담당.
+    try:
+        RE_KW_PATH.parent.mkdir(exist_ok=True)
+        RE_KW_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        RE_KW_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+        (RE_KW_ARCHIVE_DIR / f"{now:%Y-%m-%d}.json").write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception as e:
+        print(f"[realestate_keywords] 파일 저장 건너뜀: {e}")
+
+    # ★DB 저장 (영속·누적) — 증시 키워드처럼 날짜별로 쌓인다. 뷰어는 여기서 읽는다.
+    try:
+        from modules import db
+        db.save_realestate_keywords(items, generated=payload["generated"], kw_date=f"{now:%Y-%m-%d}")
+    except Exception as e:
+        print(f"[realestate_keywords] DB 저장 실패(파일은 저장됨): {e}")
 
     cost = estimate_cost_usd(MODEL, resp.usage.input_tokens, resp.usage.output_tokens)
     append_usage({
