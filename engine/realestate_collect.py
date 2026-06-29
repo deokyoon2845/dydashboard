@@ -441,6 +441,8 @@ _KB_URL = {
     "trend": f"{_KB_BASE}/maktTrnd",              # 매수우위 등 시장동향
     "jratio": f"{_KB_BASE}/dealCntstTnantRato",   # 전세가격비율
     "lead50": f"{_KB_BASE}/leadApt50Indx",         # KB선도아파트50지수
+    "median": f"{_KB_BASE}/mdpsPrc",               # 매매중위가격(만원, 지역코드 無→전 지역)
+    "avg": f"{_KB_BASE}/avgPrc",                   # 매매평균가격(만원, 지역코드 無→전 지역)
 }
 _KB_SIDO = {"서울": "11", "경기": "41"}
 
@@ -592,53 +594,54 @@ def _env_key(*names):
     return None
 
 
-# ── ECOS 주담대 금리(신규취급액) ─────────────────────────────
-#   표 722Y001 = 예금은행 가중평균금리(신규취급액 기준). 그 안의 '주택담보대출' 항목.
-#   항목코드는 ECOS가 체계를 바꾸면 깨지므로(과거 BECABA03 → 숫자코드로 이관) 하드코딩
-#   하지 않고 StatisticItemList로 항목명→코드를 매 실행 동적 해석한다. 해석 실패 시
-#   알려진 후보 코드들로 순차 폴백하고, 모두 실패하면 []를 반환한다(가짜값 없음).
-_ECOS_MORTGAGE_TBL = "722Y001"
-_ECOS_MORTGAGE_NAME = "주택담보대출"
-_ECOS_MORTGAGE_FALLBACK_CODES = ("010200000", "0102000", "BECABA03")  # 폴백(빈값이면 자동 스킵)
+# ── 서울·수도권 아파트 매매 중위/평균가격 (KB · 억원 · 지표탭 가격블록) ──────
+#   mdpsPrc/avgPrc는 지역코드 파라미터가 없어 전 지역(전국·서울·수도권·시도…)을
+#   한 번에 돌려준다 → 응답에서 서울·수도권 행만 골라 만원→억으로 환산한다.
+#   (중위가격은 비가법적이라 직접 합성 불가 — KB가 제공하는 '수도권' 집계행을 그대로 사용.
+#    수도권 행이 없으면 해당 지역은 비워둔다: 가짜 합성 없음.)
+_PRICE_REGIONS = {                       # 결과키: (지역코드, 지역명 후보들)
+    "seoul": ("1100000000", ("서울특별시", "서울")),
+    "sudo":  (None, ("수도권",)),
+}
 
 
-def _ecos_resolve_item_code(key, tbl, want_name):
-    """ECOS StatisticItemList에서 항목명(want_name)에 맞는 ITEM_CODE를 찾는다.
-    완전일치 우선, 없으면 부분일치. 실패/미발견 시 None."""
-    try:
-        url = f"https://ecos.bok.or.kr/api/StatisticItemList/{key}/json/kr/1/200/{tbl}"
-        r = requests.get(url, timeout=10)
-        rows = (r.json().get("StatisticItemList", {}) or {}).get("row", []) or []
-    except Exception as e:
-        print(f"[realestate] ECOS 항목목록 조회 실패: {e}")
-        return None
-    want = (want_name or "").strip()
-    exact = [x for x in rows if (x.get("ITEM_NAME") or "").strip() == want]
-    part = [x for x in rows if want and want in (x.get("ITEM_NAME") or "")]
-    pick = exact[0] if exact else (part[0] if part else None)
-    return (pick.get("ITEM_CODE") or "").strip() if pick else None
-
-
-def _ecos_mortgage_series(key, item_code, start, end, points):
-    """722Y001 + item_code 월별 시계열을 받아 최근 points개 반환. 실패/빈값 시 []."""
-    if not item_code:
+def _kb_price_pick(rows, code, names, points):
+    """rows에서 (지역코드 일치 → 지역명 포함) 행의 값 시계열(만원→억, 최근 points)."""
+    pick = None
+    if code:
+        pick = next((r for r in rows if r.get("code") == code), None)
+    if pick is None:
+        pick = next((r for r in rows
+                     if any(nm in r.get("name", "") for nm in names)), None)
+    if pick is None:
         return []
-    try:
-        url = (f"https://ecos.bok.or.kr/api/StatisticSearch/{key}/json/kr/1/200/"
-               f"{_ECOS_MORTGAGE_TBL}/M/{start}/{end}/{item_code}")
-        r = requests.get(url, timeout=10)
-        rows = (r.json().get("StatisticSearch", {}) or {}).get("row", []) or []
-    except Exception:
-        return []
-    vals = [round(float(x["DATA_VALUE"]), 2) for x in rows if x.get("DATA_VALUE")]
-    return vals[-points:]
+    vals = [v for v in pick["vals"] if v is not None]
+    return [round(v / 10000.0, 2) for v in vals[-points:]]   # 만원 → 억
 
 
-def _collect_mortgage_rate(points=18):
-    """한은 ECOS 주담대 가중평균금리(월, 최근 points개). 실패 시 [].
+def _collect_price_levels(points=18):
+    """{지역키: {'median':[...억], 'mean':[...억]}} (서울·수도권, 월간 최근 points).
+    실패/미발견 항목은 생략. 전부 실패 시 {}."""
+    out = {}
+    for stat_key, metric_key in (("median", "median"), ("avg", "mean")):
+        try:
+            data = _kb_get(_KB_URL[stat_key],
+                           {"매물종별구분": "01", "매매전세코드": "01"})
+            rows = _kb_rows(data)
+        except Exception as e:
+            print(f"[realestate] KB {stat_key} 호출 실패: {e}")
+            continue
+        if not rows:
+            continue
+        for rkey, (code, names) in _PRICE_REGIONS.items():
+            series = _kb_price_pick(rows, code, names, points)
+            if series:
+                out.setdefault(rkey, {})[metric_key] = series
+    return out
 
-    항목코드를 하드코딩하지 않고 '주택담보대출' 항목을 동적 해석한다
-    (ECOS 코드 체계 변경에도 안전). 해석 실패 시 알려진 후보 코드로 폴백."""
+
+
+    """한은 ECOS 주담대 가중평균금리(월, 최근 points개). 실패 시 []."""
     key = _env_key("ECOS_API_KEY")
     if not key:
         return []
@@ -646,22 +649,12 @@ def _collect_mortgage_rate(points=18):
     # points만큼 거슬러 갈 수 있도록 시작월을 충분히(최대 points+12개월 ≒ years) 잡는다.
     back_years = max(2, (points + 12) // 12)
     start = f"{int(end[:4]) - back_years}{end[4:]}"
-
-    # 1순위: 항목명으로 코드 동적 해석
-    code = _ecos_resolve_item_code(key, _ECOS_MORTGAGE_TBL, _ECOS_MORTGAGE_NAME)
-    vals = _ecos_mortgage_series(key, code, start, end, points)
-    if vals:
-        return vals
-    # 2순위: 알려진 후보 코드 폴백(틀린 코드는 빈값→자동 스킵)
-    for fb in _ECOS_MORTGAGE_FALLBACK_CODES:
-        if fb == code:
-            continue
-        vals = _ecos_mortgage_series(key, fb, start, end, points)
-        if vals:
-            print(f"[realestate] ECOS 주담대: 동적해석 실패 → 폴백코드 {fb} 사용")
-            return vals
-    print("[realestate] ECOS 주담대: 코드 해석/폴백 모두 실패 → []")
-    return []
+    url = (f"https://ecos.bok.or.kr/api/StatisticSearch/{key}/json/kr/1/200/"
+           f"722Y001/M/{start}/{end}/BECABA03")
+    r = requests.get(url, timeout=10)
+    rows = (r.json().get("StatisticSearch", {}) or {}).get("row", []) or []
+    vals = [round(float(x["DATA_VALUE"]), 2) for x in rows if x.get("DATA_VALUE")]
+    return vals[-points:]
 
 
 def _collect_kosis_unsold(points=18):
@@ -853,6 +846,20 @@ def collect_indicators():
             _collect_kosis_apt_volume(points=MN))
     except Exception as e:
         print(f"[realestate] 실거래량 시계열 실패: {e}")
+    try:
+        # 서울·수도권 매매 중위/평균가격(억) — 지표탭 '현재 매매가격' 블록용.
+        # 카드(_INDV2_ORDER)엔 안 들어가고, 뷰어가 이 4개 키를 따로 묶어 블록으로 그린다.
+        pl = _collect_price_levels(points=MN)
+        _PRICE_META = {
+            "med_seoul":  ("seoul", "median", "서울 아파트 매매 중위가격", "서울 · 월간(KB)"),
+            "mean_seoul": ("seoul", "mean",   "서울 아파트 매매 평균가격", "서울 · 월간(KB)"),
+            "med_sudo":   ("sudo",  "median", "수도권 아파트 매매 중위가격", "수도권 · 월간(KB)"),
+            "mean_sudo":  ("sudo",  "mean",   "수도권 아파트 매매 평균가격", "수도권 · 월간(KB)"),
+        }
+        for k, (rk, mk, lab, sub) in _PRICE_META.items():
+            add(k, lab, sub, "억", "#7E9A83", (pl.get(rk) or {}).get(mk) or [])
+    except Exception as e:
+        print(f"[realestate] KB 중위/평균가격 실패: {e}")
     return inds
 
 
@@ -1306,6 +1313,14 @@ def _fmt_eok(manwon):
     return f"{manwon/10000:.1f}억"
 
 
+def _fmt_cap(manwon):
+    """시가총액(만원) → '19.0조' 또는 '5,200억'. (1조 = 1e8 만원)"""
+    jo = manwon / 1e8
+    if jo >= 1:
+        return f"{jo:.1f}조"
+    return f"{round(manwon/1e4):,}억"
+
+
 # ── 공동주택 세대수 (거래 탭 '1,000세대+' 필터용) ──────────────────
 #   data.go.kr 공동주택 '단지 목록제공'(getSigunguAptList3)으로 시군구 단지→kaptCode,
 #   '기본 정보'(getAphusBassInfoV3)로 세대수(kaptdaCnt). 키는 MOLIT/PUBLIC_DATA 재사용.
@@ -1370,51 +1385,119 @@ def _known_lookup(na):
     return next((u for n, u in _KNOWN_UNITS.items() if na in n or n in na), None)
 
 
-def _apt_units_map(pairs):
-    """{(시군구, 단지명): 세대수|None}. 공동주택 목록→기본정보 조회 + 폴백 보강."""
+# ── 세대수/시공사 맵 캐시(engine_cache:apt_info) — 7일 TTL, 미스만 재조회 ──
+_UNITS_CACHE_KEY = "apt_info"
+_UNITS_CACHE_MEMO = None      # 프로세스(런) 내 1회 로드 후 재사용
+_UNITS_TTL_DAYS = 7
+
+
+def _fresh(ts, days):
+    """ts('YYYY-MM-DD')가 days일 이내면 True. 파싱 실패/없음 → False."""
+    if not ts:
+        return False
+    try:
+        return (date.today() - date.fromisoformat(str(ts)[:10])).days < days
+    except Exception:
+        return False
+
+
+def _units_cache_load():
+    global _UNITS_CACHE_MEMO
+    if _UNITS_CACHE_MEMO is not None:
+        return _UNITS_CACHE_MEMO
+    cache = {}
+    try:
+        from modules.db import cache_get
+        c = cache_get(_UNITS_CACHE_KEY)
+        if isinstance(c, dict):
+            cache = {k: v for k, v in c.items() if k != "_updated"}
+    except Exception:
+        cache = {}
+    _UNITS_CACHE_MEMO = cache
+    return cache
+
+
+def _units_cache_save(cache):
+    global _UNITS_CACHE_MEMO
+    _UNITS_CACHE_MEMO = cache
+    try:
+        from modules.db import cache_set
+        cache_set(_UNITS_CACHE_KEY, cache)
+    except Exception:
+        pass
+
+
+# ── 작년말 baseline 캐시(engine_cache:rtms_dec_YYYYMM) — 주1회 재스윕 ──
+_DEC_TTL_DAYS = 7
+
+
+def _load_dec_baseline(ym):
+    """전년12월 평단가 baseline 캐시 → {(sgg,apt):(ppa,n)}. 미스/만료/빈값 → None."""
+    try:
+        from modules.db import cache_get
+        c = cache_get(f"rtms_dec_{ym}")
+    except Exception:
+        return None
+    if not isinstance(c, dict) or not _fresh(c.get("_updated"), _DEC_TTL_DAYS):
+        return None
     out = {}
-    by_sgg = {}
-    for sgg, apt in pairs:
-        by_sgg.setdefault(sgg, set()).add(apt)
-    info_cache = {}
-    for sgg, apts in by_sgg.items():
-        codes = SIGUNGU_CODES.get(sgg)
-        name2code = {}
-        if codes:
-            code_list = codes if isinstance(codes, (list, tuple)) else [codes]
-            for sgg_code in code_list:
-                body = _dgo_json(_APT_LIST, {"sigunguCode": str(sgg_code)[:5]})
-                for it in _dgo_items(body):
-                    nm = _norm_apt(it.get("kaptName"))
-                    kc = str(it.get("kaptCode") or "").strip()
-                    if nm and kc:
-                        name2code.setdefault(nm, kc)
-        for apt in apts:
-            na = _norm_apt(apt)
-            units = None
-            kc = name2code.get(na) or next(
-                (c for n, c in name2code.items() if na and (na in n or n in na)), None)
-            if kc:
-                if kc not in info_cache:
-                    b = _dgo_json(_APT_INFO, {"kaptCode": kc})
-                    item = (b or {}).get("item") or {}
-                    if isinstance(item, list):
-                        item = item[0] if item else {}
-                    try:
-                        info_cache[kc] = int(str(item.get("kaptdaCnt")).strip())
-                    except (ValueError, TypeError, AttributeError):
-                        info_cache[kc] = None
-                units = info_cache[kc]
-            if units is None:
-                units = _known_lookup(na)
-            out[(sgg, apt)] = units
-    return out
+    for k, v in c.items():
+        if k == "_updated" or not isinstance(v, (list, tuple)) or len(v) != 2:
+            continue
+        sgg, _, apt = str(k).partition("|")
+        try:
+            out[(sgg, apt)] = (float(v[0]), int(v[1]))
+        except (TypeError, ValueError):
+            continue
+    return out or None
+
+
+def _save_dec_baseline(ym, dec):
+    if not dec:
+        return
+    try:
+        from modules.db import cache_set
+        payload = {f"{sgg}|{apt}": [ppa, n] for (sgg, apt), (ppa, n) in dec.items()}
+        cache_set(f"rtms_dec_{ym}", payload)
+    except Exception:
+        pass
+
+
+def _apt_units_map(pairs):
+    """{(시군구, 단지명): 세대수|None}. _apt_info_map(캐시 경유)에 위임."""
+    return {k: v.get("units") for k, v in _apt_info_map(pairs).items()}
 
 
 def _apt_info_map(pairs):
-    """{(시군구,단지명): {'units':세대수|None,'builder':시공사|None}}.
+    """{(시군구,단지명): {'units','builder'}}. engine_cache(apt_info) 7일 TTL —
+    신선한 항목은 캐시에서, 미스/만료만 data.go.kr 재조회 후 캐시에 머지(비용 절감)."""
+    cache = _units_cache_load()
+    out, misses = {}, []
+    for sgg, apt in pairs:
+        ck = f"{sgg}|{_norm_apt(apt)}"
+        c = cache.get(ck)
+        if isinstance(c, dict) and _fresh(c.get("ts"), _UNITS_TTL_DAYS):
+            out[(sgg, apt)] = {"units": c.get("u"), "builder": c.get("b")}
+        else:
+            misses.append((sgg, apt))
+    if misses:
+        fetched = _apt_info_fetch(misses)
+        today = date.today().isoformat()
+        changed = False
+        for k, v in fetched.items():
+            out[k] = v
+            cache[f"{k[0]}|{_norm_apt(k[1])}"] = {
+                "u": v.get("units"), "b": v.get("builder"), "ts": today}
+            changed = True
+        if changed:
+            _units_cache_save(cache)
+    return out
+
+
+def _apt_info_fetch(pairs):
+    """{(시군구,단지명): {'units':세대수|None,'builder':시공사|None}} — 실제 API 조회.
     공동주택 목록(getSigunguAptList3)→기본정보(getAphusBassInfoV3, kaptdaCnt·kaptBcompany).
-    상위 주목단지(소수)만 조회 — 가볍다. 매칭 실패 시 세대수만 _KNOWN_UNITS 폴백."""
+    매칭 실패 시 세대수만 _KNOWN_UNITS 폴백."""
     out = {}
     by_sgg = {}
     for sgg, apt in pairs:
@@ -1633,16 +1716,25 @@ def _recent_price_in_band(rows, lo, hi):
 
 
 def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=True,
-                          with_search=False):
+                          with_search=False, with_cap=False, cap_per_gu=5, cap_cand=8,
+                          cap_overall=50, with_gain=False, gain_top=20):
     """주목 단지 리스트(딕셔너리 배열). 최근 거래 활발 + 상승 단지 랭킹 + (옵션)검색관심도.
     반환 [{apt,gu,sd,recent,prev,vol_chg,price,price_eok,chg,area,freq,search}] (search=0~100|None).
-    KB/세대수 비의존 — 국토부 실거래만. 표본 0이면 []."""
+    KB/세대수 비의존 — 국토부 실거래만. 표본 0이면 [].
+    with_cap=True면 (hot리스트, 시총리더리스트) 튜플 반환 — 같은 RTMS 스윕·세대수 조회를
+    공유해 '구별 시가총액 상위 단지'(시총=중위 실거래가×세대수)를 함께 만든다."""
     asof = asof or date.today()
+
+    def _empty():
+        if with_cap and with_gain:
+            return [], [], []
+        return ([], []) if with_cap else []
+
     try:
         _preflight(asof)
     except Exception as e:
         print(f"[realestate] 주목단지 preflight 실패(생략): {e}")
-        return []
+        return _empty()
     key = _get_key()
     yms = _months_back(asof, months)
     recent0 = asof - timedelta(days=HOT_RECENT_DAYS - 1)
@@ -1677,20 +1769,136 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
                 "vol_chg": round((len(rec) / max(len(prev), 1) - 1) * 100),
                 "price": med_price, "price_eok": _fmt_eok(med_price),
                 "chg": chg, "area": f"{area}㎡", "freq": len(rs), "search": None,
+                "rec_ppa": rec_ppa,
                 "_rows": rs, "_rec": rec,
             }
     if not agg:
-        return []
+        return _empty()
+    from collections import Counter
     # 랭킹: 최근 거래수 우선 + 상승률 가점
     ranked = sorted(agg.values(),
                     key=lambda d: (d["recent"], d["chg"]), reverse=True)[:top]
-    # 단지정보 보강(세대수·시공사) + 면적별(59·84㎡) 최근 실거래가 + 소재지(구+동)
-    from collections import Counter
+
+    # 시총 리더 후보: 구별 거래빈도 상위(대단지일수록 거래 잦음 → 포착) — 같은 agg 재사용
+    cap_cands = []
+    if with_cap:
+        bygu = {}
+        for d in agg.values():
+            bygu.setdefault(d["gu"], []).append(d)
+        for lst in bygu.values():
+            lst.sort(key=lambda d: (d["freq"], d["recent"]), reverse=True)
+            cap_cands.extend(lst[:cap_cand])
+
+    # 단지정보 보강(세대수·시공사) — hot 랭킹 + 시총 후보 합집합 1회 조회(중복 비용 제거)
+    pairs = {(d["gu"], d["apt"]) for d in ranked}
+    if with_cap:
+        pairs |= {(d["gu"], d["apt"]) for d in cap_cands}
     info = {}
     try:
-        info = _apt_info_map([(d["gu"], d["apt"]) for d in ranked])
+        info = _apt_info_map(list(pairs))
     except Exception as e:
         print(f"[realestate] 단지정보 보강 생략: {e}")
+
+    # 시총 리더 출력(독립 dict) — ranked의 _rows 제거 전에 먼저 만든다.
+    #   시총 = 단지 최근 실거래 중위 거래금액(만원) × 세대수. 세대수 없으면 제외(가짜 없음).
+    cap_leaders = []
+    if with_cap:
+        for d in cap_cands:
+            inf = info.get((d["gu"], d["apt"]), {})
+            units = inf.get("units")
+            if not units:
+                continue
+            rs = d.get("_rows") or []
+            cap_manwon = d["price"] * units
+            p59 = _recent_price_in_band(rs, 49.0, 63.0)
+            p84 = _recent_price_in_band(rs, 74.0, 90.0)
+            dong = Counter(r["dong"] for r in rs if r.get("dong")).most_common(1)
+            dnm = dong[0][0] if dong else ""
+            cap_leaders.append({
+                "apt": d["apt"], "gu": d["gu"], "sd": d["sd"],
+                "units": units, "builder": inf.get("builder"),
+                "price": d["price"], "price_eok": d["price_eok"], "area": d["area"],
+                "freq": d["freq"], "cap_manwon": cap_manwon,
+                "cap_eok": round(cap_manwon / 1e4), "cap_fmt": _fmt_cap(cap_manwon),
+                "p59_eok": _fmt_eok(p59) if p59 else None,
+                "p84_eok": _fmt_eok(p84) if p84 else None,
+                "dong": dnm, "addr": (d["gu"] + " " + dnm).strip(),
+            })
+        # 구별 시총 top cap_per_gu(작은 구도 노출 보장) ∪ 전체 시총 top cap_overall
+        # (강남3구 합산·수도권 전체 같은 그룹/전체 재랭킹을 뷰어가 정확히 하도록 둘 다 담음)
+        bygu2 = {}
+        for c in cap_leaders:
+            bygu2.setdefault(c["gu"], []).append(c)
+        pergu = []
+        for lst in bygu2.values():
+            lst.sort(key=lambda c: c["cap_manwon"], reverse=True)
+            pergu.extend(lst[:cap_per_gu])
+        overall = sorted(cap_leaders, key=lambda c: c["cap_manwon"],
+                         reverse=True)[:cap_overall]
+        seen, union = set(), []
+        for c in sorted(pergu + overall, key=lambda c: c["cap_manwon"], reverse=True):
+            k = (c["gu"], c["apt"])
+            if k in seen:
+                continue
+            seen.add(k)
+            union.append(c)
+        cap_leaders = union
+
+    # 작년말(전년 12월) 대비 시총(=매매가) 상승률 — 면적정규화 평단가(ppa) 기준.
+    #   전년 12월 RTMS 한 달치만 추가 스윕 → 단지별 dec_ppa, 현재 rec_ppa와 비교.
+    #   세대수 불변이라 시총 상승률 = 평단가 상승률. 두 시점 모두 거래된 단지만(가짜 없음).
+    gain_leaders = []
+    if with_gain:
+        dec_ym = f"{asof.year - 1}12"
+        dec = _load_dec_baseline(dec_ym)        # 캐시 적중 시 스윕 생략
+        if dec is None:
+            dec = {}
+            for name, codes in SIGUNGU_CODES.items():
+                drows = []
+                for code in codes:
+                    drows += _fetch(key, code, dec_ym, "매매", stats)
+                if exclude_direct:
+                    drows = [r for r in drows if not r["direct"]]
+                per = {}
+                for r in drows:
+                    per.setdefault(r["apt"], []).append(r)
+                for apt, rs in per.items():
+                    ppas = [r["ppa"] for r in rs if r.get("ppa")]
+                    if len(ppas) >= 2:          # 표본 부족 단지 제외(노이즈)
+                        dec[(name, apt)] = (statistics.median(ppas), len(ppas))
+            _save_dec_baseline(dec_ym, dec)     # 다음 런부터 재사용(주1회 갱신)
+        for k, d in agg.items():
+            dd = dec.get(k)
+            rec_ppa = d.get("rec_ppa")
+            if not dd or not rec_ppa:
+                continue
+            dec_ppa, dec_n = dd
+            if not dec_ppa:
+                continue
+            yoy = (rec_ppa / dec_ppa - 1) * 100
+            if yoy <= 0 or yoy > 100:               # 하락·이상치(데이터오류) 제외
+                continue
+            inf = info.get(k, {})
+            units = inf.get("units")
+            rs = d.get("_rows") or []
+            p84 = _recent_price_in_band(rs, 74.0, 90.0)
+            dong = Counter(r["dong"] for r in rs if r.get("dong")).most_common(1)
+            dnm = dong[0][0] if dong else ""
+            cap_manwon = d["price"] * units if units else None
+            gain_leaders.append({
+                "apt": d["apt"], "gu": d["gu"], "sd": d["sd"],
+                "yoy": round(yoy, 1), "units": units, "builder": inf.get("builder"),
+                "price": d["price"], "price_eok": d["price_eok"], "area": d["area"],
+                "freq": d["freq"], "dec_n": dec_n,
+                "cap_eok": round(cap_manwon / 1e4) if cap_manwon else None,
+                "cap_fmt": _fmt_cap(cap_manwon) if cap_manwon else None,
+                "p84_eok": _fmt_eok(p84) if p84 else None,
+                "dong": dnm, "addr": (d["gu"] + " " + dnm).strip(),
+            })
+        gain_leaders.sort(key=lambda c: c["yoy"], reverse=True)
+        gain_leaders = gain_leaders[:gain_top]
+
+    # hot 랭킹 보강(세대수·면적별가·소재지) — 여기서 _rows 제거
     for d in ranked:
         rs = d.pop("_rows", []) or []
         d.pop("_rec", None)
@@ -1711,4 +1919,6 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
                 d["search"] = si.get(d["apt"])
         except Exception as e:
             print(f"[realestate] 검색관심도 생략: {e}")
-    return ranked
+    if with_cap and with_gain:
+        return ranked, cap_leaders, gain_leaders
+    return (ranked, cap_leaders) if with_cap else ranked
