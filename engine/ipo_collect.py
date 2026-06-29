@@ -14,7 +14,8 @@
   · 섹터 = DART corpCode.xml(단축코드→corp_code) + company.json(induty_code) → KSIC 라벨.
   · 재무·밸류 = DART 다중회사 주요계정(fnlttMultiAcnt)으로 매출·영업이익·당기순이익·자본총계.
         PER=시총/순이익, PBR=시총/자본총계, PSR=시총/매출액 (시총은 시세 스냅샷).
-  · 공모가 = DART 증권발행실적보고서/투자설명서 원문에서 발행가액 정규식 파싱(LLM 미사용·무료).
+  · 공모가·보호예수 = DART 증권발행실적보고서/투자설명서 원문에서 파싱(LLM 미사용·무료).
+        공모가=표의 '모집(매출)가액' 컬럼, 보호예수=의무보유 확약비율/최대주주 기간.
         공모가比 = 현재가/공모가−1.
   · 향후 IPO = DART 증권신고서(지분증권·미상장) + 기업소개 + 상장 예상구간(추정).
 
@@ -41,18 +42,6 @@ _DATAGO = "https://apis.data.go.kr/1160100/service"
 _PRICE = f"{_DATAGO}/GetStockSecuritiesInfoService/getStockPriceInfo"
 _CORP = f"{_DATAGO}/GetCorpBasicInfoService_V2/getCorpOutline_V2"       # 기업기본정보(승인)
 _KRX = f"{_DATAGO}/GetKrxListedInfoService/getItemInfo"                 # KRX상장종목정보(승인)
-
-# 보호예수: 주식발행정보 V3 — base/op 불확실 → 자동탐지(첫 성공 1개 캐시)
-_LOCK_BASES = [
-    "https://apis.data.go.kr/1160100/service/GetStocIssuInfoService_V3",
-    "https://apis.data.go.kr/1160100/GetStocIssuInfoService_V3",
-    "https://apis.data.go.kr/1160100/service/GetStocIssuInfoService",
-]
-_LOCK_OPS = [
-    "getOblgItemDpsRtrInfo", "getMandatoryDpsRtrInfo", "getOblgDpsRtrInfo",
-    "getStockOblgDpsRtrInfo", "getMnatryHldDpsRtrInfo", "getOblgRtrInfo",
-    "getHldDpsRtrInfo", "getMandatoryHoldDepositReturnInfo", "getDpsRtrInfo",
-]
 
 _DART = "https://opendart.fss.or.kr/api"
 _DART_LIST = f"{_DART}/list.json"
@@ -298,77 +287,6 @@ def _corp_outline(key, crno=None, corp_nm=None):
     return it[0] if it else None
 
 
-# ── 보호예수: 주식발행정보 V3 자동탐지(base×op) + raw 로깅 ──
-_lock_op = "unset"
-
-
-def _discover_lock_op(key, sample_crno):
-    global _lock_op
-    if _lock_op != "unset":
-        return _lock_op
-    if not sample_crno:
-        return None
-    errs, tried = [], 0
-    for base in _LOCK_BASES:
-        for op in _LOCK_OPS:
-            url = f"{base}/{op}"
-            try:
-                data = _get(url, {"serviceKey": key, "resultType": "json",
-                                  "numOfRows": 5, "pageNo": 1, "crno": sample_crno})
-            except Exception as e:
-                tried += 1
-                if len(errs) < 4:
-                    errs.append(f"{op}: {str(e)[:60]}")
-                continue
-            rc, msg = _resultcode(data)
-            if rc and rc not in ("00", "0", "000"):
-                tried += 1
-                if len(errs) < 4:
-                    errs.append(f"{op}: rc={rc} {msg[:40]}")
-                continue
-            it, _ = _items(data)
-            _lock_op = url
-            tag = url.split("/1160100/")[-1]
-            keys = sorted((it[0] if it else {}).keys())
-            _log(f"보호예수 op 확인: {tag}")
-            _log(f"보호예수 응답 키: {keys}")
-            _log(f"보호예수 샘플: {str(it[0])[:300] if it else '(빈 응답 — 이 crno엔 보호예수 미등록일 수 있음)'}")
-            return url
-    _lock_op = None
-    _log(f"보호예수 op 자동탐지 실패({tried}회). 첫 오류: " + " | ".join(errs))
-    _log("→ Swagger '의무보호예수반환정보 조회' 영문 op명을 알려주면 고정할게.")
-    return None
-
-
-_DATE_KEY_HINT = re.compile(r"(rtr|dps|rls|until|hld|반환|해제)", re.I)
-
-
-def _lockup(key, crno):
-    if not crno:
-        return ""
-    url = _discover_lock_op(key, crno)
-    if not url:
-        return ""
-    try:
-        it, _ = _items(_get(url, {"serviceKey": key, "resultType": "json",
-                                  "numOfRows": 80, "pageNo": 1, "crno": crno}))
-    except Exception:
-        return ""
-    if not it:
-        return ""
-    today = date.today().strftime("%Y%m%d")
-    hinted, fallback = [], []
-    for x in it:
-        for k, v in x.items():
-            s = _digits(v)
-            if len(s) == 8 and "19000101" < s < "21001231" and s >= today:
-                (hinted if _DATE_KEY_HINT.search(str(k)) else fallback).append(s)
-    future = sorted(hinted) or sorted(fallback)
-    if future:
-        return f"미해제 {len(future)}건 · 최근 해제 {_fmt_date(future[0])}"
-    return f"보호예수 {len(it)}건 등록"
-
-
 # ── 추이: isinCd 필터 일별 종가 시리즈 ──
 def _daily_series(key, isin, srtn, start_basdt, end_basdt):
     """isinCd 우선(고유) 필터로 일별 종가. 다른 종목 섞이면 [] 반환."""
@@ -504,11 +422,101 @@ def _dart_financials(key, corp_codes):
     return out
 
 
-# ── DART 공모가: 증권발행실적보고서/투자설명서 원문에서 발행가액 파싱 ──
-_IPO_ANCHORS = ("확정공모가", "확정 공모가", "확정발행가", "확정 발행가",
-                "공모가격", "공모가액", "주당공모가", "주당 공모가", "1주당 공모가",
-                "모집(매출)가액", "모집가액", "발행가액", "모집가격", "공모가")
-_PRICE_RE = re.compile(r"(\d{1,3}(?:,\d{3})+|\d{4,7})\s*원")
+# ── DART 공모가·보호예수: 증권발행실적보고서/투자설명서 원문 파싱 ──
+_ipo_diag = {"rcept": 0, "doc": 0, "price": 0, "lock": 0, "sample": ""}
+
+_PRICE_LABELS = ("모집(매출)가액", "모집(매출)가격", "공모가액", "공모가격",
+                 "확정공모가액", "확정발행가액", "발행가액", "주당공모가액",
+                 "1주당공모가액", "주당발행가액", "모집가액")
+_PRICE_RE = re.compile(r"(\d{1,3}(?:,\d{3})+|\d{4,7})")
+_CELL_RE = re.compile(r"<(?:td|th|te|tu|tl)[^>]*>(.*?)</(?:td|th|te|tu|tl)>", re.I | re.S)
+_ROW_RE = re.compile(r"<tr[^>]*>(.*?)</tr>", re.I | re.S)
+
+
+def _strip(s):
+    s = re.sub(r"<[^>]+>", " ", s or "")
+    s = re.sub(r"&[a-zA-Z#0-9]+;", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _won(cell, lo=1000, hi=2_000_000):
+    """셀 문자열에서 가격(원) 1건. 범위 밖(액면가·총액)은 제외."""
+    m = _PRICE_RE.search(cell or "")
+    if not m:
+        return None
+    v = int(m.group(1).replace(",", ""))
+    return v if lo <= v <= hi else None
+
+
+def _ipo_from_table(raw):
+    """표에서 '모집(매출)가액' 헤더 컬럼을 찾아 같은 열의 데이터 행 값을 읽음."""
+    rows = _ROW_RE.findall(raw)
+    for ri, row in enumerate(rows):
+        cells = [_strip(c) for c in _CELL_RE.findall(row)]
+        for ci, c in enumerate(cells):
+            cc = c.replace(" ", "")
+            if any(lbl in cc for lbl in _PRICE_LABELS):
+                # (1) 같은 행 오른쪽 셀 (라벨:값 가로배열)
+                for c2 in cells[ci + 1: ci + 3]:
+                    v = _won(c2)
+                    if v:
+                        return v
+                # (2) 다음 데이터 행들의 같은 열 (헤더/값 세로배열)
+                for row2 in rows[ri + 1: ri + 5]:
+                    cells2 = [_strip(c2) for c2 in _CELL_RE.findall(row2)]
+                    if ci < len(cells2):
+                        v = _won(cells2[ci])
+                        if v:
+                            return v
+    return None
+
+
+def _ipo_from_inline(text):
+    """본문 산문에서 '확정공모가 … 10,000원' 형태 추출."""
+    for a in ("확정공모가액", "확정 공모가액", "확정공모가", "확정 공모가",
+              "확정발행가액", "공모가액", "공모가격", "발행가액", "1주당", "주당"):
+        i = 0
+        while True:
+            j = text.find(a, i)
+            if j < 0:
+                break
+            win = text[j: j + 40]
+            m = re.search(r"(\d{1,3}(?:,\d{3})+|\d{4,7})\s*원", win)
+            if m:
+                v = int(m.group(1).replace(",", ""))
+                if 1000 <= v <= 2_000_000:
+                    return v
+            i = j + len(a)
+    return None
+
+
+def _parse_ipo_price(raw):
+    return _ipo_from_table(raw) or _ipo_from_inline(_strip(raw))
+
+
+_LOCK_PCT_RE = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*%")
+
+
+def _parse_lockup(raw):
+    """의무보유(보호예수) 요약: 기관 확약비율 우선, 없으면 최대주주 의무보유 기간."""
+    t = _strip(raw)
+    # 기관 의무보유 확약 비율
+    for a in ("의무보유를 확약", "의무보유 확약", "보호예수를 확약", "확약비율", "의무보유확약"):
+        j = t.find(a)
+        if j >= 0:
+            m = _LOCK_PCT_RE.search(t[max(0, j - 25): j + 35])
+            if m:
+                p = float(m.group(1))
+                if 0 < p <= 100:
+                    return f"기관 의무보유 확약 {m.group(1)}%"
+    # 최대주주 등 의무보유 기간
+    for a in ("최대주주", "최대주주등"):
+        j = t.find(a)
+        if j >= 0:
+            m = re.search(r"(상장(?:일|후)[^.]{0,12}?(\d+)\s*(개월|년))", t[j: j + 120])
+            if m:
+                return f"최대주주 의무보유 {m.group(2)}{m.group(3)}"
+    return None
 
 
 def _dart_rcept(key, corp_code, listed):
@@ -517,7 +525,7 @@ def _dart_rcept(key, corp_code, listed):
         ld = datetime.strptime(listed, "%Y%m%d").date() if len(str(listed)) == 8 else date.today()
     except (ValueError, TypeError):
         ld = date.today()
-    bgn = (ld - timedelta(days=150)).strftime("%Y%m%d")
+    bgn = (ld - timedelta(days=180)).strftime("%Y%m%d")
     end = (ld + timedelta(days=120)).strftime("%Y%m%d")
     try:
         data = _get(_DART_LIST, {"crtfc_key": key, "corp_code": corp_code,
@@ -536,7 +544,7 @@ def _dart_rcept(key, corp_code, listed):
     return None, None
 
 
-def _dart_doc_text(key, rcept_no, cap=400_000):
+def _dart_doc_text(key, rcept_no, cap=600_000):
     """공시원문 zip → 텍스트(앞 cap자). EUC-KR/UTF-8 혼재 대응."""
     r = requests.get(_DART_DOC, params={"crtfc_key": key, "rcept_no": rcept_no},
                      headers=_UA, timeout=30)
@@ -560,40 +568,32 @@ def _dart_doc_text(key, rcept_no, cap=400_000):
     return "\n".join(parts)[:cap]
 
 
-def _parse_ipo_price(text):
-    """원문 텍스트에서 공모가(주당 발행가액) 1건 추출."""
-    t = re.sub(r"<[^>]+>", " ", text)            # 태그 제거
-    t = re.sub(r"&[a-zA-Z#0-9]+;", " ", t)        # 엔티티 제거
-    t = re.sub(r"\s+", " ", t)
-    for a in _IPO_ANCHORS:
-        i = 0
-        while True:
-            j = t.find(a, i)
-            if j < 0:
-                break
-            window = t[j + len(a): j + len(a) + 60]
-            for m in _PRICE_RE.finditer(window):
-                v = int(m.group(1).replace(",", ""))
-                if 1000 <= v <= 2_000_000:        # 액면가·총공모액 등 제외
-                    return v
-            i = j + len(a)
-    return None
-
-
-def _dart_ipo_price(key, corp_code, listed):
+def _dart_ipo_doc(key, corp_code, listed):
+    """공모가·보호예수 파싱용 원문 텍스트(진단 카운터 포함)."""
     if not key or not corp_code:
-        return None
+        return ""
     try:
-        rcept, _kind = _dart_rcept(key, corp_code, listed)
+        rcept, kind = _dart_rcept(key, corp_code, listed)
         if not rcept:
-            return None
-        text = _dart_doc_text(key, rcept)
-        if not text:
-            return None
-        return _parse_ipo_price(text)
+            return ""
+        _ipo_diag["rcept"] += 1
+        raw = _dart_doc_text(key, rcept)
+        if not raw:
+            return ""
+        _ipo_diag["doc"] += 1
+        if not _ipo_diag["sample"]:
+            s = _strip(raw)
+            for lbl in _PRICE_LABELS:
+                p = s.find(lbl)
+                if p >= 0:
+                    _ipo_diag["sample"] = f"{kind}|{lbl}|{s[p:p + 90]}"
+                    break
+            else:
+                _ipo_diag["sample"] = f"{kind}|nolabel|{s[:90]}"
+        return raw
     except Exception as e:
-        _log(f"공모가 파싱 오류({corp_code}): {str(e)[:60]}")
-        return None
+        _log(f"공모가 원문 오류({corp_code}): {str(e)[:60]}")
+        return ""
 
 
 # ── DART: 향후 IPO ──
@@ -720,8 +720,6 @@ def collect() -> dict:
         n_listed += 1 if lstg else 0
         n_intro += 1 if intro else 0
         n_spark += 1 if spark else 0
-        lock = _lockup(key, crno)
-        n_lock += 1 if lock else 0
         sector = _dart_sector(_dartk(), srtn)
         if sector:
             n_sect += 1
@@ -738,9 +736,9 @@ def collect() -> dict:
             # 재무·밸류 — 아래 배치(DART fnlttMultiAcnt)에서 채움
             "revenue": "", "op_income": "", "net_income": "",
             "per": None, "pbr": None, "psr": None,
-            # 공모가 — 아래 DART 증권발행실적보고서 파싱에서 채움
+            # 공모가·보호예수 — 아래 DART 증권발행실적보고서 원문 파싱에서 채움
             "ipo_price": "", "ipo_price_won": None, "ipo_return": None,
-            "lockup": lock, "intro": intro, "spark": spark,
+            "lockup": "", "intro": intro, "spark": spark,
         })
         time.sleep(0.05)
 
@@ -749,7 +747,7 @@ def collect() -> dict:
 
     # 재무(매출·영업이익·순이익·자본총계) 배치 조회 → PER/PBR/PSR
     fin = _dart_financials(_dartk(), [r.get("_cc") for r in recent if r.get("_cc")])
-    n_fin = n_ipop = 0
+    n_fin = n_ipop = n_lock = 0
     dk = _dartk()
     for r in recent:
         cc = r.get("_cc")
@@ -767,18 +765,27 @@ def collect() -> dict:
                 r["pbr"] = round(cap / eq, 2) if (eq and eq > 0) else None
                 r["psr"] = round(cap / rev, 2) if (rev and rev > 0) else None
             n_fin += 1
-        # ── 공모가(DART 증권발행실적보고서 파싱) ──
+        # ── 공모가 + 보호예수(DART 증권발행실적보고서/투자설명서 원문 1회) ──
         if dk and cc:
-            ip = _dart_ipo_price(dk, cc, lstg)
-            if ip:
-                r["ipo_price"] = f"{ip:,}"
-                r["ipo_price_won"] = ip
-                pw = r.get("price_won")
-                if pw:
-                    r["ipo_return"] = round((pw / ip - 1) * 100, 1)
-                n_ipop += 1
+            raw = _dart_ipo_doc(dk, cc, lstg)
+            if raw:
+                ip = _parse_ipo_price(raw)
+                if ip:
+                    r["ipo_price"] = f"{ip:,}"
+                    r["ipo_price_won"] = ip
+                    pw = r.get("price_won")
+                    if pw:
+                        r["ipo_return"] = round((pw / ip - 1) * 100, 1)
+                    n_ipop += 1
+                lk = _parse_lockup(raw)
+                if lk:
+                    r["lockup"] = lk
+                    n_lock += 1
         r.pop("_lstg", None)
         r.pop("_cc", None)
+
+    _log(f"공모가 진단: rcept {_ipo_diag['rcept']} · 원문 {_ipo_diag['doc']} · 공모가 {n_ipop} · 보호예수 {n_lock}"
+         + (f" · 샘플=[{_ipo_diag['sample'][:140]}]" if _ipo_diag["sample"] else ""))
 
     upcoming = _dart_upcoming(_dartk())
     for u in upcoming:
