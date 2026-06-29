@@ -112,6 +112,52 @@ _CSS = """
 .ldr-help{font-size:13.5px;line-height:1.8;color:var(--ink);}
 .ldr-help b{color:var(--sage-deep);}
 .ldr-matnote{font-size:11px;color:var(--muted);line-height:1.7;margin-top:6px;}
+
+/* ── 등장 애니메이션 (A안: 랭크 빌드업) ──
+   리더보드는 순위대로 차오르고, 스파크라인은 좌→우로 그려지고,
+   섹터 막대는 채워지고, 매트릭스(Altair)는 컨테이너째 부드럽게 팝업된다. */
+@keyframes ldr-rise{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:none;}}
+@keyframes ldr-draw{from{stroke-dashoffset:100;}to{stroke-dashoffset:0;}}
+@keyframes ldr-grow{from{transform:scaleX(0);}to{transform:scaleX(1);}}
+@keyframes ldr-mx-in{from{opacity:0;transform:scale(.985);}to{opacity:1;transform:none;}}
+
+/* 리더보드 행: 순위대로 아래에서 위로 */
+.ldr-lb-row{animation:ldr-rise .5s cubic-bezier(.22,.61,.36,1) both;}
+.ldr-lb .ldr-lb-row:nth-child(1){animation-delay:.03s;}
+.ldr-lb .ldr-lb-row:nth-child(2){animation-delay:.07s;}
+.ldr-lb .ldr-lb-row:nth-child(3){animation-delay:.11s;}
+.ldr-lb .ldr-lb-row:nth-child(4){animation-delay:.15s;}
+.ldr-lb .ldr-lb-row:nth-child(5){animation-delay:.19s;}
+.ldr-lb .ldr-lb-row:nth-child(6){animation-delay:.23s;}
+.ldr-lb .ldr-lb-row:nth-child(7){animation-delay:.27s;}
+.ldr-lb .ldr-lb-row:nth-child(8){animation-delay:.31s;}
+.ldr-lb .ldr-lb-row:nth-child(9){animation-delay:.35s;}
+.ldr-lb .ldr-lb-row:nth-child(10){animation-delay:.39s;}
+.ldr-lb .ldr-lb-row:nth-child(11){animation-delay:.43s;}
+.ldr-lb .ldr-lb-row:nth-child(12){animation-delay:.47s;}
+
+/* 스파크라인: 좌→우 그리기 (리더보드 안에서만) */
+.ldr-lb-row .spk .ldr-spk-line{stroke-dasharray:100;stroke-dashoffset:100;
+  animation:ldr-draw .7s ease .2s both;}
+
+/* 섹터 막대: 좌→우 채움 */
+.ldr-secbar .track>i{transform-origin:left center;
+  animation:ldr-grow .7s cubic-bezier(.22,.61,.36,1) .2s both;}
+
+/* 매트릭스(Altair 산점도): 컨테이너 스코프로 부드럽게 팝업 */
+.st-key-ldr_matrix [data-testid="stVegaLiteChart"],
+.st-key-ldr_matrix [data-testid="stArrowVegaLiteChart"],
+.st-key-ldr_matrix .stVegaLiteChart{
+  animation:ldr-mx-in .5s cubic-bezier(.22,.61,.36,1) both;}
+
+@media(prefers-reduced-motion:reduce){
+  .ldr-lb-row,.ldr-secbar .track>i,
+  .st-key-ldr_matrix [data-testid="stVegaLiteChart"],
+  .st-key-ldr_matrix [data-testid="stArrowVegaLiteChart"],
+  .st-key-ldr_matrix .stVegaLiteChart{animation:none !important;}
+  .ldr-lb-row .spk .ldr-spk-line{animation:none !important;stroke-dashoffset:0 !important;}
+  .ldr-secbar .track>i{transform:none !important;}
+}
 </style>
 """
  
@@ -200,7 +246,7 @@ def _spark_svg(vals, color, width=118, height=24):
         f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="none" '
         f'style="width:{width}px;height:{height}px;display:block">'
         f'<polygon points="{pts} {width},{height} 0,{height}" style="fill:{color};opacity:.10"/>'
-        f'<polyline points="{pts}" style="fill:none;stroke:{color};stroke-width:1.6;opacity:.85"/></svg>'
+        f'<polyline class="ldr-spk-line" pathLength="100" points="{pts}" style="fill:none;stroke:{color};stroke-width:1.6;opacity:.85"/></svg>'
     )
  
  
@@ -364,7 +410,12 @@ def _render_matrix(leaders):
                  .configure_view(strokeWidth=0))
     except Exception:
         chart = pts.properties(height=MATRIX_HEIGHT, background="transparent")
-    st.altair_chart(chart, use_container_width=True)
+    try:
+        mx_box = st.container(key="ldr_matrix")
+    except TypeError:                 # 구버전 Streamlit 폴백(스코프만 생략, 동작은 정상)
+        mx_box = st.container()
+    with mx_box:
+        st.altair_chart(chart, use_container_width=True)
  
  
 def _render_sector_detail(rank, sec, leaders_by_upj):
