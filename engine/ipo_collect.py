@@ -423,7 +423,7 @@ def _dart_financials(key, corp_codes):
 
 
 # ── DART 공모가·보호예수: 증권발행실적보고서/투자설명서 원문 파싱 ──
-_ipo_diag = {"rcept": 0, "doc": 0, "price": 0, "lock": 0, "sample": ""}
+_ipo_diag = {"rcept": 0, "doc": 0, "samples": []}
 
 _PRICE_LABELS = ("모집(매출)가액", "모집(매출)가격", "공모가액", "공모가격",
                  "확정공모가액", "확정발행가액", "발행가액", "주당공모가액",
@@ -440,8 +440,9 @@ def _strip(s):
 
 
 def _won(cell, lo=1000, hi=2_000_000):
-    """셀 문자열에서 가격(원) 1건. 범위 밖(액면가·총액)은 제외."""
-    m = _PRICE_RE.search(cell or "")
+    """셀 문자열에서 가격(원) 1건. 자간 공백 제거 후 매칭. 범위 밖(액면가·총액)은 제외."""
+    s = re.sub(r"\s+", "", cell or "")
+    m = _PRICE_RE.search(s)
     if not m:
         return None
     v = int(m.group(1).replace(",", ""))
@@ -472,16 +473,16 @@ def _ipo_from_table(raw):
 
 
 def _ipo_from_inline(text):
-    """본문 산문에서 '확정공모가 … 10,000원' 형태 추출."""
-    for a in ("확정공모가액", "확정 공모가액", "확정공모가", "확정 공모가",
-              "확정발행가액", "공모가액", "공모가격", "발행가액", "1주당", "주당"):
+    """공백 제거 텍스트에서 '확정공모가액…30,000원' 형태 추출."""
+    t = re.sub(r"\s+", "", text or "")
+    for a in ("확정공모가액", "확정발행가액", "확정공모가", "공모가액", "공모가격",
+              "주당공모가액", "1주당공모가액", "발행가액", "주당모집가액"):
         i = 0
         while True:
-            j = text.find(a, i)
+            j = t.find(a, i)
             if j < 0:
                 break
-            win = text[j: j + 40]
-            m = re.search(r"(\d{1,3}(?:,\d{3})+|\d{4,7})\s*원", win)
+            m = re.search(r"(\d{1,3}(?:,\d{3})+|\d{4,7})\s*원", t[j: j + 30])
             if m:
                 v = int(m.group(1).replace(",", ""))
                 if 1000 <= v <= 2_000_000:
@@ -494,28 +495,23 @@ def _parse_ipo_price(raw):
     return _ipo_from_table(raw) or _ipo_from_inline(_strip(raw))
 
 
-_LOCK_PCT_RE = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*%")
-
-
 def _parse_lockup(raw):
     """의무보유(보호예수) 요약: 기관 확약비율 우선, 없으면 최대주주 의무보유 기간."""
-    t = _strip(raw)
-    # 기관 의무보유 확약 비율
-    for a in ("의무보유를 확약", "의무보유 확약", "보호예수를 확약", "확약비율", "의무보유확약"):
+    t = re.sub(r"\s+", "", _strip(raw))
+    for a in ("의무보유를확약", "의무보유확약", "보호예수를확약", "확약비율", "의무보유확약비율"):
         j = t.find(a)
         if j >= 0:
-            m = _LOCK_PCT_RE.search(t[max(0, j - 25): j + 35])
+            m = re.search(r"(\d{1,3}(?:\.\d+)?)\s*%", t[max(0, j - 20): j + 30])
             if m:
                 p = float(m.group(1))
                 if 0 < p <= 100:
                     return f"기관 의무보유 확약 {m.group(1)}%"
-    # 최대주주 등 의무보유 기간
-    for a in ("최대주주", "최대주주등"):
+    for a in ("최대주주",):
         j = t.find(a)
         if j >= 0:
-            m = re.search(r"(상장(?:일|후)[^.]{0,12}?(\d+)\s*(개월|년))", t[j: j + 120])
+            m = re.search(r"상장(?:일|후)\D{0,8}(\d+)(개월|년)", t[j: j + 80])
             if m:
-                return f"최대주주 의무보유 {m.group(2)}{m.group(3)}"
+                return f"최대주주 의무보유 {m.group(1)}{m.group(2)}"
     return None
 
 
@@ -525,8 +521,8 @@ def _dart_rcept(key, corp_code, listed):
         ld = datetime.strptime(listed, "%Y%m%d").date() if len(str(listed)) == 8 else date.today()
     except (ValueError, TypeError):
         ld = date.today()
-    bgn = (ld - timedelta(days=180)).strftime("%Y%m%d")
-    end = (ld + timedelta(days=120)).strftime("%Y%m%d")
+    bgn = (ld - timedelta(days=210)).strftime("%Y%m%d")
+    end = (ld + timedelta(days=150)).strftime("%Y%m%d")
     try:
         data = _get(_DART_LIST, {"crtfc_key": key, "corp_code": corp_code,
                                  "bgn_de": bgn, "end_de": end, "page_count": 100})
@@ -536,7 +532,7 @@ def _dart_rcept(key, corp_code, listed):
         return None, None
     lst = data.get("list") or []
     base = int(ld.strftime("%Y%m%d"))
-    for kind in ("증권발행실적보고서", "투자설명서"):
+    for kind in ("증권발행실적보고서", "투자설명서", "증권신고서"):
         cands = [r for r in lst if kind in str(r.get("report_nm", ""))]
         if cands:
             cands.sort(key=lambda r: abs(int(_digits(r.get("rcept_dt"), 8) or base) - base))
@@ -581,15 +577,19 @@ def _dart_ipo_doc(key, corp_code, listed):
         if not raw:
             return ""
         _ipo_diag["doc"] += 1
-        if not _ipo_diag["sample"]:
-            s = _strip(raw)
-            for lbl in _PRICE_LABELS:
-                p = s.find(lbl)
+        if len(_ipo_diag["samples"]) < 3:
+            sx = re.sub(r"\s+", "", _strip(raw))      # 자간 공백 제거
+            ntr = len(re.findall(r"<tr", raw, re.I))
+            ctx = ""
+            for lbl in ("모집(매출)가액", "공모가액", "공모가격", "확정공모가",
+                        "발행가액", "주당공모", "공모"):
+                p = sx.find(lbl)
                 if p >= 0:
-                    _ipo_diag["sample"] = f"{kind}|{lbl}|{s[p:p + 90]}"
+                    ctx = f"{lbl}@{p}:{sx[p:p + 110]}"
                     break
-            else:
-                _ipo_diag["sample"] = f"{kind}|nolabel|{s[:90]}"
+            if not ctx:
+                ctx = "라벨無:" + sx[:110]
+            _ipo_diag["samples"].append(f"{kind}|tr={ntr}|{ctx}")
         return raw
     except Exception as e:
         _log(f"공모가 원문 오류({corp_code}): {str(e)[:60]}")
@@ -784,8 +784,9 @@ def collect() -> dict:
         r.pop("_lstg", None)
         r.pop("_cc", None)
 
-    _log(f"공모가 진단: rcept {_ipo_diag['rcept']} · 원문 {_ipo_diag['doc']} · 공모가 {n_ipop} · 보호예수 {n_lock}"
-         + (f" · 샘플=[{_ipo_diag['sample'][:140]}]" if _ipo_diag["sample"] else ""))
+    _log(f"공모가 진단: rcept {_ipo_diag['rcept']} · 원문 {_ipo_diag['doc']} · 공모가 {n_ipop} · 보호예수 {n_lock}")
+    for i, s in enumerate(_ipo_diag["samples"], 1):
+        _log(f"  샘플{i}=[{s[:170]}]")
 
     upcoming = _dart_upcoming(_dartk())
     for u in upcoming:
