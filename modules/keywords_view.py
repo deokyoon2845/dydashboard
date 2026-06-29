@@ -11,7 +11,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from modules.stocks import naver_stock_url, naver_stock_page_url, naver_n_icon
+from modules.stocks import naver_stock_search_url
 from modules.ui import tab_header
 
 KW_PATH = Path("data/keywords_today.json")
@@ -186,9 +186,9 @@ def _stock_html(names, watch_set):
         watch_cls = " kw-stk-watch" if is_watch else ""
         parts.append(
             f'<span class="kw-stkwrap">'
-            f'<a class="kw-stk{watch_cls}" href="{html.escape(naver_stock_page_url(name=n))}" '
+            f'<a class="kw-stk{watch_cls}" href="{html.escape(naver_stock_search_url(n))}" '
             f'target="_blank" rel="noopener">{label}</a>'
-            f'{naver_n_icon(name=n)}</span>'
+            f'</span>'
         )
     return f'<div class="kw-stocks">{"".join(parts)}</div>' if parts else ""
 
