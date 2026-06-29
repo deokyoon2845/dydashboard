@@ -28,9 +28,11 @@ def main():
     if isinstance(metrics, dict):
         try:
             from engine.realestate_collect import collect_hot_complexes
-            hot = collect_hot_complexes()
+            hot, cap, gain = collect_hot_complexes(with_cap=True, with_gain=True)
             metrics["_hot"] = hot
-            print(f"[realestate] 주목 단지 {len(hot)}개 수집")
+            metrics["_caplead"] = cap          # 구별 시가총액 상위 단지(같은 스윕 공유)
+            metrics["_capgain"] = gain         # 작년말 대비 시총 상승률 상위(전년 12월 추가 스윕)
+            print(f"[realestate] 주목 단지 {len(hot)}개 · 시총리더 {len(cap)}개 · 상승률리더 {len(gain)}개 수집")
         except Exception as e:
             print(f"[realestate] 주목 단지 수집 실패(생략): {e}")
 
