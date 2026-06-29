@@ -28,71 +28,80 @@ CAT_CLS = {"정책": "cat-policy", "금리": "cat-macro", "공급": "cat-sector"
 
 _RE_KW_CSS = """
 <style>
-/* 2열 그리드 (데스크톱) → 좁아지면 1열 — 증시 키워드 탭과 동일 */
-.rekw-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:6px;}
-@media(max-width:680px){.rekw-grid{grid-template-columns:1fr;}}
+/* ── A안: 에디토리얼 인덱스 (매거진 목차형 1열 리스트) — 증시 키워드 탭과 동일 양식 ── */
+.rekw-list{border-top:1px solid var(--line,#ECEDE7);margin-top:4px;}
+.rekw-row{display:grid;grid-template-columns:54px 1fr;gap:14px;
+  padding:17px 4px 16px;border-bottom:1px solid var(--line,#ECEDE7);
+  transition:background .18s ease;}
+.rekw-row:hover{background:#fbfbf8;}
 
-.rekw-card{background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);border-radius:14px;
-  padding:14px 15px;display:flex;flex-direction:column;gap:0;}
-.rekw-head{display:flex;align-items:center;gap:8px;margin-bottom:7px;flex-wrap:wrap;}
-.rekw-rank{font-family:'Fraunces','Noto Sans KR',Georgia,serif;font-size:18px;font-weight:600;
-  color:var(--sage-deep,#7E9A83);min-width:20px;line-height:1;}
-.rekw-kw{font-size:14.5px;font-weight:700;color:var(--ink,#34352f);flex:1;min-width:0;
-  word-break:keep-all;line-height:1.35;}
-.rekw-cat{font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;letter-spacing:.02em;flex:none;}
+.rekw-rank{font-family:'Fraunces','Noto Sans KR',Georgia,serif;font-size:30px;font-weight:500;
+  line-height:1;color:var(--sage-deep,#7E9A83);text-align:right;padding-top:2px;
+  font-variant-numeric:tabular-nums;}
+.rekw-impbar{display:flex;gap:2px;justify-content:flex-end;margin-top:8px;}
+.rekw-impbar i{width:5px;height:5px;border-radius:50%;background:var(--line,#ECEDE7);}
+.rekw-impbar i.f{background:var(--sage,#A7BBA9);}
+
+.rekw-main{min-width:0;}
+.rekw-head{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin-bottom:7px;}
+.rekw-kw{font-size:18px;font-weight:700;color:var(--ink,#34352f);letter-spacing:-.01em;
+  line-height:1.3;word-break:keep-all;}
+.rekw-tagrow{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap;}
+.rekw-cat{font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;letter-spacing:.02em;white-space:nowrap;}
 .cat-macro{background:#E6F0F6;color:#2C5F7C;}
 .cat-sector{background:#EBF3EC;color:#4A6B4F;}
 .cat-stock{background:#F3EEE6;color:#7C5F2C;}
 .cat-policy{background:#F0E9F3;color:#6B4A7C;}
 .cat-region{background:#EAF1EA;color:#3F6F49;}
-.rekw-streak{font-size:9.5px;font-weight:700;color:#C2410C;background:#FDEEE3;padding:2px 6px;border-radius:5px;flex:none;}
-.rekw-new{font-size:9.5px;font-weight:700;color:#0f6e56;background:#e1f5ee;padding:2px 6px;border-radius:5px;flex:none;}
-.rekw-wbar{height:4px;border-radius:3px;background:var(--line,#ECEDE7);margin:0 0 9px;overflow:hidden;}
-.rekw-wbar>span{display:block;height:100%;background:var(--sage,#A7BBA9);border-radius:3px;}
-.rekw-tags{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:9px;}
+.rekw-streak{font-size:9.5px;font-weight:700;color:#C2410C;background:#FDEEE3;padding:2px 6px;border-radius:5px;white-space:nowrap;}
+.rekw-new{font-size:9.5px;font-weight:800;color:#fff;background:var(--sage-deep,#7E9A83);
+  padding:2px 7px;border-radius:5px;letter-spacing:.04em;white-space:nowrap;}
+
+.rekw-tags{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 9px;}
 .rekw-tag{font-size:11px;font-weight:600;text-decoration:none;background:var(--pill-bg,#F1F2EC);
   color:var(--pill-ink,#5d6258);border:1px solid var(--line,#ECEDE7);padding:2px 8px;border-radius:7px;}
-.rekw-news{margin-top:auto;}
-/* 뉴스 제목: 1줄 고정 + 말줄임 (카드 높이 균일) */
-.rekw-news a{display:block;font-size:12px;line-height:1.5;color:var(--sage-deep,#7E9A83);
-  text-decoration:none;margin-bottom:5px;padding-left:11px;position:relative;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+.rekw-news a{display:block;font-size:12.5px;line-height:1.6;color:var(--sage-deep,#7E9A83);
+  text-decoration:none;padding-left:13px;position:relative;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
 .rekw-news a:before{content:"›";position:absolute;left:0;color:var(--muted,#9a9b92);}
 .rekw-news a:hover{text-decoration:underline;}
-.rekw-weak{font-size:10.5px;color:var(--muted,#9a9b92);margin-top:6px;}
+.rekw-weak{font-size:10.5px;color:var(--muted,#9a9b92);margin-top:5px;}
+
+@media(max-width:560px){
+  .rekw-row{grid-template-columns:40px 1fr;gap:11px;}
+  .rekw-rank{font-size:24px;}
+  .rekw-kw{font-size:16px;}
+}
 
 /* ── 마이크로 인터랙션 (미니멀 미스트) ── */
-@keyframes rekw-fade-up{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
-.rekw-card{animation:rekw-fade-up .5s cubic-bezier(.22,.61,.36,1) both;
-  transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease;}
-.rekw-grid .rekw-card:nth-child(1){animation-delay:.02s;}
-.rekw-grid .rekw-card:nth-child(2){animation-delay:.05s;}
-.rekw-grid .rekw-card:nth-child(3){animation-delay:.08s;}
-.rekw-grid .rekw-card:nth-child(4){animation-delay:.11s;}
-.rekw-grid .rekw-card:nth-child(5){animation-delay:.14s;}
-.rekw-grid .rekw-card:nth-child(6){animation-delay:.17s;}
-.rekw-grid .rekw-card:nth-child(7){animation-delay:.20s;}
-.rekw-grid .rekw-card:nth-child(8){animation-delay:.23s;}
-.rekw-grid .rekw-card:nth-child(9){animation-delay:.26s;}
-.rekw-grid .rekw-card:nth-child(10){animation-delay:.29s;}
-.rekw-grid .rekw-card:nth-child(11){animation-delay:.32s;}
-.rekw-grid .rekw-card:nth-child(12){animation-delay:.35s;}
-.rekw-grid .rekw-card:nth-child(13){animation-delay:.38s;}
-.rekw-grid .rekw-card:nth-child(14){animation-delay:.41s;}
-.rekw-grid .rekw-card:nth-child(15){animation-delay:.44s;}
-.rekw-card:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(52,53,47,.08);
-  border-color:var(--sage,#A7BBA9);}
-@keyframes rekw-bar-grow{from{transform:scaleX(0);}to{transform:scaleX(1);}}
-.rekw-wbar>span{transform-origin:left center;
-  animation:rekw-bar-grow .8s cubic-bezier(.22,.61,.36,1) .25s both;}
+@keyframes rekw-fade-up{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+.rekw-row{animation:rekw-fade-up .45s cubic-bezier(.22,.61,.36,1) both;}
+.rekw-list .rekw-row:nth-child(1){animation-delay:.02s;}
+.rekw-list .rekw-row:nth-child(2){animation-delay:.04s;}
+.rekw-list .rekw-row:nth-child(3){animation-delay:.06s;}
+.rekw-list .rekw-row:nth-child(4){animation-delay:.08s;}
+.rekw-list .rekw-row:nth-child(5){animation-delay:.10s;}
+.rekw-list .rekw-row:nth-child(6){animation-delay:.12s;}
+.rekw-list .rekw-row:nth-child(7){animation-delay:.14s;}
+.rekw-list .rekw-row:nth-child(8){animation-delay:.16s;}
+.rekw-list .rekw-row:nth-child(9){animation-delay:.18s;}
+.rekw-list .rekw-row:nth-child(10){animation-delay:.20s;}
+.rekw-list .rekw-row:nth-child(11){animation-delay:.22s;}
+.rekw-list .rekw-row:nth-child(12){animation-delay:.24s;}
+.rekw-list .rekw-row:nth-child(13){animation-delay:.26s;}
+.rekw-list .rekw-row:nth-child(14){animation-delay:.28s;}
+.rekw-list .rekw-row:nth-child(15){animation-delay:.30s;}
+.rekw-impbar i.f{animation:rekw-dot-in .5s ease both .25s;}
+@keyframes rekw-dot-in{from{transform:scale(.4);opacity:.3;}to{transform:scale(1);opacity:1;}}
 .rekw-news a{transition:color .15s ease,padding-left .15s ease;}
-.rekw-news a:hover{padding-left:14px;}
+.rekw-news a:hover{padding-left:16px;}
 .rekw-tag{transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease;}
 .rekw-tag:hover{transform:translateY(-1px);box-shadow:0 2px 6px rgba(52,53,47,.08);
   border-color:var(--sage,#A7BBA9);}
 @media(prefers-reduced-motion:reduce){
-  .rekw-card,.rekw-wbar>span{animation:none !important;}
-  .rekw-card,.rekw-news a,.rekw-tag{transition:none !important;}
+  .rekw-row,.rekw-impbar i.f{animation:none !important;}
+  .rekw-row,.rekw-news a,.rekw-tag{transition:none !important;}
 }
 </style>
 """
@@ -118,6 +127,44 @@ def _archive_dates():
     return out
 
 
+# ── 키워드 소스: Supabase(누적) 우선, 미구성 시 파일 폴백 (증시 키워드와 동일 패턴) ──
+
+def _kw_source() -> str:
+    """'db' 또는 'file'. Supabase가 구성돼 있으면 누적 DB를 우선 사용."""
+    try:
+        from modules import db
+        if db.supabase_configured():
+            return "db"
+    except Exception:
+        pass
+    return "file"
+
+
+def _kw_dates():
+    """[(날짜문자열, picker값)] 최신순. picker값은 DB면 'YYYY-MM-DD', 파일이면 경로문자열."""
+    if _kw_source() == "db":
+        try:
+            from modules import db
+            return [(d, d) for d in db.list_realestate_keyword_dates()]
+        except Exception:
+            pass
+    return [(f"{d:%Y-%m-%d}", str(f)) for d, f in _archive_dates()]
+
+
+def _kw_load(picker_value):
+    """picker값(날짜문자열 또는 파일경로)으로 키워드 dict({generated, items, ...}) 로드."""
+    if _kw_source() == "db":
+        try:
+            from modules import db
+            return (db.load_realestate_keywords_by_date(picker_value) if picker_value
+                    else db.load_realestate_keywords_latest())
+        except Exception:
+            pass
+    if picker_value and Path(picker_value).exists():
+        return _load(Path(picker_value))
+    return _load(RE_KW_PATH)
+
+
 def _naver_land_url(region: str) -> str:
     """지역명을 네이버부동산 검색으로 연결."""
     return "https://m.land.naver.com/search/result/" + quote(region)
@@ -138,21 +185,31 @@ def _region_html(regions):
 
 
 def _render_items(items):
-    cards = []
+    rows = []
     for i, it in enumerate(items[:15], start=1):
         cat = it.get("category", "")
         kw = html.escape(it.get("keyword", ""))
         cat_html = (f'<span class="rekw-cat {CAT_CLS.get(cat, "cat-sector")}">{html.escape(cat)}</span>'
                     if cat else "")
-        streak = it.get("streak", 1)
-        streak_html = (f'<span class="rekw-streak">🔥 {streak}일째</span>'
-                       if streak and streak >= 2 else "")
-        new_html = '<span class="rekw-new">NEW</span>' if it.get("is_new") else ""
 
+        # NEW(오늘 처음) 우선, 아니면 연속 등장(streak)
+        is_new = bool(it.get("is_new"))
+        streak = it.get("streak", 1)
+        if is_new:
+            badge_html = '<span class="rekw-new">NEW</span>'
+        elif streak and streak >= 2:
+            badge_html = f'<span class="rekw-streak">🔥 {streak}일째</span>'
+        else:
+            badge_html = ""
+
+        # 중요도(weight 1~10) → 5칸 도트
         weight = it.get("weight")
-        wbar = ""
         if isinstance(weight, int):
-            wbar = f'<div class="rekw-wbar"><span style="width:{weight*10}%"></span></div>'
+            filled = max(0, min(5, round(weight / 2)))
+            dots = "".join(f'<i class="{"f" if k < filled else ""}"></i>' for k in range(5))
+            impbar = f'<div class="rekw-impbar">{dots}</div>'
+        else:
+            impbar = ""
 
         # 관련 지역(없으면 구버전 호환으로 stocks 키도 시도)
         regions = it.get("regions") or it.get("stocks") or []
@@ -177,19 +234,20 @@ def _render_items(items):
         else:
             weak_html = ""
 
-        cards.append(
-            f'<div class="rekw-card">'
-            f'<div class="rekw-head">'
-            f'<span class="rekw-rank">{i}</span>'
-            f'<span class="rekw-kw">{kw}</span>'
-            f'{cat_html}{new_html}{streak_html}</div>'
-            f'{wbar}{tags_html}{news_html}{weak_html}</div>'
+        rows.append(
+            f'<div class="rekw-row">'
+            f'<div class="rekw-rank">{i}{impbar}</div>'
+            f'<div class="rekw-main">'
+            f'<div class="rekw-head"><span class="rekw-kw">{kw}</span>'
+            f'<span class="rekw-tagrow">{cat_html}{badge_html}</span></div>'
+            f'{tags_html}{news_html}{weak_html}'
+            f'</div></div>'
         )
 
-    if not cards:
+    if not rows:
         st.caption("표시할 키워드가 없어요.")
         return
-    st.markdown(f'<div class="rekw-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="rekw-list">{"".join(rows)}</div>', unsafe_allow_html=True)
 
 
 def render_realestate_keywords():
@@ -210,17 +268,18 @@ def render_realestate_keywords():
         else:
             st.warning(f"갱신 실패 · {res.get('reason')}")
 
-    # 아카이브 날짜 선택
-    archive = _archive_dates()
-    if archive:
-        labels = {str(f): (f"{d:%Y-%m-%d}" + (" (오늘)" if d == date.today() else ""))
-                  for d, f in archive}
-        opts = [str(f) for _, f in archive]
+    # 날짜 선택 — Supabase 누적 데이터 우선(없으면 파일 아카이브)
+    dates = _kw_dates()
+    data = None
+    if dates:
+        today_s = date.today().strftime("%Y-%m-%d")
+        labels = {pv: (ds + (" (오늘)" if ds == today_s else "")) for ds, pv in dates}
+        opts = [pv for _, pv in dates]
         pick = st.selectbox("날짜 선택", options=opts,
-                            format_func=lambda s: labels[s], key="re_kw_date")
-        data = _load(Path(pick))
+                            format_func=lambda s: labels.get(s, s), key="re_kw_date")
+        data = _kw_load(pick)
     else:
-        data = _load(RE_KW_PATH)
+        data = _kw_load(None)
 
     if not data or not data.get("items"):
         st.markdown(
@@ -235,5 +294,5 @@ def render_realestate_keywords():
 
     _render_items(data["items"])
     st.caption("※ 키워드·지역·카테고리·중요도는 AI 추출, 링크는 네이버 뉴스 실제 기사. "
-               "🔥 = 연속 등장 일수, NEW = 오늘 첫 등장, 막대 = 중요도, "
-               "지역 클릭 시 네이버부동산. 뉴스는 카드당 2건 표시.")
+               "🔥 = 연속 등장 일수, NEW = 오늘 첫 등장, 점 = 중요도, "
+               "지역 클릭 시 네이버부동산. 뉴스는 키워드당 2건 표시.")
