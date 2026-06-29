@@ -95,29 +95,33 @@ _CSS = """
 .dday{font-size:10.5px;font-weight:800;color:#fff;background:var(--sage-deep,#7E9A83);
   padding:3px 8px;border-radius:6px;flex:none;}
 .dday.soon{background:#C2410C;} .dday.tbd{background:#B7BCB3;}
-/* 최근 상장 — 컴팩트 리스트 행 */
-.ipo-row{background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);border-radius:11px;
-  padding:10px 14px;display:grid;grid-template-columns:1.7fr .82fr 1.25fr 1.25fr 66px;
-  gap:10px;align-items:center;margin-bottom:-6px;}
-.ipo-row .nm{font-size:14px;font-weight:800;line-height:1.25;}
-.ipo-row .nm a{color:var(--ink,#34352f);text-decoration:none;}
-.ipo-row .nm a:hover{text-decoration:underline;}
-.ipo-row .nm .meta{font-size:10px;font-weight:700;color:var(--muted,#9a9b92);margin-top:3px;
-  display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
-.ipo-row .dt{font-size:12px;color:var(--pill-ink,#5d6258);font-weight:600;}
-.cmp{text-align:right;line-height:1.3;}
-.cmp .now{font-size:13.5px;font-weight:800;}
-.cmp .now small{font-size:10px;font-weight:600;color:var(--muted,#9a9b92);margin-left:2px;}
-.cmp .was{font-size:10.5px;font-weight:600;color:var(--muted,#9a9b92);margin-top:1px;}
-.cmp .was b{font-weight:800;}
-.ipo-row .sp{text-align:right;line-height:0;}
+/* 최근 상장 — 정돈된 리스트 (B안: 데이터 테이블) */
+.ipo-head{display:grid;grid-template-columns:1.55fr 80px 1fr 94px 88px;gap:12px;
+  padding:2px 6px 8px;font-size:10px;font-weight:700;color:var(--muted,#9a9b92);
+  letter-spacing:.03em;border-bottom:1px solid var(--line,#ECEDE7);}
+.ipo-head .c{text-align:center;} .ipo-head .r{text-align:right;}
+.ipo-row{display:grid;grid-template-columns:1.55fr 80px 1fr 94px 88px;gap:12px;align-items:center;
+  padding:12px 6px;border-bottom:1px solid var(--line,#ECEDE7);transition:background .15s ease;}
+.ipo-row:hover{background:#fbfbf8;}
+.ipo-row .nmcell{min-width:0;}
+.ipo-row .nmcell .nm{font-size:13.5px;font-weight:700;line-height:1.2;display:flex;align-items:center;}
+.ipo-row .nmcell .nm a{color:var(--ink,#34352f);text-decoration:none;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;}
+.ipo-row .nmcell .nm a:hover{text-decoration:underline;}
+.ipo-row .nmcell .sub{font-size:10px;margin-top:4px;display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
+.ipo-row .dt{font-size:11.5px;color:var(--muted,#9a9b92);text-align:center;font-variant-numeric:tabular-nums;}
+.ipo-row .sp{line-height:0;}
+.ipo-row .perf{text-align:right;font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.25;}
+.ipo-row .perf .pl{display:block;font-size:9px;color:var(--muted,#9a9b92);font-weight:600;margin-top:1px;}
+.ipo-row .capcell{text-align:right;font-size:12.5px;font-weight:700;color:var(--ink,#34352f);
+  font-variant-numeric:tabular-nums;line-height:1.25;}
+.ipo-row .capcell .pl{display:block;font-size:9px;color:var(--muted,#9a9b92);font-weight:600;margin-top:1px;}
 .mk{font-size:10px;font-weight:700;padding:1px 6px;border-radius:5px;}
 .mk.kospi{background:#EBF1F5;color:#3E6488;} .mk.kosdaq{background:#F0E9F3;color:#6B4A7C;}
-.sct{font-size:10px;font-weight:700;padding:1px 6px;border-radius:5px;
-  background:#EDF1EA;color:#5C7060;}
+.sct{font-size:10px;font-weight:600;color:var(--muted,#9a9b92);}
 .nv{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
   border-radius:4px;background:#03C75A;color:#fff;font-size:10px;font-weight:900;
-  text-decoration:none;margin-left:5px;vertical-align:1px;line-height:1;}
+  text-decoration:none;margin-left:6px;vertical-align:1px;line-height:1;flex:none;}
 .nv:hover{filter:brightness(.92);}
 .up{color:var(--up,#B65F5A);} .down{color:var(--down,#5A7CA0);}
 .sp .na{font-size:11px;color:var(--muted,#9a9b92);}
@@ -141,8 +145,8 @@ _CSS = """
   background:var(--summary-bg,#F6F7F2);border:1px solid var(--line,#ECEDE7);border-radius:9px;padding:9px 11px;word-break:keep-all;}
 .ipo-cna{font-size:12px;color:var(--muted,#9a9b92);padding:14px 2px;}
 @media(max-width:680px){
-  .ipo-row{grid-template-columns:1.6fr 1.2fr 1.2fr 58px;}
-  .ipo-row .dt{display:none;}
+  .ipo-head,.ipo-row{grid-template-columns:1.5fr 92px 84px;}
+  .ipo-head .dcol,.ipo-row .dt,.ipo-row .sp{display:none;}
 }
 </style>
 """
@@ -429,13 +433,26 @@ def _row_html(s: dict) -> str:
     sct = f'<span class="sct">{html.escape(sector)}</span>' if sector else ""
     item = _naver_item_url(s.get("code", "")) or naver_stock_url(s.get("name", ""))
     nv = f'<a class="nv" href="{html.escape(item)}" target="_blank" rel="noopener" title="네이버 증권에서 보기">N</a>'
+
+    # 대표 수익률(공모가比 우선, 없으면 상장일比) + 기준 라벨
+    r = _ret_main(s)
+    base = "공모比" if isinstance(s.get("ipo_return"), (int, float)) else "상장일比"
+    if isinstance(r, (int, float)):
+        perf = (f'<div class="perf {_ret_cls(r)}">{"+" if r >= 0 else ""}{r:.1f}%'
+                f'<span class="pl">{base}</span></div>')
+    else:
+        perf = '<div class="perf"><span class="pl">—</span></div>'
+
+    cap = html.escape(str(s.get("cap", "-")))
+    capcell = f'<div class="capcell">{cap}<span class="pl">시총</span></div>'
+
     return (
         '<div class="ipo-row">'
-        f'<div class="nm"><a href="{html.escape(item)}" target="_blank" rel="noopener">{nm}</a>{nv}'
-        f'<div class="meta">{_mk_chip(s.get("market",""))}{sct}</div></div>'
+        f'<div class="nmcell"><div class="nm"><a href="{html.escape(item)}" target="_blank" rel="noopener">{nm}</a>{nv}</div>'
+        f'<div class="sub">{_mk_chip(s.get("market",""))}{sct}</div></div>'
         f'<div class="dt">{html.escape(str(s.get("listed","-")))}</div>'
-        f'{_price_cell(s)}{_cap_cell(s)}'
         f'<div class="sp">{_row_spark(s)}</div>'
+        f'{perf}{capcell}'
         '</div>'
     )
 
@@ -502,7 +519,7 @@ def render_ipo_tab():
 
     # ② 최근 상장 — 필터/정렬
     st.markdown('<div class="ipo-sec">최근 상장 종목 '
-                '<span class="mut">· 현재가 옆 수익률=공모가比(없으면 상장일比) · 시총 옆 PER · N=네이버</span></div>',
+                '<span class="mut">· 수익률=공모가比(없으면 상장일比) · 펼치면 재무·회사소개 · N=네이버</span></div>',
                 unsafe_allow_html=True)
     if not recent:
         st.markdown('<div class="ipo-cna">표시할 종목이 없어요.</div>', unsafe_allow_html=True)
@@ -521,14 +538,19 @@ def render_ipo_tab():
         st.markdown('<div class="ipo-cna">조건에 맞는 종목이 없어요.</div>', unsafe_allow_html=True)
         return
 
+    st.markdown(
+        '<div class="ipo-head"><span>종목</span>'
+        '<span class="c dcol">상장일</span><span class="dcol">추이</span>'
+        '<span class="r">수익률</span><span class="r">현재시총</span></div>',
+        unsafe_allow_html=True)
     for s in rows:
         st.markdown(_row_html(s), unsafe_allow_html=True)
         with st.expander("차트·상세 보기"):
             _ipo_chart(s.get("name", ""), s.get("listed", ""), mode)
             st.markdown(_detail_html(s), unsafe_allow_html=True)
 
-    st.caption("현재가 옆 수익률=공모가 대비(공모가는 DART 증권발행실적보고서에서 파싱, 없으면 상장일 종가 대비). "
-               "시총 옆 PER. 펼치면 PER·PBR·PSR과 매출·영업이익·당기순이익(DART 최근 연간). "
+    st.caption("수익률=공모가 대비(공모가는 DART 증권발행실적보고서에서 파싱, 없으면 상장일 종가 대비). "
+               "펼치면 현재가·PER·PBR·PSR과 매출·영업이익·당기순이익(DART 최근 연간)·회사소개가 나와요. "
                "추이=상장후 전체. 큰 차트=네이버 일별(약 15분 지연). N 아이콘·종목명=네이버 증권.")
 
 
