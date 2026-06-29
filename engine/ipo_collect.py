@@ -14,10 +14,11 @@
   · 섹터 = DART corpCode.xml(단축코드→corp_code) + company.json(induty_code) → KSIC 라벨.
   · 재무·밸류 = DART 다중회사 주요계정(fnlttMultiAcnt)으로 매출·영업이익·당기순이익·자본총계.
         PER=시총/순이익, PBR=시총/자본총계, PSR=시총/매출액 (시총은 시세 스냅샷).
+  · 공모가 = DART 증권발행실적보고서/투자설명서 원문에서 발행가액 정규식 파싱(LLM 미사용·무료).
+        공모가比 = 현재가/공모가−1.
   · 향후 IPO = DART 증권신고서(지분증권·미상장) + 기업소개 + 상장 예상구간(추정).
 
-  ※ 공모가는 어느 무료 API에도 없어(주식발행정보도 발행가 미제공) 제외.
-     회사소개(enpMainBizNm)는 이 API에서 비어 옴 → 재무·밸류·섹터로 대체.
+  ※ 회사소개(enpMainBizNm)는 이 API에서 비어 옴 → 재무·밸류·섹터로 대체.
 
 키: DATA_GO_KR_KEY(없으면 MOLIT_API_KEY) · DART_API_KEY
 """
@@ -58,6 +59,7 @@ _DART_LIST = f"{_DART}/list.json"
 _DART_CORPCODE = f"{_DART}/corpCode.xml"   # 전체 corp_code↔stock_code 매핑(zip)
 _DART_COMPANY = f"{_DART}/company.json"    # 회사개황(induty_code=업종코드)
 _DART_FNLT = f"{_DART}/fnlttMultiAcnt.json"  # 다중회사 주요계정(매출·영업이익·순이익·자본총계)
+_DART_DOC = f"{_DART}/document.xml"          # 공시원문(zip) — 증권발행실적보고서 공모가 파싱
 
 # KSIC(표준산업분류) 2자리 prefix → 섹터 라벨 (제조업은 세분)
 _KSIC = {
@@ -502,6 +504,98 @@ def _dart_financials(key, corp_codes):
     return out
 
 
+# ── DART 공모가: 증권발행실적보고서/투자설명서 원문에서 발행가액 파싱 ──
+_IPO_ANCHORS = ("확정공모가", "확정 공모가", "확정발행가", "확정 발행가",
+                "공모가격", "공모가액", "주당공모가", "주당 공모가", "1주당 공모가",
+                "모집(매출)가액", "모집가액", "발행가액", "모집가격", "공모가")
+_PRICE_RE = re.compile(r"(\d{1,3}(?:,\d{3})+|\d{4,7})\s*원")
+
+
+def _dart_rcept(key, corp_code, listed):
+    """상장일 전후 공시에서 증권발행실적보고서(우선)·투자설명서 접수번호 탐색."""
+    try:
+        ld = datetime.strptime(listed, "%Y%m%d").date() if len(str(listed)) == 8 else date.today()
+    except (ValueError, TypeError):
+        ld = date.today()
+    bgn = (ld - timedelta(days=150)).strftime("%Y%m%d")
+    end = (ld + timedelta(days=120)).strftime("%Y%m%d")
+    try:
+        data = _get(_DART_LIST, {"crtfc_key": key, "corp_code": corp_code,
+                                 "bgn_de": bgn, "end_de": end, "page_count": 100})
+    except Exception:
+        return None, None
+    if str(data.get("status")) != "000":
+        return None, None
+    lst = data.get("list") or []
+    base = int(ld.strftime("%Y%m%d"))
+    for kind in ("증권발행실적보고서", "투자설명서"):
+        cands = [r for r in lst if kind in str(r.get("report_nm", ""))]
+        if cands:
+            cands.sort(key=lambda r: abs(int(_digits(r.get("rcept_dt"), 8) or base) - base))
+            return cands[0].get("rcept_no"), kind
+    return None, None
+
+
+def _dart_doc_text(key, rcept_no, cap=400_000):
+    """공시원문 zip → 텍스트(앞 cap자). EUC-KR/UTF-8 혼재 대응."""
+    r = requests.get(_DART_DOC, params={"crtfc_key": key, "rcept_no": rcept_no},
+                     headers=_UA, timeout=30)
+    r.raise_for_status()
+    if r.content[:2] != b"PK":          # zip이 아니면 오류응답(XML)
+        return ""
+    zf = zipfile.ZipFile(io.BytesIO(r.content))
+    parts = []
+    for nm in zf.namelist():
+        raw = zf.read(nm)
+        txt = None
+        for enc in ("utf-8", "cp949", "euc-kr"):
+            try:
+                txt = raw.decode(enc)
+                break
+            except UnicodeDecodeError:
+                continue
+        parts.append(txt if txt is not None else raw.decode("utf-8", "ignore"))
+        if sum(len(p) for p in parts) > cap:
+            break
+    return "\n".join(parts)[:cap]
+
+
+def _parse_ipo_price(text):
+    """원문 텍스트에서 공모가(주당 발행가액) 1건 추출."""
+    t = re.sub(r"<[^>]+>", " ", text)            # 태그 제거
+    t = re.sub(r"&[a-zA-Z#0-9]+;", " ", t)        # 엔티티 제거
+    t = re.sub(r"\s+", " ", t)
+    for a in _IPO_ANCHORS:
+        i = 0
+        while True:
+            j = t.find(a, i)
+            if j < 0:
+                break
+            window = t[j + len(a): j + len(a) + 60]
+            for m in _PRICE_RE.finditer(window):
+                v = int(m.group(1).replace(",", ""))
+                if 1000 <= v <= 2_000_000:        # 액면가·총공모액 등 제외
+                    return v
+            i = j + len(a)
+    return None
+
+
+def _dart_ipo_price(key, corp_code, listed):
+    if not key or not corp_code:
+        return None
+    try:
+        rcept, _kind = _dart_rcept(key, corp_code, listed)
+        if not rcept:
+            return None
+        text = _dart_doc_text(key, rcept)
+        if not text:
+            return None
+        return _parse_ipo_price(text)
+    except Exception as e:
+        _log(f"공모가 파싱 오류({corp_code}): {str(e)[:60]}")
+        return None
+
+
 # ── DART: 향후 IPO ──
 def _dart_upcoming(key, days=75):
     if not key:
@@ -591,7 +685,7 @@ def collect() -> dict:
     _log(f"시총≥{_fmt_cap(CAP_MIN)} & 최근상장 후보 {len(cands)}종목")
 
     recent = []
-    n_listed = n_intro = n_spark = n_crno = n_sect = 0
+    n_listed = n_intro = n_lock = n_spark = n_crno = n_sect = 0
     cutoff = (date.today() - timedelta(days=RECENT_DAYS)).strftime("%Y%m%d")
     win_start = (date.today() - timedelta(days=RECENT_DAYS + 90)).strftime("%Y%m%d")
     for x in cands:
@@ -626,6 +720,8 @@ def collect() -> dict:
         n_listed += 1 if lstg else 0
         n_intro += 1 if intro else 0
         n_spark += 1 if spark else 0
+        lock = _lockup(key, crno)
+        n_lock += 1 if lock else 0
         sector = _dart_sector(_dartk(), srtn)
         if sector:
             n_sect += 1
@@ -642,7 +738,9 @@ def collect() -> dict:
             # 재무·밸류 — 아래 배치(DART fnlttMultiAcnt)에서 채움
             "revenue": "", "op_income": "", "net_income": "",
             "per": None, "pbr": None, "psr": None,
-            "intro": intro, "spark": spark,
+            # 공모가 — 아래 DART 증권발행실적보고서 파싱에서 채움
+            "ipo_price": "", "ipo_price_won": None, "ipo_return": None,
+            "lockup": lock, "intro": intro, "spark": spark,
         })
         time.sleep(0.05)
 
@@ -651,23 +749,36 @@ def collect() -> dict:
 
     # 재무(매출·영업이익·순이익·자본총계) 배치 조회 → PER/PBR/PSR
     fin = _dart_financials(_dartk(), [r.get("_cc") for r in recent if r.get("_cc")])
-    n_fin = 0
+    n_fin = n_ipop = 0
+    dk = _dartk()
     for r in recent:
-        f = fin.get(r.get("_cc"))
+        cc = r.get("_cc")
+        lstg = r.get("_lstg") or ""
+        # ── 재무·밸류 ──
+        f = fin.get(cc)
+        if f:
+            rev, op, net, eq = f.get("revenue"), f.get("op"), f.get("net"), f.get("equity")
+            r["revenue"] = _fmt_signed_cap(rev)
+            r["op_income"] = _fmt_signed_cap(op)
+            r["net_income"] = _fmt_signed_cap(net)
+            cap = r.get("cap_won")
+            if cap:
+                r["per"] = round(cap / net, 1) if (net and net > 0) else None
+                r["pbr"] = round(cap / eq, 2) if (eq and eq > 0) else None
+                r["psr"] = round(cap / rev, 2) if (rev and rev > 0) else None
+            n_fin += 1
+        # ── 공모가(DART 증권발행실적보고서 파싱) ──
+        if dk and cc:
+            ip = _dart_ipo_price(dk, cc, lstg)
+            if ip:
+                r["ipo_price"] = f"{ip:,}"
+                r["ipo_price_won"] = ip
+                pw = r.get("price_won")
+                if pw:
+                    r["ipo_return"] = round((pw / ip - 1) * 100, 1)
+                n_ipop += 1
         r.pop("_lstg", None)
         r.pop("_cc", None)
-        if not f:
-            continue
-        rev, op, net, eq = f.get("revenue"), f.get("op"), f.get("net"), f.get("equity")
-        r["revenue"] = _fmt_signed_cap(rev)
-        r["op_income"] = _fmt_signed_cap(op)
-        r["net_income"] = _fmt_signed_cap(net)
-        cap = r.get("cap_won")
-        if cap:
-            r["per"] = round(cap / net, 1) if (net and net > 0) else None
-            r["pbr"] = round(cap / eq, 2) if (eq and eq > 0) else None
-            r["psr"] = round(cap / rev, 2) if (rev and rev > 0) else None
-        n_fin += 1
 
     upcoming = _dart_upcoming(_dartk())
     for u in upcoming:
@@ -675,16 +786,8 @@ def collect() -> dict:
         if o and o.get("enpMainBizNm"):
             u["intro"] = o["enpMainBizNm"]
 
-    # 회사소개(about) 보강 — DART 문서 → Haiku 요약 → Supabase 캐시(코드별 1회).
-    # 키/네트워크 문제로 실패해도 IPO 수집은 그대로 진행.
-    try:
-        from engine import ipo_about
-        ipo_about.enrich(recent)
-    except Exception as e:
-        _log(f"회사소개 보강 건너뜀: {str(e)[:80]}")
-
     _log(f"완료: 최근상장 {len(recent)}종목 "
-         f"(crno {n_crno} · 상장일 {n_listed} · 섹터 {n_sect} · 재무 {n_fin} · 회사소개 {n_intro} · 추이 {n_spark}) "
+         f"(crno {n_crno} · 상장일 {n_listed} · 섹터 {n_sect} · 재무 {n_fin} · 공모가 {n_ipop} · 회사소개 {n_intro} · 보호예수 {n_lock} · 추이 {n_spark}) "
          f"/ 향후 {len(upcoming)}건")
 
     return {
