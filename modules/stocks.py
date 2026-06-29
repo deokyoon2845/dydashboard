@@ -9,6 +9,11 @@ def naver_stock_url(name: str) -> str:
     return "https://search.naver.com/search.naver?query=" + quote(f"{name} 주가")
 
 
+def naver_stock_search_url(name: str) -> str:
+    """종목명 자체를 네이버 검색으로 연결 (예: '삼성전자' — '주가' 미부착)."""
+    return "https://search.naver.com/search.naver?query=" + quote(str(name or "").strip())
+
+
 def _digits6(v) -> str:
     """문자열에서 숫자만 추려 앞 6자리. (코드 정규화)"""
     return "".join(ch for ch in str(v or "") if ch.isdigit())[:6]
