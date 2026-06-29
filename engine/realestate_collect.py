@@ -592,8 +592,53 @@ def _env_key(*names):
     return None
 
 
+# ── ECOS 주담대 금리(신규취급액) ─────────────────────────────
+#   표 722Y001 = 예금은행 가중평균금리(신규취급액 기준). 그 안의 '주택담보대출' 항목.
+#   항목코드는 ECOS가 체계를 바꾸면 깨지므로(과거 BECABA03 → 숫자코드로 이관) 하드코딩
+#   하지 않고 StatisticItemList로 항목명→코드를 매 실행 동적 해석한다. 해석 실패 시
+#   알려진 후보 코드들로 순차 폴백하고, 모두 실패하면 []를 반환한다(가짜값 없음).
+_ECOS_MORTGAGE_TBL = "722Y001"
+_ECOS_MORTGAGE_NAME = "주택담보대출"
+_ECOS_MORTGAGE_FALLBACK_CODES = ("010200000", "0102000", "BECABA03")  # 폴백(빈값이면 자동 스킵)
+
+
+def _ecos_resolve_item_code(key, tbl, want_name):
+    """ECOS StatisticItemList에서 항목명(want_name)에 맞는 ITEM_CODE를 찾는다.
+    완전일치 우선, 없으면 부분일치. 실패/미발견 시 None."""
+    try:
+        url = f"https://ecos.bok.or.kr/api/StatisticItemList/{key}/json/kr/1/200/{tbl}"
+        r = requests.get(url, timeout=10)
+        rows = (r.json().get("StatisticItemList", {}) or {}).get("row", []) or []
+    except Exception as e:
+        print(f"[realestate] ECOS 항목목록 조회 실패: {e}")
+        return None
+    want = (want_name or "").strip()
+    exact = [x for x in rows if (x.get("ITEM_NAME") or "").strip() == want]
+    part = [x for x in rows if want and want in (x.get("ITEM_NAME") or "")]
+    pick = exact[0] if exact else (part[0] if part else None)
+    return (pick.get("ITEM_CODE") or "").strip() if pick else None
+
+
+def _ecos_mortgage_series(key, item_code, start, end, points):
+    """722Y001 + item_code 월별 시계열을 받아 최근 points개 반환. 실패/빈값 시 []."""
+    if not item_code:
+        return []
+    try:
+        url = (f"https://ecos.bok.or.kr/api/StatisticSearch/{key}/json/kr/1/200/"
+               f"{_ECOS_MORTGAGE_TBL}/M/{start}/{end}/{item_code}")
+        r = requests.get(url, timeout=10)
+        rows = (r.json().get("StatisticSearch", {}) or {}).get("row", []) or []
+    except Exception:
+        return []
+    vals = [round(float(x["DATA_VALUE"]), 2) for x in rows if x.get("DATA_VALUE")]
+    return vals[-points:]
+
+
 def _collect_mortgage_rate(points=18):
-    """한은 ECOS 주담대 가중평균금리(월, 최근 points개). 실패 시 []."""
+    """한은 ECOS 주담대 가중평균금리(월, 최근 points개). 실패 시 [].
+
+    항목코드를 하드코딩하지 않고 '주택담보대출' 항목을 동적 해석한다
+    (ECOS 코드 체계 변경에도 안전). 해석 실패 시 알려진 후보 코드로 폴백."""
     key = _env_key("ECOS_API_KEY")
     if not key:
         return []
@@ -601,12 +646,22 @@ def _collect_mortgage_rate(points=18):
     # points만큼 거슬러 갈 수 있도록 시작월을 충분히(최대 points+12개월 ≒ years) 잡는다.
     back_years = max(2, (points + 12) // 12)
     start = f"{int(end[:4]) - back_years}{end[4:]}"
-    url = (f"https://ecos.bok.or.kr/api/StatisticSearch/{key}/json/kr/1/200/"
-           f"722Y001/M/{start}/{end}/BECABA03")
-    r = requests.get(url, timeout=10)
-    rows = (r.json().get("StatisticSearch", {}) or {}).get("row", []) or []
-    vals = [round(float(x["DATA_VALUE"]), 2) for x in rows if x.get("DATA_VALUE")]
-    return vals[-points:]
+
+    # 1순위: 항목명으로 코드 동적 해석
+    code = _ecos_resolve_item_code(key, _ECOS_MORTGAGE_TBL, _ECOS_MORTGAGE_NAME)
+    vals = _ecos_mortgage_series(key, code, start, end, points)
+    if vals:
+        return vals
+    # 2순위: 알려진 후보 코드 폴백(틀린 코드는 빈값→자동 스킵)
+    for fb in _ECOS_MORTGAGE_FALLBACK_CODES:
+        if fb == code:
+            continue
+        vals = _ecos_mortgage_series(key, fb, start, end, points)
+        if vals:
+            print(f"[realestate] ECOS 주담대: 동적해석 실패 → 폴백코드 {fb} 사용")
+            return vals
+    print("[realestate] ECOS 주담대: 코드 해석/폴백 모두 실패 → []")
+    return []
 
 
 def _collect_kosis_unsold(points=18):
