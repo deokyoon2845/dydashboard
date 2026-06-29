@@ -59,13 +59,17 @@ jobs:
       - name: 라이브러리 설치
         run: pip install -r requirements.txt
 
-      - name: 부동산 실거래 수집 → Supabase 저장
+      - name: 부동산 실거래 수집 + 키워드 → Supabase 저장
         env:
           MOLIT_API_KEY: ${{ secrets.MOLIT_API_KEY }}
           PUBLIC_DATA_API_KEY: ${{ secrets.PUBLIC_DATA_API_KEY }}
           DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          # ↓ 부동산 키워드(네이버 뉴스 + Haiku)용 — 없으면 키워드만 조용히 스킵, 실거래는 정상
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python -m engine.realestate_run
 
 
