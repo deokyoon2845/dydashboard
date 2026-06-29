@@ -55,6 +55,18 @@ def main():
     except Exception as e:
         print(f"[realestate] 분양 수집 실패: {e}")
 
+    # ── 부동산 키워드 (네이버 뉴스 + Haiku) — 실거래와 독립. 실패해도 격리되어
+    #    실거래 저장에 영향 없음. DB(realestate_keywords)에 날짜별 누적 → streak/NEW 영속. ──
+    try:
+        from engine.realestate_keywords import build_realestate_keywords
+        kw = build_realestate_keywords()
+        if kw.get("ok"):
+            print(f"[realestate] 키워드 {kw.get('count')}개 생성·저장")
+        else:
+            print(f"[realestate] 키워드 생성 건너뜀: {kw.get('reason')}")
+    except Exception as e:
+        print(f"[realestate] 키워드 빌드 실패(생략): {e}")
+
     if not metrics and not anomalies and not subscriptions and not indicators:
         raise SystemExit("[realestate] 수집 결과가 비어 저장하지 않습니다 (키/네트워크 확인).")
 
