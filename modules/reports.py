@@ -33,7 +33,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from modules.stocks import naver_stock_url, naver_stock_page_url, naver_n_icon
+from modules.stocks import naver_stock_search_url
 from modules.ui import tab_header
 from modules.mood import MOOD_KO, mood_css
 from modules import db
@@ -549,9 +549,9 @@ def _topics_html(topics: list) -> str:
         if stocks:
             chips = "".join(
                 f'<span class="tp-stkwrap">'
-                f'<a class="tp-stk" href="{html.escape(naver_stock_page_url(name=s))}" '
+                f'<a class="tp-stk" href="{html.escape(naver_stock_search_url(s))}" '
                 f'target="_blank" rel="noopener">{html.escape(s)}</a>'
-                f'{naver_n_icon(name=s)}</span>' for s in stocks)
+                f'</span>' for s in stocks)
             stocks_html = f'<div class="tp-stocks">{chips}</div>'
 
         cards.append(
