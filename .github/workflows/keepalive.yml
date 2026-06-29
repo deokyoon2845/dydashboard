@@ -1,0 +1,62 @@
+name: 스케줄러 유지 (keepalive)
+
+# ──────────────────────────────────────────────────────────────────────────
+#  GitHub은 '저장소에 60일간 커밋이 없으면' 예약(schedule) 워크플로를 자동 비활성화한다.
+#  이 레포의 데이터 잡(realestate·leaders·ipo·stock_master)은 Supabase에만 쓰고
+#  git push를 하지 않아, 커밋을 남기는 건 사실상 daily.yml(수동)뿐 → 무커밋 60일이면
+#  모든 예약 수집이 조용히 멈출 수 있다.
+#  이 워크플로가 주 1회 작은 커밋(data/keepalive.txt 타임스탬프)으로 그 타이머를 리셋한다.
+# ──────────────────────────────────────────────────────────────────────────
+
+on:
+  schedule:
+    - cron: '17 3 * * 1'      # 매주 월 03:17 UTC (12:17 KST) — 정각 회피
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v5
+
+      - name: keepalive 커밋 & 푸시
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          mkdir -p data
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > data/keepalive.txt
+          git add data/keepalive.txt
+          if git diff --staged --quiet; then
+            echo "변경 없음 — 건너뜀"; exit 0
+          fi
+          git commit -m "chore: keepalive $(date -u +%Y-%m-%d)"
+          git pull --rebase origin main || true
+          git push
+
+      # ── 실패 시 텔레그램 알림(다른 워크플로와 동일) ──
+      - name: 실패 시 텔레그램 알림
+        if: failure()
+        shell: bash
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "텔레그램 시크릿 없음 — 알림 건너뜀"; exit 0
+          fi
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          TEXT=$(printf '⚠️ <b>%s</b> 실패\n실행 로그: %s' "${{ github.workflow }}" "$RUN_URL")
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${TEXT}" \
+            -d "parse_mode=HTML" -d "disable_web_page_preview=true" >/dev/null || true
+          echo "실패 알림 발송 시도 완료"
