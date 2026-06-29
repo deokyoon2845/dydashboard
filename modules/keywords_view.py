@@ -21,16 +21,19 @@ CAT_CLS = {"거시": "cat-macro", "섹터": "cat-sector", "종목": "cat-stock",
 
 _KW_CSS = """
 <style>
-/* ── A안: 에디토리얼 인덱스 (매거진 목차형 1열 리스트) ── */
-.kw-list{border-top:1px solid var(--line,#ECEDE7);margin-top:4px;}
-.kw-row{display:grid;grid-template-columns:54px 1fr;gap:14px;
-  padding:17px 4px 16px;border-bottom:1px solid var(--line,#ECEDE7);
+/* ── A안: 에디토리얼 인덱스 — 데스크톱 2열(좌우 분할), 모바일 1열 ── */
+.kw-list{column-count:2;column-gap:32px;margin-top:4px;
+  border-top:1px solid var(--line,#ECEDE7);}
+@media(max-width:760px){.kw-list{column-count:1;}}
+.kw-row{display:grid;grid-template-columns:46px 1fr;gap:12px;
+  padding:15px 4px 14px;border-bottom:1px solid var(--line,#ECEDE7);
+  break-inside:avoid;-webkit-column-break-inside:avoid;page-break-inside:avoid;
   transition:background .18s ease;}
 .kw-row:hover{background:#fbfbf8;}
 .kw-row.kw-rowwatch{background:linear-gradient(90deg,rgba(217,169,60,.06),transparent 40%);}
 .kw-row.kw-rowwatch:hover{background:linear-gradient(90deg,rgba(217,169,60,.10),transparent 45%);}
 
-.kw-rank{font-family:'Fraunces','Noto Sans KR',Georgia,serif;font-size:30px;font-weight:500;
+.kw-rank{font-family:'Fraunces','Noto Sans KR',Georgia,serif;font-size:27px;font-weight:500;
   line-height:1;color:var(--sage-deep,#7E9A83);text-align:right;padding-top:2px;
   font-variant-numeric:tabular-nums;}
 .kw-impbar{display:flex;gap:2px;justify-content:flex-end;margin-top:8px;}
