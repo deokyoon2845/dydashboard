@@ -1,0 +1,58 @@
+name: 코드 검증 (CI)
+
+# ──────────────────────────────────────────────────────────────────────────
+#  push·PR마다 전체 .py 문법(py_compile)과 워크플로 YAML을 검증한다.
+#  웹 UI로 전체파일을 교체하다 생긴 오타·깨진 들여쓰기를 '배포 전에' 잡는 게 목적.
+#  의존성 설치 없이(컴파일만) 빠르게 돈다 → 실패 시 커밋/PR에 빨간 X로 바로 보인다.
+#  (데이터 잡과 무관 — 시크릿·외부 API를 전혀 건드리지 않는다.)
+# ──────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v5
+
+      - name: 파이썬 설정
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: 파이썬 문법 검증 (py_compile 전체)
+        run: |
+          echo "전체 .py 컴파일 검증…"
+          python -m compileall -q . && echo "✅ 파이썬 문법 OK"
+
+      - name: 검증 도구 설치 (PyYAML)
+        run: pip install pyyaml
+
+      - name: 워크플로 YAML 검증
+        shell: bash
+        run: |
+          python - <<'PY'
+          import glob, sys, yaml
+          bad = 0
+          for f in sorted(glob.glob(".github/workflows/*.yml")):
+              try:
+                  d = yaml.safe_load(open(f, encoding="utf-8"))
+                  assert isinstance(d, dict) and "jobs" in d, "jobs 없음"
+                  print(f"✅ {f}")
+              except Exception as e:
+                  print(f"❌ {f}: {e}")
+                  bad += 1
+          sys.exit(1 if bad else 0)
+          PY
