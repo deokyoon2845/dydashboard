@@ -181,7 +181,7 @@ def enrich(recent, dart_key=None, anthropic_key=None):
             continue
         if code in cache:
             if cache[code]:
-                r["about"] = cache[code]
+                r["intro"] = r["about"] = cache[code]   # 뷰어는 intro를 읽는다
                 n_hit += 1
             continue
         if not have_keys:
@@ -202,7 +202,7 @@ def enrich(recent, dart_key=None, anthropic_key=None):
             except Exception:
                 pass
         if about:
-            r["about"] = about
+            r["intro"] = r["about"] = about         # 뷰어는 intro를 읽는다
             n_new += 1
         time.sleep(0.2)
 
