@@ -724,7 +724,10 @@ def _rrg_components(rrg, n_days):
     xpad = (xmax - xmin) * 0.14 + 0.5
     ypad = (ymax - ymin) * 0.14 + 0.5
     xmin -= xpad; xmax += xpad; ymin -= ypad; ymax += ypad
-    W, H, L, R, T, B = 660, 380, 60, 624, 26, 322
+    if (ymax - ymin) < 14:                 # 모멘텀 변화가 작으면 최소 표시폭 보장(점 몰림 완화)
+        ymid = (ymax + ymin) / 2
+        ymin, ymax = ymid - 7, ymid + 7
+    W, H, L, R, T, B = 720, 384, 60, 624, 26, 326
 
     def px(x):
         return L + (x - xmin) / (xmax - xmin) * (R - L)
@@ -757,7 +760,11 @@ def _rrg_components(rrg, n_days):
                 s.append(f'<circle cx="{px(a):.1f}" cy="{py(b):.1f}" r="2" fill="{col}" opacity="0.32"/>')
         x2, y2 = px(d["x"]), py(d["y"])
         s.append(f'<circle cx="{x2:.1f}" cy="{y2:.1f}" r="6.5" fill="{col}" opacity="0.9"/>')
-        s.append(f'<text x="{x2+10:.1f}" y="{y2+4:.1f}" font-size="11" fill="#34352f">{html.escape(d["upjong"])}</text>')
+        nm = html.escape(d["upjong"])
+        if x2 > cx:        # 오른쪽 점 → 라벨을 점 왼쪽에(viewBox 밖 잘림 방지)
+            s.append(f'<text x="{x2-9:.1f}" y="{y2+4:.1f}" text-anchor="end" font-size="11" fill="#34352f">{nm}</text>')
+        else:
+            s.append(f'<text x="{x2+9:.1f}" y="{y2+4:.1f}" font-size="11" fill="#34352f">{nm}</text>')
     s.append('</svg>')
     doc = ('<div style="font-family:Pretendard,-apple-system,BlinkMacSystemFont,sans-serif;'
            'background:transparent;margin:0;">' + "".join(s) + '</div>')
