@@ -107,7 +107,7 @@ _CSS = """
 .ldr-secwrap{border:1px solid var(--line);border-radius:13px;background:var(--card);padding:14px 16px;}
 .ldr-secgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px 26px;}
 .ldr-secbar{display:flex;align-items:center;gap:10px;}
-.ldr-secbar .lab{width:104px;flex:none;font-size:11.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ldr-secbar .lab{width:140px;flex:none;font-size:11.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .ldr-secbar .track{flex:1;height:9px;background:var(--summary-bg);border-radius:5px;overflow:hidden;min-width:40px;}
 .ldr-secbar .track>i{display:block;height:100%;border-radius:5px;}
 .ldr-secbar .val{width:88px;flex:none;text-align:right;font-size:10.5px;color:var(--muted);}
@@ -442,7 +442,7 @@ def _sector_bars_html(sectors, leaders):
         sc = s.get("score") or 0
         col = _heat_color(s.get("mom_1m"))
         nlead = lead_by_upj.get(upj, 0)
-        lead_txt = f'<b>{nlead}</b>주도' if nlead else f'{s.get("n","")}종'
+        lead_txt = f'<b>{nlead}</b>주도' if nlead else f'{s.get("n","")}종목'
         bars += (
             '<div class="ldr-secbar">'
             f'<div class="lab" title="{html.escape(upj)}">{html.escape(upj)}</div>'
@@ -728,7 +728,7 @@ def _sector_bars_delta_html(sectors, leaders, tl):
         sc = s.get("score") or 0
         col = _heat_color(s.get("mom_1m"))
         nlead = lead_by_upj.get(upj, 0)
-        lead_txt = f'<b>{nlead}</b>주도' if nlead else f'{s.get("n","")}종'
+        lead_txt = f'<b>{nlead}</b>주도' if nlead else f'{s.get("n","")}종목'
         d = dlt_by.get(upj)
         if d is None:
             dl = '<div class="dl"><span class="fl">–</span></div>'
@@ -1202,7 +1202,10 @@ def _render_sector_panel(sec, leaders, history):
         + head + stats + trends + cols +
         '</div></div>'
     )
-    components.html(doc, height=540, scrolling=False)
+    # iframe 높이를 실제 내용(선두/후발 행 수)에 맞춰 동적 계산 → 하단 빈 공간 제거
+    n_rows = max(min(len(lead), 6), min(len(follow), 6), 1)
+    panel_h = 256 + n_rows * 28
+    components.html(doc, height=panel_h, scrolling=False)
 
 
 # ── 메인 ─────────────────────────────────────────────────────────────
