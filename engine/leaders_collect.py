@@ -269,7 +269,8 @@ def fetch_sector_map(sess=None):
 # ── 3) 일별 시세 (siseJson) ─────────────────────────────────────────
 
 def _fetch_daily(code: str, sess=None, days: int = HIST_CAL_DAYS, retries: int = 2):
-    """종목 일별 (날짜, 종가, 거래량). 반환: (closes[list], vols[list]) 또는 (None,None)."""
+    """종목 일별 (날짜, 종가, 거래량). 반환: (dates[list], closes[list], vols[list])
+       또는 (None, None, None). dates는 'YYYYMMDD' 문자열."""
     sess = sess or _session()
     end = date.today().strftime("%Y%m%d")
     start = (date.today() - timedelta(days=days)).strftime("%Y%m%d")
@@ -279,24 +280,25 @@ def _fetch_daily(code: str, sess=None, days: int = HIST_CAL_DAYS, retries: int =
         try:
             r = sess.get(url, timeout=10)
             rows = json.loads(r.text.strip().replace("'", '"'))
-            closes, vols = [], []
+            dates, closes, vols = [], [], []
             for x in rows[1:]:
                 if not x or len(x) < 6:
                     continue
                 c = _num(x[4])
                 v = _num(x[5])
                 if c is not None:
+                    dates.append(str(x[0]).strip().strip('"'))
                     closes.append(c)
                     vols.append(v or 0.0)
             if len(closes) >= 2:
-                return closes, vols
-            return None, None
+                return dates, closes, vols
+            return None, None, None
         except Exception:
             if attempt < retries:
                 time.sleep(0.5 * (attempt + 1))
             else:
-                return None, None
-    return None, None
+                return None, None, None
+    return None, None, None
 
 
 def _ma(vals, n):
@@ -315,6 +317,15 @@ def _downsample(vals, n=30):
     return [round(vals[int(i * step)]) for i in range(n)]
 
 
+def _downsample_idx(length, n=30):
+    """길이 length를 n개로 균등 다운샘플하는 인덱스(첫·끝 포함).
+       spark와 spark_dates가 같은 지점을 가리키고, 마지막 점이 최신 종가가 되게 한다."""
+    if length <= n:
+        return list(range(length))
+    step = (length - 1) / (n - 1)
+    return [round(i * step) for i in range(n)]
+
+
 def _ret(closes, offset):
     if len(closes) <= offset:
         return None
@@ -324,8 +335,8 @@ def _ret(closes, offset):
     return (closes[-1] / base - 1) * 100
 
 
-def _metrics(closes, vols):
-    """일별 종가/거래량 → 점수 산출용 지표 dict. 데이터 부족 시 None."""
+def _metrics(closes, vols, dates=None):
+    """일별 종가/거래량(+날짜) → 점수 산출용 지표 dict. 데이터 부족 시 None."""
     if not closes or len(closes) < 30:
         return None
     last = closes[-1]
@@ -359,13 +370,22 @@ def _metrics(closes, vols):
         pairs = list(zip(closes[-20:], vols[-20:]))
         if pairs:
             turn = sum(c * v for c, v in pairs) / len(pairs) / 1e8
+    c63 = closes[-63:]
+    idx = _downsample_idx(len(c63), 30)
+    spark = [round(c63[j]) for j in idx]
+    spark_dates = []
+    if dates:
+        d63 = dates[-63:]
+        if len(d63) == len(c63):
+            spark_dates = [d63[j] for j in idx]
     return {
         "ret_1d": ret_1d, "ret_1w": ret_1w, "ret_1m": ret_1m, "ret_3m": ret_3m,
         "aligned": aligned, "above_ratio": above_ratio,
         "above_ma60": bool(ma60 and last > ma60),
         "high_ratio": round(high_ratio, 1), "streak": streak,
         "turnover_eok": round(turn, 1),
-        "spark": _downsample(closes[-63:], 30),   # 3개월(≈63영업일) 미니차트용
+        "spark": spark,                # 3개월(≈63영업일) 미니차트용(종가)
+        "spark_dates": spark_dates,    # spark와 같은 지점의 날짜('YYYYMMDD')
     }
 
 
@@ -373,7 +393,7 @@ def _market_returns(sess=None):
     """코스피·코스닥 1·3개월 수익률(%) → {'KS':{'1m','3m'},'KQ':{...}}."""
     out = {}
     for mk, sym in (("KS", "KOSPI"), ("KQ", "KOSDAQ")):
-        closes, _ = _fetch_daily(sym, sess=sess)
+        _, closes, _ = _fetch_daily(sym, sess=sess)
         if closes:
             out[mk] = {"1m": _ret(closes, 21) or 0.0, "3m": _ret(closes, 63) or 0.0}
         else:
@@ -441,6 +461,7 @@ def score(cands, mkt_ret):
             "high_ratio": m["high_ratio"], "aligned": m["aligned"],
             "above_ma60": bool(m.get("above_ma60")),
             "streak": m["streak"], "spark": m.get("spark") or [],
+            "spark_dates": m.get("spark_dates") or [],
             "is_leader": _passes_gate(m, rs_raw[i]),
             "comp": {"mom": round(mom_s[i], 1), "rs": round(rs_s[i], 1),
                      "trend": trend_s, "liq": round(liq_s[i], 1),
@@ -516,12 +537,12 @@ def collect():
 
     scored_cands, ok, fail = [], 0, 0
     for i, u in enumerate(cand):
-        closes, vols = _fetch_daily(u["code"], sess=sess)
+        dates, closes, vols = _fetch_daily(u["code"], sess=sess)
         if closes is None:
             fail += 1
             time.sleep(SLEEP)
             continue
-        m = _metrics(closes, vols)
+        m = _metrics(closes, vols, dates)
         if m is None or m["turnover_eok"] < TURNOVER_MIN_EOK:
             time.sleep(SLEEP)
             continue
@@ -566,7 +587,7 @@ def diagnose():
     print(f"diagnose · universe={len(uni)}")
     if uni:
         c = uni[0]["code"]
-        closes, vols = _fetch_daily(c, sess=sess)
+        _, closes, vols = _fetch_daily(c, sess=sess)
         print(f"diagnose · daily({c})={'OK' if closes else 'FAIL'} "
               f"len={len(closes) if closes else 0}")
     sect = fetch_sector_map(sess)
