@@ -1762,6 +1762,10 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
                 "sd": "seoul" if name in seoul_gu else "gg",
                 "recent": len(rec), "prev": len(prev),
                 "vol_chg": round((len(rec) / max(len(prev), 1) - 1) * 100),
+                "vol_mult": (
+                    round(len(rec) / (len(prev) * HOT_RECENT_DAYS
+                                      / (months * 30 - HOT_RECENT_DAYS)), 1)
+                    if len(prev) and (months * 30 - HOT_RECENT_DAYS) > 0 else None),
                 "price": med_price, "price_eok": _fmt_eok(med_price),
                 "chg": chg, "area": f"{area}㎡", "freq": len(rs), "search": None,
                 "rec_ppa": rec_ppa, "area_num": area,
@@ -1844,34 +1848,54 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
     #   세대수 불변이라 시총 상승률 = 평단가 상승률. 두 시점 모두 거래된 단지만(가짜 없음).
     gain_leaders = []
     if with_gain:
-        dec_ym = f"{asof.year - 1}12"
-        dec = _load_dec_baseline(dec_ym)        # 캐시 적중 시 스윕 생략
-        if dec is None:
-            dec = {}
-            for name, codes in SIGUNGU_CODES.items():
-                drows = []
-                for code in codes:
-                    drows += _fetch(key, code, dec_ym, "매매", stats)
+        def _baseline_for(ym):
+            """단일월 ㎡당가 중위 기준선(ym) — 캐시 적중 시 스윕 생략."""
+            b = _load_dec_baseline(ym)
+            if b is not None:
+                return b
+            b = {}
+            for nm, cds in SIGUNGU_CODES.items():
+                br = []
+                for code in cds:
+                    br += _fetch(key, code, ym, "매매", stats)
                 if exclude_direct:
-                    drows = [r for r in drows if not r["direct"]]
-                per = {}
-                for r in drows:
-                    per.setdefault(r["apt"], []).append(r)
-                for apt, rs in per.items():
-                    ppas = [r["ppa"] for r in rs if r.get("ppa")]
-                    if len(ppas) >= 2:          # 표본 부족 단지 제외(노이즈)
-                        dec[(name, apt)] = (statistics.median(ppas), len(ppas))
-            _save_dec_baseline(dec_ym, dec)     # 다음 런부터 재사용(주1회 갱신)
+                    br = [r for r in br if not r["direct"]]
+                per_b = {}
+                for r in br:
+                    per_b.setdefault(r["apt"], []).append(r)
+                for apt, rs2 in per_b.items():
+                    ppas = [r["ppa"] for r in rs2 if r.get("ppa")]
+                    if len(ppas) >= 2:           # 표본 부족 단지 제외(노이즈)
+                        b[(nm, apt)] = (statistics.median(ppas), len(ppas))
+            _save_dec_baseline(ym, b)
+            return b
+
+        dec_ym = f"{asof.year - 1}12"            # YTD 기준(작년 12월)
+        my, mm = asof.year, asof.month - 3        # 모멘텀 기준(3개월 전 그 달)
+        while mm <= 0:
+            mm += 12
+            my -= 1
+        mom_ym = f"{my}{mm:02d}"
+        dec = _baseline_for(dec_ym)
+        mom_base = _baseline_for(mom_ym)
+
+        gpool = {}
         for k, d in agg.items():
-            dd = dec.get(k)
             rec_ppa = d.get("rec_ppa")
-            if not dd or not rec_ppa:
+            if not rec_ppa:
                 continue
-            dec_ppa, dec_n = dd
-            if not dec_ppa:
-                continue
-            yoy = (rec_ppa / dec_ppa - 1) * 100
-            if yoy <= 0 or yoy > 100:               # 하락·이상치(데이터오류) 제외
+            yoy = mom = None
+            dd = dec.get(k)
+            if dd and dd[0]:
+                v = (rec_ppa / dd[0] - 1) * 100
+                if 0 < v <= 100:                  # 하락·이상치(데이터오류) 제외
+                    yoy = round(v, 1)
+            mb = mom_base.get(k)
+            if mb and mb[0]:
+                v = (rec_ppa / mb[0] - 1) * 100
+                if -60 <= v <= 60:                # 3개월 변동 이상치 제외(±60%)
+                    mom = round(v, 1)
+            if yoy is None and mom is None:
                 continue
             inf = info.get(k, {})
             units = inf.get("units")
@@ -1880,18 +1904,27 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
             dong = Counter(r["dong"] for r in rs if r.get("dong")).most_common(1)
             dnm = dong[0][0] if dong else ""
             cap_manwon = d["price"] * units if units else None
-            gain_leaders.append({
+            gpool[k] = {
                 "apt": d["apt"], "gu": d["gu"], "sd": d["sd"],
-                "yoy": round(yoy, 1), "units": units, "builder": inf.get("builder"),
+                "yoy": yoy, "mom": mom, "units": units,
+                "builder": inf.get("builder"),
                 "price": d["price"], "price_eok": d["price_eok"], "area": d["area"],
-                "freq": d["freq"], "dec_n": dec_n,
+                "freq": d["freq"],
                 "cap_eok": round(cap_manwon / 1e4) if cap_manwon else None,
                 "cap_fmt": _fmt_cap(cap_manwon) if cap_manwon else None,
                 "p84_eok": _fmt_eok(p84) if p84 else None,
                 "dong": dnm, "addr": (d["gu"] + " " + dnm).strip(),
-            })
-        gain_leaders.sort(key=lambda c: c["yoy"], reverse=True)
-        gain_leaders = gain_leaders[:gain_top]
+            }
+        top_y = sorted((g for g in gpool.values() if g["yoy"] is not None),
+                       key=lambda c: c["yoy"], reverse=True)[:gain_top]
+        top_m = sorted((g for g in gpool.values() if g["mom"] is not None),
+                       key=lambda c: c["mom"], reverse=True)[:gain_top]
+        seen = set()
+        for g in top_y + top_m:                   # yoy상위 ∪ mom상위(중복 제거)
+            kk = (g["gu"], g["apt"])
+            if kk not in seen:
+                seen.add(kk)
+                gain_leaders.append(g)
 
     # 전세가율·갭(P1) — 표시 대상 단지가 속한 '구'만 전세 스윕(콜 최소화).
     #   전세가율 = 단지 전세 ㎡당가 중위 ÷ 매매 ㎡당가 중위(rec_ppa).
@@ -1950,7 +1983,14 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
     for d in ranked:
         rs = d.pop("_rows", []) or []
         d.pop("_rec", None)
-        d.pop("area_num", None)
+        a0 = d.pop("area_num", None) or 0
+        # 가격 추이 스파크라인(P2): 대표면적대 거래의 ㎡당가를 거래 시간순으로.
+        #   평형 혼합 노이즈를 줄이려 대표면적 ±12% 밴드만(표본<4면 전체 폴백) · 최근 16건.
+        seq = sorted(rs, key=lambda r: r["date"])
+        band = [r for r in seq if a0 and abs(r["area"] - a0) <= a0 * 0.12]
+        if len(band) < 4:
+            band = seq
+        d["spark"] = [round(r["ppa"]) for r in band][-16:]
         d["p59"] = _recent_price_in_band(rs, 49.0, 63.0)
         d["p84"] = _recent_price_in_band(rs, 74.0, 90.0)
         d["p59_eok"] = _fmt_eok(d["p59"]) if d["p59"] else None
