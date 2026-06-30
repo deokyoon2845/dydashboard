@@ -241,14 +241,9 @@ _HELP_MD = """
     - **초입** : 그 외, 여력 있는 진입권.
 - 같은 섹터 동료도 각자 국면 태그와 함께 표시됩니다.
 
-**④ 섹터 로테이션 — 돈이 어디로 흐르나** (사분면 RRG ⇄ 막대+Δ 전환)
-- **RRG** : 가로=상대강도(섹터가 시장보다 센가), 세로=모멘텀(그 강도가 어제보다 빨라지나).
-    - **선도**(우상) : 강하고 가속 중 → 자금이 머무는 곳.
-    - **개선**(좌상) : 아직 약하지만 빨라지는 중 → 다음 선도 후보.
-    - **약화**(우하) : 강하지만 식는 중.
-    - **후퇴**(좌하) : 약하고 더 식는 중 → 자금 이탈.
-꼬리는 최근 며칠 궤적이라 *어느 방향으로 도는지*가 보입니다(점선=시장 평균 100).
-- **막대+Δ** : 섹터 점수 막대 + 어제 대비 점수 변화. 빠른 스캔용.
+**④ 섹터 로테이션 — 돈이 어디로 흐르나** (막대+Δ)
+- **막대** : 길이=주도 점수, 색=1개월 모멘텀. 섹터 강도를 한눈에 비교합니다.
+- **Δ** : 어제 대비 점수 변화(▲늘면 자금 유입 · ▼줄면 이탈). 빠른 스캔용.
 
 **⑤ 섹터 자세히 — 폭 · 자금 · 선두/후발**
 드롭다운으로 섹터를 고르면 내부 구조가 열립니다.
@@ -1310,27 +1305,14 @@ def render_leaders():
                            label_visibility="collapsed", key="ldr_detail_pick")
         _render_detail(pick_pool[idx], leaders)
 
-    # ── 주도 섹터 로테이션(시간 레이어) ──
+    # ── 주도 섹터 로테이션(시간 레이어) — 막대(+Δ)만, 사분면(RRG) 제거 ──
     rrg = (tl or {}).get("sector_rrg") or []
     if rrg and (tl or {}).get("multi"):
         st.markdown('<div class="ldr-h">주도 섹터 로테이션 · 돈이 어디로 흐르나</div>',
                     unsafe_allow_html=True)
-        view = st.radio(
-            "섹터 로테이션 보기", ["사분면 (RRG)", "막대 + Δ"],
-            horizontal=True, label_visibility="collapsed", key="ldr_rot_view")
-        n_days = (tl or {}).get("n_days", 1)
-        if view == "막대 + Δ":
-            st.markdown('<div class="ldr-sub" style="margin-bottom:6px">색=1개월 모멘텀 · '
-                        '길이=주도 점수 · 우측 Δ=어제 대비 점수 변화</div>', unsafe_allow_html=True)
-            st.markdown(_sector_bars_delta_html(sectors, leaders, tl), unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="ldr-sub" style="margin-bottom:6px">상대강도(가로) × '
-                        '모멘텀(세로) · 꼬리=최근 궤적 · 색=대표그룹</div>', unsafe_allow_html=True)
-            _rrg_components(rrg, n_days)
-            st.markdown('<div class="ldr-rrgnote">우상(선도)으로 향하면 자금 유입 · '
-                        '좌하(후퇴)로 빠지면 이탈 · 점선=시장 평균(100) · '
-                        f'궤적 {max(0, n_days - 1)}일치(스냅샷 쌓일수록 길어져요).</div>',
-                        unsafe_allow_html=True)
+        st.markdown('<div class="ldr-sub" style="margin-bottom:6px">색=1개월 모멘텀 · '
+                    '길이=주도 점수 · 우측 Δ=어제 대비 점수 변화</div>', unsafe_allow_html=True)
+        st.markdown(_sector_bars_delta_html(sectors, leaders, tl), unsafe_allow_html=True)
     else:
         # 시간 레이어 없음(스냅샷 1일뿐/구버전 db) → 기존 섹터 강도 막대
         st.markdown('<div class="ldr-h">주도 섹터 강도 · 색=1개월 모멘텀 · 길이=주도 점수</div>',
