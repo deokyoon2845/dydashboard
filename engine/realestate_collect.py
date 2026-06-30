@@ -1,7 +1,7 @@
 """부동산 데이터 수집 — 국토부 아파트 실거래가(매매·전세) 기반.
 
 수도권 시군구별 아파트 매매/전세 실거래를 받아
-  · 지도용 지역 지표: 거래량(v)·거래량 전주비(vc)·매매 주간변화(mm)·전세 주간변화(js)·전세가율(jr)
+  · 지도용 지역 지표: 거래량(v)·거래량 전주비(vc)·거래 평소주당평균(vavg)·매매 주간변화(mm)·전세 주간변화(js)·전세가율(jr)
   · 특이거래: 신고가/신저가·급등/급락 (직거래=증여추정 기본 제외)
 를 만든다.
 
@@ -927,7 +927,16 @@ def _collect_rtms_volume(asof, exclude_direct=True):
         s_prev = win(sales, w_prev0, w_now0 - timedelta(days=1))
         v = len(s_now)
         vc = round((v / len(s_prev) - 1) * 100) if s_prev else 0
-        out[name] = {"v": v, "vc": vc}
+        # 평소 주당 평균(vavg): 현재 주(w_now0~asof) 제외, 그 이전 전체 거래를
+        # 실제 보유 기간(주)으로 나눠 산출. 신고지연 큰 최근 주를 빼 안정적.
+        base = [r for r in sales if r["date"] < w_now0]
+        if base:
+            span = (w_now0 - min(r["date"] for r in base)).days
+            weeks = max(span / 7.0, 1.0)
+            vavg = round(len(base) / weeks, 1)
+        else:
+            vavg = None
+        out[name] = {"v": v, "vc": vc, "vavg": vavg}
     return out
 
 
@@ -1278,6 +1287,7 @@ def collect_region_metrics(asof=None, exclude_direct=True):
             "jr": kb_jr.get(name),         # 전세가율 %
             "v": vol.get(name, {}).get("v", 0),
             "vc": vol.get(name, {}).get("vc", 0),
+            "vavg": vol.get(name, {}).get("vavg"),   # 평소 주당 평균 거래(현재주 제외)
         }
 
     # ── 권역(강남3구·서울·경기·수도권) 지수 레벨 + 주간 등락 + 추이 ──
