@@ -517,6 +517,36 @@ def load_leaders() -> dict | None:
     return payload
 
 
+def load_leaders_history(n: int = 4) -> list[dict]:
+    """최근 N일 주도주 스냅샷 payload를 최신순(오늘=[0])으로 반환. 행이 없으면 빈 리스트.
+
+    주도주 '시간 레이어'(순위 변화·주도 지속일·섹터 로테이션·이벤트) 계산용.
+    엔진을 다시 돌리지 않고 이미 누적된 과거 스냅샷만 읽어 Δ를 만든다(추가 수집비용 0).
+    각 dict: {asof, asof_date, params, sectors[], stocks[]}."""
+    try:
+        res = (_client().table(LEADERS_TABLE)
+               .select("asof,asof_date,payload")
+               .order("asof_date", desc=True)
+               .limit(max(1, int(n)))
+               .execute())
+    except Exception:
+        return []
+    out = []
+    for row in (res.data or []):
+        payload = row.get("payload") or {}
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                payload = {}
+        if not isinstance(payload, dict):
+            continue
+        payload.setdefault("asof", row.get("asof"))
+        payload.setdefault("asof_date", row.get("asof_date"))
+        out.append(payload)
+    return out
+
+
 # ── 종목 마스터(종목명 ↔ 종목코드): 읽기·쓰기 ────────────────
 # stock_master 테이블에 전 종목을 code(단축코드) 기준으로 upsert.
 # 엔진(engine/stock_master.py)이 data.go.kr KRX상장종목정보로 채우고,
