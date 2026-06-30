@@ -602,29 +602,29 @@ def fetch_anomalies():
 # ── 주목 단지(최근 거래 활발·상승 · 국토부 실거래) ────────────────────────
 _SAMPLE_HOT = [
     {"apt": "파크리오", "gu": "송파구", "sd": "seoul", "addr": "송파구 잠실동",
-     "units": 6864, "builder": "대우건설", "recent": 14, "prev": 6, "vol_chg": 133,
+     "units": 6864, "builder": "대우건설", "recent": 14, "prev": 6, "vol_chg": 133, "vol_mult": 4.7,
      "chg": 2.1, "freq": 40, "p59_eok": "18.4억", "p84_eok": "24.8억",
-     "jr": 54, "gap_eok": 11.4},
+     "jr": 54, "gap_eok": 11.4, "spark": [2620,2635,2628,2650,2662,2671,2688]},
     {"apt": "헬리오시티", "gu": "송파구", "sd": "seoul", "addr": "송파구 가락동",
-     "units": 9510, "builder": "현대건설", "recent": 12, "prev": 7, "vol_chg": 71,
+     "units": 9510, "builder": "현대건설", "recent": 12, "prev": 7, "vol_chg": 71, "vol_mult": 3.4,
      "chg": 1.6, "freq": 51, "p59_eok": "17.6억", "p84_eok": "23.5억",
-     "jr": 57, "gap_eok": 10.1},
+     "jr": 57, "gap_eok": 10.1, "spark": [2470,2485,2478,2492,2505,2511,2503]},
     {"apt": "잠실엘스", "gu": "송파구", "sd": "seoul", "addr": "송파구 잠실동",
-     "units": 5678, "builder": "삼성물산", "recent": 9, "prev": 5, "vol_chg": 80,
+     "units": 5678, "builder": "삼성물산", "recent": 9, "prev": 5, "vol_chg": 80, "vol_mult": 3.6,
      "chg": 2.4, "freq": 33, "p59_eok": "19.5억", "p84_eok": "27.0억",
-     "jr": 58, "gap_eok": 11.3},
+     "jr": 58, "gap_eok": 11.3, "spark": [2833,2857,2845,2869,2893,2917,2940]},
     {"apt": "래미안원베일리", "gu": "서초구", "sd": "seoul", "addr": "서초구 반포동",
-     "units": 2990, "builder": "삼성물산", "recent": 7, "prev": 3, "vol_chg": 133,
+     "units": 2990, "builder": "삼성물산", "recent": 7, "prev": 3, "vol_chg": 133, "vol_mult": 4.7,
      "chg": 3.2, "freq": 18, "p59_eok": None, "p84_eok": "58.0억",
-     "jr": 49, "gap_eok": 29.6},
+     "jr": 49, "gap_eok": 29.6, "spark": [6900,6980,6940,7010,7120]},
     {"apt": "고덕그라시움", "gu": "강동구", "sd": "seoul", "addr": "강동구 고덕동",
-     "units": 4932, "builder": "대우건설", "recent": 8, "prev": 6, "vol_chg": 33,
+     "units": 4932, "builder": "대우건설", "recent": 8, "prev": 6, "vol_chg": 33, "vol_mult": 2.7,
      "chg": 0.9, "freq": 29, "p59_eok": "13.4억", "p84_eok": "17.2억",
-     "jr": 62, "gap_eok": 6.5},
+     "jr": 62, "gap_eok": 6.5, "spark": [2040,2055,2048,2061,2058]},
     {"apt": "광교중흥S클래스", "gu": "수원시", "sd": "gg", "addr": "수원시 하동",
-     "units": 2231, "builder": "중흥토건", "recent": 6, "prev": 4, "vol_chg": 50,
+     "units": 2231, "builder": "중흥토건", "recent": 6, "prev": 4, "vol_chg": 50, "vol_mult": 3.0,
      "chg": 1.4, "freq": 16, "p59_eok": "13.2억", "p84_eok": "17.8억",
-     "jr": 66, "gap_eok": 6.1},
+     "jr": 66, "gap_eok": 6.1, "spark": [1760,1772,1768,1781,1795]},
 ]
 
 
@@ -709,8 +709,8 @@ _CAPGAIN_ROWS = [
     ("파크리오", "송파구", 6864, 7.3, "18.0억", "12.4조", "잠실동"),
 ]
 _SAMPLE_CAPGAIN = [
-    {"apt": a, "gu": g, "units": u, "yoy": y, "price_eok": p,
-     "cap_fmt": cf, "dong": d}
+    {"apt": a, "gu": g, "units": u, "yoy": y, "mom": round(y * 0.28, 1),
+     "price_eok": p, "cap_fmt": cf, "dong": d}
     for (a, g, u, y, p, cf, d) in _CAPGAIN_ROWS
 ]
 
@@ -874,7 +874,10 @@ _RE_CSS = """
 .re-hc-meta{font-size:11.5px;color:var(--muted,#9a9b92);margin-top:2px;}
 .re-hc-stat{font-size:11.5px;color:var(--muted,#9a9b92);margin-top:3px;}
 .re-hc-stat .up{color:var(--up,#B65F5A);} .re-hc-stat .dn{color:var(--down,#5A7CA0);}
-.re-hc-prices{display:flex;gap:7px;margin-top:8px;flex-wrap:wrap;}
+.re-hc-stat .mut{color:#6f7068;} .re-hc-stat b{font-weight:800;}
+.re-hc-prices{display:flex;align-items:center;gap:7px;margin-top:8px;flex-wrap:wrap;}
+.re-hc-spk{display:inline-flex;align-items:center;gap:6px;margin-left:2px;}
+.re-hc-spk .lab{font-size:9.5px;font-weight:700;color:#b3b4ab;}
 .re-hc-pp{font-size:12.5px;font-weight:800;color:var(--ink,#34352f);background:#F7F8F4;
   border:1px solid var(--line,#ECEDE7);border-radius:8px;padding:4px 10px;}
 .re-hc-pp i{font-style:normal;font-weight:700;color:var(--muted,#9a9b92);font-size:11px;margin-right:5px;}
@@ -2309,6 +2312,31 @@ def _naver_land_url(apt):
     return "https://m.land.naver.com/search/result/" + quote(apt)
 
 
+def _hot_spark_svg(vals, w=68, h=22):
+    """단지 가격 추이 미니 스파크라인(P2) — ㎡당가 시퀀스 → polyline SVG.
+    추세 방향색(상승 red·하락 blue·보합 sage). 점<2면 빈 문자열."""
+    vals = [v for v in (vals or []) if isinstance(v, (int, float))]
+    if len(vals) < 2:
+        return ""
+    lo, hi = min(vals), max(vals)
+    rng = (hi - lo) or 1
+    n = len(vals)
+    pts = []
+    for i, v in enumerate(vals):
+        x = round(1 + i / (n - 1) * (w - 2), 1)
+        y = round(h - 1 - (v - lo) / rng * (h - 3), 1)
+        pts.append(f"{x},{y}")
+    col = ("#B65F5A" if vals[-1] > vals[0]
+           else "#5A7CA0" if vals[-1] < vals[0] else "#7E9A83")
+    lx, ly = pts[-1].split(",")
+    return (f'<span class="re-hc-spk"><span class="lab">추이</span>'
+            f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}">'
+            f'<polyline fill="none" stroke="{col}" stroke-width="1.6" '
+            f'stroke-linecap="round" stroke-linejoin="round" '
+            f'points="{" ".join(pts)}"/>'
+            f'<circle cx="{lx}" cy="{ly}" r="1.9" fill="{col}"/></svg></span>')
+
+
 def _naver_map_url(query):
     """네이버 지도 검색 URL('네이버 지도에서 보기' 링크 · 키 불필요)."""
     from urllib.parse import quote
@@ -2361,7 +2389,7 @@ _CAPGAIN_HTML = r'''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><style>
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
 :root{--bg:#FCFCFA;--card:#fff;--ink:#34352f;--muted:#9a9b92;--line:#ECEDE7;
- --sage2:#7E9A83;--up:#B65F5A;--upT:#FBEEED;--sum:#F6F7F2;--kf:'Pretendard',-apple-system,sans-serif;}
+ --sage2:#7E9A83;--up:#B65F5A;--upT:#FBEEED;--dn:#5A7CA0;--dnT:#EDF1F5;--sum:#F6F7F2;--kf:'Pretendard',-apple-system,sans-serif;}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);font-size:14px;-webkit-font-smoothing:antialiased}
 .box{padding:2px 1px 8px}
@@ -2375,59 +2403,72 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);f
 .nm{font-size:13.5px;font-weight:700;color:var(--ink);line-height:1.25}
 .nm small{display:block;font-size:11px;font-weight:600;color:var(--muted);margin-top:2px}
 .yoy{text-align:right;white-space:nowrap}
-.yoy b{font-size:17px;font-weight:800;letter-spacing:-.02em;color:var(--up);background:var(--upT);border-radius:7px;padding:2px 8px}
+.yoy b{font-size:17px;font-weight:800;letter-spacing:-.02em;border-radius:7px;padding:2px 8px}
+.yoy b.up{color:var(--up);background:var(--upT)} .yoy b.dn{color:var(--dn);background:var(--dnT)}
 .yoy small{display:block;font-size:10.5px;font-weight:600;color:var(--muted);margin-top:3px}
 .empty{font-size:12px;color:var(--muted);padding:18px 6px}
 </style></head><body><div class="box">
   <div class="flat" id="flat"></div>
-  <div class="note">※ <b>작년말(__BASE__) 대비</b> 면적정규화 평단가(㎡당가) 상승률. 세대수 불변이라 시총 상승률과 동일. 작년말·현재 모두 거래가 있는 단지만(표본 부족·하락 단지 제외) · 매일 04:55 갱신.</div>
+  <div class="note">__NOTE__</div>
 </div>
 <script>
 const GAIN=__GAIN__;
 function flat(){
- if(!GAIN||!GAIN.length){document.getElementById("flat").innerHTML='<div class="empty">상승률 데이터가 아직 없어요. 매일 04:55 수집 후 표시됩니다.</div>';return;}
+ if(!GAIN||!GAIN.length){document.getElementById("flat").innerHTML='<div class="empty">데이터가 아직 없어요. 매일 04:55 수집 후 표시됩니다.</div>';return;}
  document.getElementById("flat").innerHTML=GAIN.map(function(c,i){
   var meta=c.units?(c.units.toLocaleString()+'세대 · '+c.dong):c.dong;
   var sub='현재 '+(c.peok||'—')+(c.cap?' · 시총 '+c.cap:'');
+  var pos=c.val>=0;
   return '<div class="fr'+(i===0?' top1':'')+'"><div class="rank">'+(i+1)+'</div>'
    +'<div class="nm"><span class="gu-badge">'+c.gu+'</span>'+c.apt+'<small>'+meta+'</small></div>'
-   +'<div class="yoy"><b>+'+c.yoy.toFixed(1)+'%</b><small>'+sub+'</small></div></div>';}).join("");}
+   +'<div class="yoy"><b class="'+(pos?'up':'dn')+'">'+(pos?'+':'')+c.val.toFixed(1)+'%</b><small>'+sub+'</small></div></div>';}).join("");}
 flat();
 (function(){function f(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;if(window.frameElement){window.frameElement.style.height=h+"px";window.frameElement.setAttribute("height",h);}}catch(e){}}window.addEventListener("load",f);setTimeout(f,150);setTimeout(f,600);setTimeout(f,1500);window.addEventListener("resize",f);try{new ResizeObserver(f).observe(document.body);}catch(e){}})();
 </script></body></html>'''
 
 
-def _render_cap_gainers(top=10):
-    """작년말 대비 시총(=매매가) 상승률 상위 단지 보드(전체 TOP)."""
+def _render_cap_gainers(metric="ytd", top=10):
+    """시총(=평단가) 상승률 보드 — metric='ytd'(작년말 대비) 또는 'mom'(3개월 모멘텀)."""
     import json as _json
     from datetime import date
+    fld = "yoy" if metric == "ytd" else "mom"
     rows = []
     for c in (fetch_cap_gainers() or []):
         if not isinstance(c, dict):
             continue
-        yoy = c.get("yoy")
+        v = c.get(fld)
         gu = c.get("gu")
         apt = c.get("apt")
-        if yoy is None or not gu or not apt:
+        if v is None or not gu or not apt:
             continue
-        rows.append({"apt": apt, "gu": gu, "yoy": float(yoy),
+        rows.append({"apt": apt, "gu": gu, "val": float(v),
                      "units": c.get("units"), "peok": c.get("price_eok") or "",
                      "cap": c.get("cap_fmt") or "", "dong": c.get("dong") or ""})
     if not rows:
-        st.caption("상승률 데이터가 아직 없어요. 매일 04:55 수집 후 표시됩니다.")
+        st.caption("데이터가 아직 없어요. 매일 04:55 수집 후 표시됩니다.")
         return
-    rows.sort(key=lambda r: r["yoy"], reverse=True)
+    rows.sort(key=lambda r: r["val"], reverse=True)
     rows = rows[:top]
-    base = f"{date.today().year - 1}.12"
+    is_sample = fetch_cap_gainers() is _SAMPLE_CAPGAIN
+    src = ("국토부 실거래 평단가" if not is_sample
+           else "샘플(엔진 수집 전 — 04:55 자동 수집 후 실데이터로 교체)")
+    if metric == "ytd":
+        base = f"{date.today().year - 1}.12"
+        note = (f'※ <b>작년말({base}) 대비</b> 면적정규화 평단가(㎡당가) 상승률. '
+                f'세대수 불변이라 시총 상승률과 동일. 작년말·현재 모두 거래가 있는 단지만'
+                f'(표본 부족·하락 단지 제외) · 매일 04:55 갱신.')
+        cap = f"작년말 대비 평단가 상승률 · 시총 상승률과 동일(세대수 불변) · {src}"
+    else:
+        note = ('※ <b>3개월 전 대비</b> 평단가 모멘텀(최근 vs 3개월 전 ㎡당가). '
+                'YTD가 누적 상승폭이라면 모멘텀은 <b>최근 가속/감속</b> 신호 · '
+                '3개월 전·현재 모두 거래가 있는 단지만 · 매일 04:55 갱신.')
+        cap = f"최근 3개월 모멘텀(3개월 전 대비 평단가) · 가속/감속 선행신호 · {src}"
     height = 70 + len(rows) * 56 + 80
     html = (_CAPGAIN_HTML
             .replace("__GAIN__", _json.dumps(rows, ensure_ascii=False))
-            .replace("__BASE__", base))
+            .replace("__NOTE__", note))
     components.html(html, height=height, scrolling=False)
-    src = ("국토부 실거래(전년 12월 vs 현재 평단가)"
-           if fetch_cap_gainers() is not _SAMPLE_CAPGAIN
-           else "샘플(엔진 수집 전 — 04:55 자동 수집 후 실데이터로 교체)")
-    st.caption(f"작년말 대비 평단가 상승률 · 시총 상승률과 동일(세대수 불변) · {src}")
+    st.caption(cap)
 
 
 _CAPLEAD_HTML = r'''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
@@ -2566,8 +2607,12 @@ def _render_hot_complexes():
         sd = "서울" if h.get("sd") == "seoul" else "경기"
         chg = h.get("chg") or 0
         chg_cls = "up" if chg >= 0 else "dn"
-        vol = h.get("vol_chg") or 0
-        vol_cls = "up" if vol >= 0 else "dn"
+        mult = h.get("vol_mult")
+        if isinstance(mult, (int, float)):
+            mcls = "up" if mult >= 1.5 else "dn" if mult < 0.8 else "mut"
+            vol_s = f'<span class="{mcls}">평소 <b>×{mult}</b></span>'
+        else:
+            vol_s = '<span class="mut">신규 거래 집중</span>'
         apt = h.get("apt", "")
         addr = (h.get("addr") or f"{sd} {h.get('gu', '')}").strip()
         meta = [addr]
@@ -2578,6 +2623,7 @@ def _render_hot_complexes():
             meta.append(str(h["builder"]))
         meta_s = " · ".join(m for m in meta if m)
         prices = _pp("59㎡", h.get("p59_eok")) + _pp("84㎡", h.get("p84_eok"))
+        spark = _hot_spark_svg(h.get("spark"))
         jr = h.get("jr")
         if isinstance(jr, (int, float)):
             gap = h.get("gap_eok")
@@ -2598,16 +2644,16 @@ def _render_hot_complexes():
             f'<div class="re-hc-top"><span class="re-hc-nm">{apt}</span>'
             f'<span class="re-hc-chg {chg_cls}">{"+" if chg >= 0 else ""}{chg}%</span></div>'
             f'<div class="re-hc-meta">{meta_s}</div>'
-            f'<div class="re-hc-stat">최근 {h.get("recent", 0)}건 '
-            f'<span class="{vol_cls}">({"+" if vol >= 0 else ""}{vol}%)</span> · '
-            f'1년 {h.get("freq", 0)}건</div>'
-            f'<div class="re-hc-prices">{prices}</div>{jbox}</div>'
+            f'<div class="re-hc-stat">최근 {h.get("recent", 0)}건 · {vol_s} · '
+            f'3개월 {h.get("freq", 0)}건</div>'
+            f'<div class="re-hc-prices">{prices}{spark}</div>{jbox}</div>'
             f'<a class="re-hc-map" href="{_naver_map_url(mq)}" target="_blank" '
             f'rel="noopener">네이버 지도 ↗</a></div>')
     st.markdown(f'<div class="re-hcwrap">{body}</div>', unsafe_allow_html=True)
     st.caption("최근 거래가 몰린 상승 단지(국토부 실거래 기준 · 직거래 제외) · "
+               "‘평소 ×N’=최근 30일 거래밀도÷직전 60일 평균(기간 정규화) · "
                "59·84㎡는 각 면적대 최근 실거래가 · 전세가율=전세 ㎡당가÷매매 ㎡당가 · "
-               "갭=(매매−전세)×대표면적 · 세대수·시공사=공동주택 단지정보 · "
+               "갭=(매매−전세)×대표면적 · 추이=대표면적대 ㎡당가 시퀀스 · "
                "‘네이버 지도 ↗’로 위치 확인")
 
 
@@ -3121,13 +3167,18 @@ def render_realestate():
             _render_anomalies()
         with st_cap:
             cap_view = st.segmented_control(
-                "보기", ["시가총액", "상승률"], default="시가총액",
+                "보기", ["시가총액", "상승률", "모멘텀"], default="시가총액",
                 key="re_cap_view", label_visibility="collapsed")
             if cap_view == "상승률":
                 st.markdown('<div class="re-grp">작년말 대비 시총 상승률'
-                            '<span class="sub">전년 12월 대비 평단가 · 상승률 = 시총 상승률</span></div>',
+                            '<span class="sub">전년 12월 대비 평단가(YTD 누적) · 상승률 = 시총 상승률</span></div>',
                             unsafe_allow_html=True)
-                _render_cap_gainers()
+                _render_cap_gainers("ytd")
+            elif cap_view == "모멘텀":
+                st.markdown('<div class="re-grp">최근 3개월 모멘텀'
+                            '<span class="sub">3개월 전 대비 평단가 · 최근 가속/감속 선행신호</span></div>',
+                            unsafe_allow_html=True)
+                _render_cap_gainers("mom")
             else:
                 st.markdown('<div class="re-grp">구별 시가총액 상위 단지'
                             '<span class="sub">최근 실거래가 × 세대수 · 강남3구 등 그룹 합산</span></div>',
