@@ -973,6 +973,27 @@ _RE_CSS = """
 .re-go-btn.gold{border-color:#E2D3B0;color:#8A6D3B;background:rgba(255,255,255,.65);}
 .re-go-btn.gold:hover{background:#fff;border-color:#D8C49A;}
 @media(max-width:680px){.re-hl{grid-template-columns:1fr;}}
+/* 주목 지역 밴드 (지도 위 · 5개 권역 구 통합 · 월간 전월대비) */
+.re-wb-sec{font-size:12px;font-weight:700;color:var(--ink,#34352f);margin:2px 2px 9px;letter-spacing:.02em;}
+.re-wb-sec span{font-weight:500;color:var(--muted,#9a9b92);margin-left:6px;font-size:11px;}
+.re-wb{display:grid;grid-template-columns:repeat(auto-fit,minmax(205px,1fr));gap:9px;margin:2px 0 6px;}
+.re-wb-c{background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);border-radius:12px;padding:10px 12px;}
+.re-wb-h{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted,#9a9b92);font-weight:600;margin-bottom:7px;}
+.re-wb-h .dot{width:8px;height:8px;border-radius:2px;flex:none;}
+.re-wb-h .sub{font-weight:500;font-size:9.5px;}
+.re-wb-r{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-top:4px;}
+.re-wb-r.lead{margin-top:0;}
+.re-wb-r .rg{color:var(--ink,#34352f);font-size:12px;font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.re-wb-r .rg em{font-style:normal;font-weight:500;color:var(--muted,#9a9b92);margin-right:3px;}
+.re-wb-r.sub2 .rg{font-size:11.5px;font-weight:500;color:#5b5c54;}
+.re-wb-r .v{font-weight:800;font-size:14px;letter-spacing:-.01em;flex:none;}
+.re-wb-r.sub2 .v{font-size:11.5px;font-weight:700;}
+.re-wb-r .v.up{color:var(--up,#B65F5A);} .re-wb-r .v.dn{color:var(--down,#5A7CA0);} .re-wb-r .v.sg{color:var(--sage-deep,#7E9A83);}
+.re-wb-pill{font-size:10px;font-weight:800;padding:1px 7px;border-radius:999px;flex:none;}
+.re-wb-pill.up{background:#FBEDEC;color:var(--up,#B65F5A);} .re-wb-pill.dn{background:#EAF0F5;color:var(--down,#5A7CA0);}
+.re-wb-gap{font-size:9.5px;color:var(--muted,#9a9b92);margin:1px 0 3px;}
+.re-wb-foot{font-size:10px;color:var(--muted,#9a9b92);margin:0 2px 16px;line-height:1.5;}
+@media(max-width:680px){.re-wb{grid-template-columns:repeat(2,1fr);}}
 </style>
 """
 
@@ -1062,9 +1083,6 @@ body{margin:0;background:transparent;color:var(--ink);font-family:var(--kfont);f
 .pills button.on{background:#EEF1EC;color:var(--ink);font-weight:700}
 .tip{position:absolute;pointer-events:none;background:var(--card);border:1px solid var(--line2);border-radius:9px;padding:8px 11px;font-size:12px;min-width:148px;box-shadow:0 6px 22px rgba(52,53,47,.14);opacity:0;transform:translateY(4px);transition:opacity .14s,transform .14s;z-index:7}
 .tip .up{color:var(--up)}.tip .dn{color:var(--dn)}
-.lens{position:absolute;width:128px;height:128px;border-radius:50%;border:2.5px solid #fff;box-shadow:0 4px 16px rgba(52,53,47,.28),0 0 0 1px var(--line2);overflow:hidden;pointer-events:none;opacity:0;transition:opacity .12s;z-index:8;background:var(--bg)}
-.lens svg{display:block;width:100%;height:100%}
-.lens .lx{fill:none;stroke:#B65F5A;stroke-width:.8;opacity:.5}
 .mrow{display:flex;gap:14px;align-items:flex-start;margin-bottom:6px}
 .mleft{flex:2;min-width:0} .mright{flex:3;min-width:0}
 table.mx{width:100%;border-collapse:collapse;table-layout:fixed}
@@ -1107,7 +1125,6 @@ table.mx tr:hover{background:#FAFAF6}
       <path id="kland" d="M44 14 C58 8 74 12 80 24 C86 34 82 44 88 52 C95 61 96 72 90 80 C97 86 100 96 95 106 C101 112 100 124 92 130 C86 134 80 128 76 120 C70 126 62 122 60 114 C52 118 44 114 42 106 C33 108 24 102 24 92 C16 90 12 80 18 72 C12 64 14 52 24 48 C22 38 28 26 38 22 C39 18 41 15 44 14 Z"></path>
       <g id="kdots"></g></svg></div>
   <div class="tip" id="tip"></div>
-  <div class="lens" id="lens"><svg id="lensSvg" preserveAspectRatio="xMidYMid slice"></svg></div>
 </div>
 <div class="mrow">
   <div class="mleft"><div class="mxwrap"><table class="mx"><thead><tr><th style="width:34%">지역</th><th>매매Δ</th><th>전세Δ</th><th>거래</th><th>전세가율</th></tr></thead><tbody id="mxBody"></tbody></table></div></div>
@@ -1162,7 +1179,6 @@ function pathsHTML(big){const ps=_paths.map((d,i)=>`<path class="dist" data-i="$
 function drawMap(){_paths=pathsOf(region);_vb=vbOf(_paths);const svg=document.getElementById("big");
   svg.setAttribute("viewBox",_vb.join(" "));const big=_paths.length<=8;
   svg.innerHTML=pathsHTML(big)+`<text id="hoverLabel" text-anchor="middle" dominant-baseline="middle" paint-order="stroke" stroke="#FCFCFA" stroke-width="2.6" stroke-linejoin="round"></text>`;
-  document.getElementById("lensSvg").innerHTML=pathsHTML(big);   // 돋보기용 동일 경로
   const tip=document.getElementById("tip"),area=document.getElementById("maparea"),pg=svg.querySelector("#paths"),hl=svg.querySelector("#hoverLabel");
   svg.querySelectorAll("path.dist").forEach(p=>{const d=_paths[+p.dataset.i];
     p.onmouseenter=()=>{p.style.stroke="#7E9A83";p.style.strokeWidth="1.6";pg.appendChild(p);
@@ -1171,15 +1187,9 @@ function drawMap(){_paths=pathsOf(region);_vb=vbOf(_paths);const svg=document.ge
       tip.style.opacity="1";tip.style.transform="translateY(0)";
       hl.setAttribute("x",d.cx);hl.setAttribute("y",d.cy);hl.setAttribute("font-size",big?15:12);hl.textContent=d.sl;hl.style.opacity="1";};
     p.onmouseleave=()=>{p.style.stroke="#fff";p.style.strokeWidth=".7";tip.style.opacity="0";hl.style.opacity="0";};});
-  const lens=document.getElementById("lens"),lsvg=document.getElementById("lensSvg");
   area.onmousemove=e=>{const b=area.getBoundingClientRect();let x=e.clientX-b.left,y=e.clientY-b.top;
-    let tx=x+14,ty=y+14;if(tx>b.width-176)tx-=190;if(ty>b.height-96)ty-=104;tip.style.left=tx+"px";tip.style.top=ty+"px";
-    // 돋보기: 커서의 svg 좌표 → 작은 viewBox(3배 확대)
-    let p;try{const m=svg.getScreenCTM().inverse();const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;p=pt.matrixTransform(m);}catch(_){p=null;}
-    if(p){const zw=_vb[2]/3,zh=_vb[3]/3;lsvg.setAttribute("viewBox",`${p.x-zw/2} ${p.y-zh/2} ${zw} ${zh}`);
-      let lx=x-64,ly=y-150;if(ly<6)ly=y+24;lx=Math.max(6,Math.min(b.width-134,lx));
-      lens.style.left=lx+"px";lens.style.top=ly+"px";lens.style.opacity="1";}};
-  area.onmouseleave=()=>{tip.style.opacity="0";hl.style.opacity="0";lens.style.opacity="0";};}
+    let tx=x+14,ty=y+14;if(tx>b.width-176)tx-=190;if(ty>b.height-96)ty-=104;tip.style.left=tx+"px";tip.style.top=ty+"px";};
+  area.onmouseleave=()=>{tip.style.opacity="0";hl.style.opacity="0";};}
 
 function drawTable(){const rows=_paths.length?_paths:pathsOf(region);
   const sorted=[...rows].sort((a,b)=>(b.mm||-9)-(a.mm||-9));
@@ -1236,7 +1246,7 @@ function drawChart(){const tk=trendOf(region);const sale=sliceP(tk.sale),jeon=sl
 function updateNote(){const ph=!SUDO.has(region);
   document.getElementById("note").innerHTML=(ph
     ?"인천·부산·대구는 구별 KB 월간 가격지수 · 거래(실거래)는 지방 미수집(–) · 군·섬 지역 제외"
-    :"우상단 미니 한반도/칩으로 지역 이동 · 지도 위에서 커서를 올리면 돋보기로 확대 · 거래는 주간 실거래(시군구는 표본 작아 변동 큼)")
+    :"우상단 미니 한반도/칩으로 지역 이동 · 거래는 주간 실거래(시군구는 표본 작아 변동 큼)")
     +" · 매매·전세=KB 가격지수, 전세가율=KB · 기준 2022.1.10=100";}
 
 function refresh(){drawChips();drawNav();drawLegend();drawMap();drawTable();drawChart();updateNote();document.getElementById("crName").textContent=RNAME[region];}
@@ -1313,6 +1323,128 @@ def _streak_card(name, su, sc, sy, ju, jc, jy):
     return (f'<div class="re-strk-c"><div class="re-strk-rg">{name}</div>'
             f'<div class="re-strk-row"><span class="t">매매</span>{badge(su, sc)}{yt(sy)}</div>'
             f'<div class="re-strk-row"><span class="t">전세</span>{badge(ju, jc)}{yt(jy)}</div></div>')
+
+
+def _wb_pct(v, dec=2):
+    """전월대비 % 포맷. None이면 '—'. 음수는 유니코드 마이너스(−)."""
+    if not isinstance(v, (int, float)):
+        return "—"
+    sign = "+" if v >= 0 else "−"
+    return f"{sign}{abs(v):.{dec}f}%"
+
+
+def _watchlist_signals():
+    """지도 위 '주목 지역' 밴드용 신호 4종. 서울·경기·인천·대구·부산 구를 한 풀로 모아
+    급등/약세/거래급증/괴리를 계산한다.
+      · mm/js = KB 월간 가격지수 전월대비%(수도권·지방 동일 기준) → 통합 랭킹 안전.
+      · vc(거래 전주비%) = 수도권 실거래만 존재 → 거래급증은 수도권 한정.
+    각 구는 {'reg'(권역),'nm'(구명),'mm','js','vc'}. 같은 구명(중구 등) 충돌은 reg로 구분."""
+    pool = []
+    try:
+        regions = _merged_regions()
+    except Exception:
+        regions = _GEO
+    for d in (regions or []):
+        sd = d.get("sd")
+        reg = "서울" if sd == "seoul" else ("경기" if sd == "gg" else None)
+        if reg is None:
+            continue
+        pool.append({"reg": reg, "nm": d.get("n") or d.get("sl") or "",
+                     "mm": d.get("mm"), "js": d.get("js"), "vc": d.get("vc")})
+    _NM = {"incheon": "인천", "busan": "부산", "daegu": "대구"}
+    local = _fetch_local() or {}
+    for rk, rv in local.items():
+        reg = (rv or {}).get("name") or _NM.get(rk, rk)
+        for gname, gv in ((rv or {}).get("gu") or {}).items():
+            if not isinstance(gv, dict):
+                continue
+            pool.append({"reg": reg, "nm": gname,
+                         "mm": gv.get("mm"), "js": gv.get("js"), "vc": None})
+
+    def _num(x, k):
+        return isinstance(x.get(k), (int, float))
+    mm = [x for x in pool if _num(x, "mm")]
+    vv = [x for x in pool if _num(x, "vc")]
+    gp = [x for x in pool if _num(x, "mm") and _num(x, "js")]
+    return {
+        "surge": sorted(mm, key=lambda x: x["mm"], reverse=True)[:3],
+        "weak": sorted(mm, key=lambda x: x["mm"])[:3],
+        "vsurge": sorted(vv, key=lambda x: x["vc"], reverse=True)[:3],
+        "gap": sorted(gp, key=lambda x: abs(x["mm"] - x["js"]), reverse=True)[:3],
+    }
+
+
+def _wb_head(title, dot, sub=""):
+    s = f'<span class="sub">{sub}</span>' if sub else ""
+    return (f'<div class="re-wb-h"><span class="dot" style="background:{dot}"></span>'
+            f'{title}{s}</div>')
+
+
+def _wb_rg(x):
+    return f'<span class="rg"><em>{x["reg"]}</em>{x["nm"]}</span>'
+
+
+def _wb_mover_card(title, dot, items):
+    """매매 급등/약세 카드 — 값 부호로 색을 정해 정직하게 표시(상승=red·하락=blue)."""
+    if not items:
+        return (f'<div class="re-wb-c">{_wb_head(title, dot)}'
+                f'<div class="re-wb-r lead"><span class="rg">자료 없음</span></div></div>')
+    rows = ""
+    for i, x in enumerate(items):
+        cls = "lead" if i == 0 else "sub2"
+        vc = "up" if x["mm"] >= 0 else "dn"
+        rows += (f'<div class="re-wb-r {cls}">{_wb_rg(x)}'
+                 f'<span class="v {vc}">{_wb_pct(x["mm"])}</span></div>')
+    return f'<div class="re-wb-c">{_wb_head(title, dot)}{rows}</div>'
+
+
+def _wb_vol_card(title, dot, items):
+    """거래 급증 카드 — 수도권 실거래 전주比%."""
+    if not items:
+        return (f'<div class="re-wb-c">{_wb_head(title, dot, "수도권 · 전주比")}'
+                f'<div class="re-wb-r lead"><span class="rg">자료 없음</span></div></div>')
+    rows = ""
+    for i, x in enumerate(items):
+        cls = "lead" if i == 0 else "sub2"
+        rows += (f'<div class="re-wb-r {cls}">{_wb_rg(x)}'
+                 f'<span class="v sg">{_wb_pct(x["vc"], 0)}</span></div>')
+    return f'<div class="re-wb-c">{_wb_head(title, dot, "수도권 · 전주比")}{rows}</div>'
+
+
+def _wb_gap_card(title, dot, items):
+    """매매·전세 괴리 카드 — |매매Δ−전세Δ| 큰 순. 매매>전세=매매주도, 반대=전세주도.
+    선두만 매·전 상세를 보이고 2·3위는 칩만(카드 높이 균형)."""
+    if not items:
+        return (f'<div class="re-wb-c">{_wb_head(title, dot)}'
+                f'<div class="re-wb-r lead"><span class="rg">자료 없음</span></div></div>')
+    rows = ""
+    for i, x in enumerate(items):
+        lead = (x["mm"] >= x["js"])
+        pill = ('<span class="re-wb-pill up">매매주도</span>' if lead
+                else '<span class="re-wb-pill dn">전세주도</span>')
+        cls = "lead" if i == 0 else "sub2"
+        rows += f'<div class="re-wb-r {cls}">{_wb_rg(x)}{pill}</div>'
+        if i == 0:
+            rows += (f'<div class="re-wb-gap">매 {_wb_pct(x["mm"])} · '
+                     f'전 {_wb_pct(x["js"])}</div>')
+    return f'<div class="re-wb-c">{_wb_head(title, dot)}{rows}</div>'
+
+
+def _render_watchlist_band():
+    """지도 위 '주목 지역' 밴드 — 5개 권역 구를 한눈에 스캔(급등/약세/거래급증/괴리).
+    iframe 바깥 부모 문서에 그려 _RE_CSS 전역 변수를 그대로 쓴다(표시 전용 v1)."""
+    sig = _watchlist_signals()
+    cards = (_wb_mover_card("매매 급등", "#B65F5A", sig["surge"])
+             + _wb_mover_card("매매 약세", "#5A7CA0", sig["weak"])
+             + _wb_vol_card("거래 급증", "#7E9A83", sig["vsurge"])
+             + _wb_gap_card("매매·전세 괴리", "#C2A86A", sig["gap"]))
+    st.markdown('<div class="re-wb-sec">주목 지역'
+                '<span>이번 달 · 전월대비 · 서울·경기·인천·대구·부산 구 단위</span></div>',
+                unsafe_allow_html=True)
+    st.markdown(f'<div class="re-wb">{cards}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="re-wb-foot">매매·전세 = KB 월간 가격지수 전월대비 · '
+                '거래 급증 = 수도권 실거래 건수 전주比(지방은 실거래 미수집) · '
+                '같은 구명은 앞의 권역으로 구분</div>', unsafe_allow_html=True)
 
 
 def _render_streak_section():
@@ -2583,6 +2715,7 @@ def render_realestate():
                     unsafe_allow_html=True)
         st.title("전국 아파트 가격지도")
         _render_collect_controls()
+        _render_watchlist_band()
         _render_streak_section()
         _render_map()
 
