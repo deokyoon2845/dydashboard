@@ -18,6 +18,7 @@ payload 구조(engine.leaders_collect.collect): {asof, asof_date, params, sector
 """
  
 import html
+import json
  
 import altair as alt
 import pandas as pd
@@ -187,12 +188,13 @@ _CSS = """
 .ldr-ev .n{font-size:23px;font-weight:800;line-height:1.15;}
 .ldr-ev .ex{font-size:10.5px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .ev-in{color:var(--sage-deep);} .ev-out{color:var(--down);} .ev-hi{color:var(--up);}
-.ldr-lb-row .dl{width:30px;flex:none;text-align:center;font-size:10.5px;font-weight:700;}
-.ldr-lb-row .stk{width:40px;flex:none;text-align:center;}
+.ldr-lb-row .dl{width:28px;flex:none;text-align:center;font-size:10.5px;font-weight:700;}
+.ldr-lb-row .stk{width:36px;flex:none;text-align:center;}
 .ldr-lb-row .stk span{font-size:9px;color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:1px 4px;white-space:nowrap;}
 .ldr-rk-up{color:var(--up);} .ldr-rk-dn{color:var(--down);} .ldr-rk-new{color:var(--sage-deep);font-weight:800;}
-.ldr-lb-row.t .nm{width:78px;} .ldr-lb-row.t .spk{width:62px;} .ldr-lb-row.t .spk svg{width:62px !important;}
-.ldr-lb-row.t .d1{width:50px;}
+.ldr-lb-row.t .nm{flex:1 1 auto;width:auto;min-width:0;} .ldr-lb-row.t .m3{flex:0 0 auto;width:56px;}
+.ldr-lb-row.t .spk{width:56px;} .ldr-lb-row.t .spk svg{width:56px !important;}
+.ldr-lb-row.t .d1{width:48px;}
 .ldr-rrgnote{font-size:11px;color:var(--muted);line-height:1.7;margin-top:2px;}
 .ldr-secbar .dl{width:50px;flex:none;text-align:right;font-size:10.5px;font-weight:700;}
 .ldr-secbar .dl .up{color:var(--up);} .ldr-secbar .dl .dn{color:var(--down);} .ldr-secbar .dl .fl{color:var(--muted);}
@@ -201,8 +203,10 @@ _CSS = """
  
 _HELP_MD = """
 **주도주 = 시장을 이끄는 종목.** 이 탭은 *분석 대상 전체*가 아니라, 아래 **주도 게이트**를
-모두 통과한 종목만 보여줍니다(과밀 해소).
- 
+모두 통과한 종목만 보여줍니다(과밀 해소). 화면은 위에서 아래로
+**① 오늘의 변화 → ② 한눈에 보기 → ③ 종목 자세히 → ④ 섹터 로테이션 → ⑤ 섹터 자세히**
+순으로, 같은 데이터를 점점 깊게 파고듭니다.
+
 **주도 게이트(통과 조건)**
 - **상대강도 RS > 0** — 코스피/코스닥 대비 초과수익. *시장보다 세게 가는가*가 주도의 본질입니다.
 - **3개월 수익률 > 0** — 하락장이라도 *실제로 오른* 종목만.
@@ -210,19 +214,57 @@ _HELP_MD = """
 - **60일선 위** — 추세가 살아있는가.
 - **평균 거래대금 50억↑** — 돈이 충분히 몰리는가.
 강도는 약/중/강 3단계로 조절되며 기본은 **중**입니다. (폭주장 대비 표시 상한 160개)
- 
+
 **주도 점수(0~100)** — 게이트를 통과한 종목을 줄세우는 값. 5개 축의 가중합입니다.
-- 모멘텀 35 · 상대강도 20 · 추세지속성 20 · 유동성 15 · 신고가근접 10
- 
-**매트릭스 읽는 법** — 가로=추세 지속성, 세로=3개월 모멘텀, 버블 크기=거래대금, 색=대표그룹.
+모멘텀 35 · 상대강도 20 · 추세지속성 20 · 유동성 15 · 신고가근접 10.
+
+---
+
+**① 오늘의 변화 · 이벤트** — 어제 스냅샷과 비교해 *오늘 달라진 것*만 뽑습니다.
+- **신규 주도 진입** — 어제는 게이트 밖이었다가 오늘 주도로 올라온 종목.
+- **주도 이탈** — 어제 주도였다가 오늘 빠진 종목.
+- **52주 신고가 경신** — 어제는 신고가권이 아니었는데 오늘 99.5%↑로 올라선 종목.
+
+**② 한눈에 보기 — 매트릭스 + 리더보드**
+- **매트릭스** : 가로=추세 지속성, 세로=3개월 모멘텀, 버블 크기=거래대금, 색=대표그룹.
 오른쪽 위(꾸준 + 강함)가 주도 영역, 점선은 중앙값입니다.
- 
-**주도 섹터(업종)** — 구성종목 4개 이상 업종만 집계. 섹터 점수 = 상위 5종목 평균 × 0.5 +
-폭(breadth) × 0.3 + 업종 모멘텀 × 0.2. **폭** = 업종 안에서 (1개월 +이고 정배열인) 종목 비율 →
-1~2 종목만 튄 '가짜 주도'와 섹터 전반이 오르는 '진짜 주도'를 구분합니다.
-*(섹터 통계는 게이트와 무관하게 정밀스캔 전체로 계산됩니다.)*
- 
-데이터는 Naver 기준이며 장마감 후 1일 1회 갱신됩니다. 투자판단의 근거가 아니라 모니터링용 참고치예요.
+- **리더보드** : 점수순 TOP 12. 종목명 왼쪽 **▲▼는 어제 대비 순위 변화**(NEW=신규 진입),
+**D+n은 며칠째 연속 주도**인지(스냅샷이 쌓일수록 더 길게 표시됩니다).
+
+**③ 종목 자세히 — 5축 프로파일 · 국면**
+드롭다운으로 종목을 고르면 해부 패널이 열립니다.
+- **5축 레이더** : 모멘텀·상대강도·추세·유동성·신고가를 0~100으로. *모양*만 봐도 어느 축이 약한지 보입니다.
+- **국면 태그** — 추세상 *어디쯤 와 있나*. '이미 많이 간'과 '막 진입'을 가릅니다.
+    - **돌파** : 52주 신고가(99.5%↑) 경신 중.
+    - **연장** : 고점권(96%↑)인데 1개월 급등·연속상승 → 과열 주의.
+    - **눌림** : 고점서 빠졌지만(88~96%) 정배열 유지 → 조정 중.
+    - **초입** : 그 외, 여력 있는 진입권.
+- 같은 섹터 동료도 각자 국면 태그와 함께 표시됩니다.
+
+**④ 섹터 로테이션 — 돈이 어디로 흐르나** (사분면 RRG ⇄ 막대+Δ 전환)
+- **RRG** : 가로=상대강도(섹터가 시장보다 센가), 세로=모멘텀(그 강도가 어제보다 빨라지나).
+    - **선도**(우상) : 강하고 가속 중 → 자금이 머무는 곳.
+    - **개선**(좌상) : 아직 약하지만 빨라지는 중 → 다음 선도 후보.
+    - **약화**(우하) : 강하지만 식는 중.
+    - **후퇴**(좌하) : 약하고 더 식는 중 → 자금 이탈.
+꼬리는 최근 며칠 궤적이라 *어느 방향으로 도는지*가 보입니다(점선=시장 평균 100).
+- **막대+Δ** : 섹터 점수 막대 + 어제 대비 점수 변화. 빠른 스캔용.
+
+**⑤ 섹터 자세히 — 폭 · 자금 · 선두/후발**
+드롭다운으로 섹터를 고르면 내부 구조가 열립니다.
+- **폭(breadth)** : 섹터 안에서 (1개월 +이고 정배열인) 종목 비율. 1~2종목만 튄 '가짜 주도'와
+섹터째 오르는 '진짜 주도'를 가릅니다. 폭이 늘면 확산, 줄면 소수 쏠림.
+- **자금유입** : 섹터 구성종목의 거래대금 합과 그 추이.
+- **선두 vs 후발** : 국면 기준으로 *이미 간 선두*(돌파·연장)와 *따라오는 후발*(초입·눌림)을 나눕니다.
+선두가 두껍고 후발이 받쳐주면 건강한 주도 섹터입니다.
+
+---
+
+**주도 섹터(업종) 집계** — 구성종목 4개 이상 업종만 집계합니다. 섹터 점수 = 상위 5종목 평균 × 0.5 +
+폭 × 0.3 + 업종 모멘텀 × 0.2. *(섹터 통계는 게이트와 무관하게 정밀스캔 전체로 계산됩니다.)*
+
+데이터는 Naver 기준이며 장마감 후 1일 1회 갱신됩니다. 시간 비교(순위 변화·이벤트·로테이션 꼬리)는
+과거 스냅샷이 쌓일수록 풍부해집니다. 투자판단의 근거가 아니라 모니터링용 참고치예요.
 """
  
  
@@ -863,19 +905,78 @@ def _detail_metrics_html(s):
     )
 
 
-def _detail_spark_svg(vals, up):
-    vals = [v for v in (vals or []) if isinstance(v, (int, float))]
-    if len(vals) < 2:
-        return '<div style="font-size:11px;color:#9a9b92;">시계열 데이터가 부족해요.</div>'
-    lo, hi = min(vals), max(vals)
-    rg = (hi - lo) or 1
-    n = len(vals)
-    W, Hh = 560, 60
-    pts = " ".join(f"{i/(n-1)*W:.1f},{Hh-4-((v-lo)/rg)*(Hh-8):.1f}" for i, v in enumerate(vals))
-    c = "#B65F5A" if up else "#5A7CA0"
-    return (f'<svg viewBox="0 0 {W} {Hh}" preserveAspectRatio="none" style="width:100%;height:60px;display:block;">'
-            f'<polygon points="{pts} {W},{Hh} 0,{Hh}" fill="{c}" opacity="0.08"/>'
-            f'<polyline points="{pts}" fill="none" stroke="{c}" stroke-width="2" opacity="0.9"/></svg>')
+def _detail_price_chart_html(labels, ys, line_color, height=210):
+    """종목 디테일용 가격 차트 — 지수 탭(코스피/코스닥)과 동일 양식.
+       면적 그라데이션 + Y축 그리드/라벨 + crosshair hover + 좌→우 등장 애니메이션."""
+    hx = line_color.lstrip("#")
+    r, g, b = int(hx[0:2], 16), int(hx[2:4], 16), int(hx[4:6], 16)
+    tpl = r'''<!doctype html><html><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+<style>
+html,body{margin:0;background:transparent;}
+#host{width:100%;height:__H__px;}
+svg{display:block;width:100%;height:__H__px;overflow:visible;}
+text{font-family:Pretendard,'Noto Sans KR',sans-serif;}
+.ic-line{fill:none;stroke:__COLOR__;stroke-width:2;stroke-linejoin:round;stroke-linecap:round;}
+</style></head><body><div id="host"></div>
+<script>
+var YS=__YS__, LB=__LB__, PREV=__PREV__, H=__H__, COLOR="__COLOR__", RGB="__RGB__", first=true;
+var REDUCE = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function draw(){
+  var host=document.getElementById('host');
+  var W=Math.max(280, host.clientWidth||700);
+  var ml=50,mr=14,mt=12,mb=24, pw=W-ml-mr, ph=H-mt-mb;
+  var lo=Math.min.apply(null,YS), hi=Math.max.apply(null,YS);
+  if(PREV!=null){lo=Math.min(lo,PREV);hi=Math.max(hi,PREV);}
+  var pad=(hi-lo)*0.10||hi*0.005||1; lo-=pad; hi+=pad; var sp=(hi-lo)||1, n=YS.length;
+  function X(i){return ml+(n>1?i/(n-1):0)*pw;}
+  function Y(v){return mt+(1-(v-lo)/sp)*ph;}
+  var line='M'+YS.map(function(v,i){return X(i).toFixed(1)+','+Y(v).toFixed(1);}).join(' L');
+  var area=line+' L'+X(n-1).toFixed(1)+','+(mt+ph).toFixed(1)+' L'+X(0).toFixed(1)+','+(mt+ph).toFixed(1)+' Z';
+  var yg='';
+  for(var k=0;k<5;k++){var v=lo+sp*k/4, y=Y(v).toFixed(1);
+    yg+='<line x1='+ml+' y1='+y+' x2='+(ml+pw)+' y2='+y+' stroke="#ECEDE7"/>';
+    yg+='<text x='+(ml-8)+' y='+(parseFloat(y)+3.5).toFixed(1)+' text-anchor="end" font-size="11" fill="#9a9b92">'+Math.round(v).toLocaleString()+'</text>';}
+  var xg='', step=Math.max(1,Math.floor(n/6));
+  for(var i=0;i<n;i+=step){if(LB[i])xg+='<text x='+X(i).toFixed(1)+' y='+(H-7)+' text-anchor="middle" font-size="11" fill="#9a9b92">'+LB[i]+'</text>';}
+  var pv='';
+  if(PREV!=null){var py=Y(PREV).toFixed(1);
+    pv='<line x1='+ml+' y1='+py+' x2='+(ml+pw)+' y2='+py+' stroke="#9a9b92" stroke-dasharray="4 4" opacity="0.6"/>';}
+  var doAnim = first && !REDUCE;
+  var aw = doAnim ? '<animate attributeName="width" from="0" to="'+pw+'" dur="0.85s" calcMode="spline" keyTimes="0;1" keySplines="0.22 0.61 0.36 1" fill="freeze"/>' : '';
+  var rw = doAnim ? 0 : pw;
+  var svg='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">'
+    +'<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba('+RGB+',0.20)"/><stop offset="1" stop-color="rgba('+RGB+',0)"/></linearGradient>'
+    +'<clipPath id="rv"><rect x="'+ml+'" y="0" width="'+rw+'" height="'+H+'">'+aw+'</rect></clipPath></defs>'
+    +yg+pv
+    +'<g clip-path="url(#rv)"><path d="'+area+'" fill="url(#g)"/><path d="'+line+'" class="ic-line"/></g>'
+    +xg
+    +'<g id="cr" style="display:none"><line id="vl" y1="'+mt+'" y2="'+(mt+ph)+'" stroke="#9a9b92" stroke-dasharray="3 3"/><circle id="dt" r="4" fill="'+COLOR+'"/><g id="tp"><rect id="tb" rx="4" height="18" fill="#34352f"/><text id="tt" font-size="11" font-weight="700" fill="#fff" text-anchor="middle"></text></g></g>'
+    +'<rect id="ht" x="'+ml+'" y="'+mt+'" width="'+pw+'" height="'+ph+'" fill="transparent" style="cursor:crosshair"/>'
+    +'</svg>';
+  host.innerHTML=svg; first=false;
+  var root=host.querySelector('svg'),cr=root.querySelector('#cr'),vl=root.querySelector('#vl'),dt=root.querySelector('#dt'),tb=root.querySelector('#tb'),tt=root.querySelector('#tt'),ht=root.querySelector('#ht');
+  var P=YS.map(function(v,i){return [X(i),Y(v),v,LB[i]];});
+  ht.addEventListener('mousemove',function(e){
+    var r=root.getBoundingClientRect(), mx=(e.clientX-r.left)/r.width*W, bi=0, bd=1e9;
+    for(var i=0;i<P.length;i++){var dd=Math.abs(P[i][0]-mx);if(dd<bd){bd=dd;bi=i;}}
+    var p=P[bi]; cr.style.display='';
+    vl.setAttribute('x1',p[0]);vl.setAttribute('x2',p[0]);dt.setAttribute('cx',p[0]);dt.setAttribute('cy',p[1]);
+    var txt=(p[3]?p[3]+'  ':'')+p[2].toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
+    tt.textContent=txt; var tw=txt.length*6.7+14, tx=Math.max(ml+tw/2,Math.min(ml+pw-tw/2,p[0])), ty=Math.max(mt+13,p[1]-12);
+    tb.setAttribute('width',tw);tb.setAttribute('x',tx-tw/2);tb.setAttribute('y',ty-13);tt.setAttribute('x',tx);tt.setAttribute('y',ty);
+  });
+  ht.addEventListener('mouseleave',function(){cr.style.display='none';});
+}
+draw(); var rt; window.addEventListener('resize',function(){clearTimeout(rt);rt=setTimeout(draw,150);});
+</script></body></html>'''
+    return (tpl
+            .replace("__YS__", json.dumps([round(float(v), 2) for v in ys]))
+            .replace("__LB__", json.dumps(list(labels), ensure_ascii=False))
+            .replace("__PREV__", "null")
+            .replace("__H__", str(int(height)))
+            .replace("__COLOR__", line_color)
+            .replace("__RGB__", "%d,%d,%d" % (r, g, b)))
 
 
 def _detail_peers_html(sel, leaders):
@@ -898,16 +999,27 @@ def _detail_peers_html(sel, leaders):
     return rows
 
 
+def _spark_labels(dates, n):
+    """spark_dates('YYYYMMDD' 문자열) → 차트 X축 'MM/DD' 라벨.
+       날짜가 없거나(과거 스냅샷) 길이가 안 맞으면 빈 라벨(축 생략)."""
+    dates = dates or []
+    if len(dates) != n:
+        return [""] * n
+    out = []
+    for d in dates:
+        digits = "".join(ch for ch in str(d) if ch.isdigit())
+        out.append(f"{digits[4:6]}/{digits[6:8]}" if len(digits) >= 8 else "")
+    return out
+
+
 def _render_detail(s, leaders):
-    """선택 종목 디테일 패널 — 레이더·국면·지표·스파크·동료를 iframe 한 장으로."""
+    """선택 종목 디테일 — 레이더·국면·지표·동료는 iframe 카드, 가격 차트는 지수 양식으로."""
     lab, col = _phase(s)
     desc = PHASES[lab]["d"]
     url = html.escape(naver_stock_page_url(name=s.get("name", ""), code=s.get("code", "")))
     nm = html.escape(s.get("name", ""))
     radar = _radar_svg(s.get("comp") or {})
     mets = _detail_metrics_html(s)
-    up3 = (s.get("mom_3m") or 0) >= 0
-    spark = _detail_spark_svg(s.get("spark"), up3)
     peers = _detail_peers_html(s, leaders)
     doc = (
         '<div style="font-family:Pretendard,-apple-system,BlinkMacSystemFont,sans-serif;'
@@ -926,13 +1038,24 @@ def _render_detail(s, leaders):
         '5축 점수 프로파일 · 0~100</div></div>'
         f'<div>{mets}</div>'
         '</div>'
-        '<div style="margin-top:14px;"><div style="font-size:11px;color:#9a9b92;margin-bottom:3px;">'
-        f'최근 3개월</div>{spark}</div>'
         '<div style="margin-top:14px;"><div style="font-size:11px;color:#9a9b92;margin-bottom:4px;">'
         f'같은 섹터 동료</div>{peers}</div>'
         '</div></div>'
     )
-    components.html(doc, height=590, scrolling=False)
+    components.html(doc, height=500, scrolling=False)
+
+    # ── 최근 3개월 추이 (지수 탭과 동일 양식) ──
+    spk = [v for v in (s.get("spark") or []) if isinstance(v, (int, float))]
+    st.markdown('<div class="ldr-sub" style="margin:10px 0 2px">최근 3개월 추이</div>',
+                unsafe_allow_html=True)
+    if len(spk) >= 2:
+        period_up = spk[-1] >= spk[0]
+        line_c = "#B65F5A" if period_up else "#5A7CA0"
+        labels = _spark_labels(s.get("spark_dates"), len(spk))
+        components.html(_detail_price_chart_html(labels, spk, line_c, height=210),
+                        height=222, scrolling=False)
+    else:
+        st.caption("시계열 데이터가 부족해요.")
 
 
 # ── 섹터 해부: 폭(breadth)·자금유입·선두/후발 ────────────────────────
