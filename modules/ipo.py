@@ -176,10 +176,18 @@ div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p{
   color:var(--sage-deep,#7E9A83)!important;}
 @media(max-width:680px){
-  .ipo-head,.ipo-row{grid-template-columns:1fr 66px 150px;}
+  /* ① 종목명↔시총 gap 축소 + 마지막 칸 폭 확대 → '상장일종가→현재' 줄넘김 해소 */
+  .ipo-head,.ipo-row{grid-template-columns:1fr 54px 178px;gap:8px;}
   .ipo-head .dcol,.ipo-row .dt,.ipo-row .sp{display:none;}
   .ipo-row .lastcell{gap:4px 12px;}
   .ipo-row .lastcell .lc-grp{white-space:normal;}
+  /* ② 섹션 설명문(mut)을 제목 아래 줄로 내림 */
+  .ipo-sec{flex-wrap:wrap;}
+  .ipo-sec .mut{flex-basis:100%;margin-left:22px;}
+  /* ③ 향후 IPO 카드 좌우 2열 + 종목명↔접수 여백 축소 */
+  .ipo-strip{gap:8px;}
+  .ipo-up{flex:1 1 calc(50% - 4px);min-width:0;max-width:none;padding:9px 10px;}
+  .ipo-up .nm{gap:6px;}
 }
 </style>
 """
