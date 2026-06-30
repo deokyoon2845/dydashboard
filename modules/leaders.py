@@ -48,6 +48,7 @@ RRG_SECTORS = 12           # RRG에 찍을 상위 섹터 수
 HIGH_BREAK = 99.5          # 신고가 '돌파/경신' 판정 임계(52주 고점 대비 %)
 EVENT_EX = 3               # 이벤트 칩에 미리보기로 보여줄 종목 수
 DETAIL_PICK_N = 30         # '종목 자세히' 드롭다운 후보 수(점수순 상위)
+SECTOR_PICK_N = 15         # '섹터 자세히' 드롭다운 후보 수(점수순 상위)
 
 # 국면 태그(종목이 추세상 어디쯤 와 있나) — 색·한줄 설명
 PHASES = {
@@ -927,6 +928,158 @@ def _render_detail(s, leaders):
     components.html(doc, height=590, scrolling=False)
 
 
+# ── 섹터 해부: 폭(breadth)·자금유입·선두/후발 ────────────────────────
+
+def _split_lead_follow(members):
+    """국면 기반 분류 — 돌파·연장=이미 간 선두 / 초입·눌림=따라오는 후발."""
+    lead, follow = [], []
+    for s in members:
+        ph, _ = _phase(s)
+        (lead if ph in ("돌파", "연장") else follow).append(s)
+    return lead, follow
+
+
+def _sector_flow_eok(payload, upj):
+    """그날 그 업종 종목들의 거래대금(억) 합 = 자금유입 프록시."""
+    tot = 0.0
+    for s in (payload.get("stocks") or []):
+        if s.get("upjong") == upj:
+            t = s.get("turnover_eok")
+            if isinstance(t, (int, float)):
+                tot += t
+    return tot
+
+
+def _sector_series(history, upj):
+    """history(최신순) → 그 업종의 (breadth, flow, score) 시계열을 오래된→오늘 순으로."""
+    chron = list(reversed(history or []))
+    b, f, sc = [], [], []
+    for p in chron:
+        sec = next((x for x in (p.get("sectors") or []) if x.get("upjong") == upj), None)
+        b.append(sec.get("breadth") if sec else None)
+        sc.append(sec.get("score") if sec else None)
+        f.append(_sector_flow_eok(p, upj))
+    return {"breadth": b, "flow": f, "score": sc}
+
+
+def _mini_line_svg(vals, up, w=120, h=30):
+    vals = [v for v in vals if isinstance(v, (int, float))]
+    if len(vals) < 2:
+        return '<span style="font-size:10.5px;color:#9a9b92;">추이 부족</span>'
+    lo, hi = min(vals), max(vals)
+    rg = (hi - lo) or 1
+    n = len(vals)
+    pts = " ".join(f"{i/(n-1)*w:.1f},{h-3-((v-lo)/rg)*(h-6):.1f}" for i, v in enumerate(vals))
+    c = "#B65F5A" if up else "#5A7CA0"
+    return (f'<svg viewBox="0 0 {w} {h}" preserveAspectRatio="none" style="width:{w}px;height:{h}px;display:block;">'
+            f'<polyline points="{pts}" fill="none" stroke="{c}" stroke-width="1.8" opacity="0.85"/></svg>')
+
+
+def _sec_member_html(s):
+    ph, c = _phase(s)
+    url = html.escape(naver_stock_page_url(name=s.get("name", ""), code=s.get("code", "")))
+    m1 = s.get("mom_1m")
+    m1txt = (f'{"+" if (m1 or 0) >= 0 else ""}{m1:g}%') if m1 is not None else "–"
+    m1col = "#B65F5A" if (m1 or 0) >= 0 else "#5A7CA0"
+    return ('<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #ECEDE7;">'
+            f'<a href="{url}" target="_blank" rel="noopener" '
+            f'style="flex:1;font-size:12.5px;color:#34352f;text-decoration:none;">{html.escape(s.get("name",""))}</a>'
+            f'<span style="font-size:10.5px;color:{m1col};">{m1txt}</span>'
+            f'<span style="font-size:11px;color:#9a9b92;">{s.get("score","")}</span>'
+            f'<span style="font-size:10px;font-weight:700;color:{c};background:{c}1f;'
+            f'border-radius:5px;padding:1px 7px;">{ph}</span></div>')
+
+
+def _dlt_span(v, suf=""):
+    if v is None:
+        return ""
+    c = "#B65F5A" if v >= 0 else "#5A7CA0"
+    a = "▲" if v >= 0 else "▼"
+    return f' <span style="color:{c};font-weight:700;">{a}{abs(v):g}{suf}</span>'
+
+
+def _fmt_eok(v):
+    if v is None:
+        return "–"
+    return f"{v/10000:.1f}조" if v >= 10000 else f"{v:,.0f}억"
+
+
+def _render_sector_panel(sec, leaders, history):
+    """선택 섹터 디테일 — 폭·자금유입·추이·선두/후발을 iframe 한 장으로."""
+    upj = sec.get("upjong")
+    grp = sec.get("group") or "기타"
+    gcol = GROUP_COLORS.get(grp, GROUP_COLORS["기타"])
+    members = sorted([s for s in leaders if s.get("upjong") == upj],
+                     key=lambda x: (x.get("score") or 0), reverse=True)
+    lead, follow = _split_lead_follow(members)
+
+    ser = _sector_series(history, upj) if history else {"breadth": [], "flow": [], "score": []}
+    bser = [x for x in ser["breadth"] if isinstance(x, (int, float))]
+    fser = [x for x in ser["flow"] if isinstance(x, (int, float))]
+    sser = [x for x in ser["score"] if isinstance(x, (int, float))]
+    b_dlt = round(bser[-1] - bser[-2]) if len(bser) >= 2 else None
+    f_dlt = round((fser[-1] - fser[-2]) / fser[-2] * 100) if len(fser) >= 2 and fser[-2] else None
+    s_dlt = round(sser[-1] - sser[-2], 1) if len(sser) >= 2 else None
+    flow_today = fser[-1] if fser else (_sector_flow_eok(history[0], upj) if history else None)
+    breadth = sec.get("breadth")
+
+    def stat(label, val, sub):
+        sub_html = f'<div style="font-size:10.5px;margin-top:1px;">{sub}</div>' if sub else ''
+        return ('<div style="background:#FCFCFA;border-radius:8px;padding:9px 11px;">'
+                f'<div style="font-size:10.5px;color:#9a9b92;margin-bottom:2px;">{label}</div>'
+                f'<div style="font-size:17px;font-weight:700;color:#34352f;line-height:1.2;">{val}</div>'
+                f'{sub_html}</div>')
+
+    head = (
+        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">'
+        f'<span style="width:10px;height:10px;border-radius:3px;background:{gcol};"></span>'
+        f'<span style="font-size:17px;font-weight:700;color:#34352f;">{html.escape(upj or "")}</span>'
+        f'<span style="font-size:12px;color:#9a9b92;">주도 {sec.get("score","")}점{_dlt_span(s_dlt)} · '
+        f'3M {("+" if (sec.get("mom_3m") or 0) >= 0 else "")}{sec.get("mom_3m","")}%</span>'
+        '</div>'
+    )
+    stats = (
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:14px;">'
+        + stat("폭 (breadth)", f"{breadth}%" if breadth is not None else "–",
+               (f"어제 대비{_dlt_span(b_dlt, '%p')}") if b_dlt is not None else "")
+        + stat("자금유입", _fmt_eok(flow_today),
+               (f"거래대금{_dlt_span(f_dlt, '%')}") if f_dlt is not None else "")
+        + stat("주도주", f"{len(members)}개", f"선두 {len(lead)} · 후발 {len(follow)}")
+        + '</div>'
+    )
+    b_up = (bser[-1] >= bser[0]) if len(bser) >= 2 else True
+    f_up = (f_dlt or 0) >= 0
+    trends = (
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:16px;">'
+        f'<div><div style="font-size:10.5px;color:#9a9b92;margin-bottom:3px;">폭 추이</div>'
+        f'{_mini_line_svg(bser, b_up)}</div>'
+        f'<div><div style="font-size:10.5px;color:#9a9b92;margin-bottom:3px;">자금 추이</div>'
+        f'{_mini_line_svg(fser, f_up)}</div>'
+        '</div>'
+    )
+
+    def col(title, arr, empty):
+        rows = "".join(_sec_member_html(s) for s in arr[:6]) if arr \
+            else f'<div style="font-size:11px;color:#9a9b92;padding:8px 0;">{empty}</div>'
+        return ('<div><div style="font-size:11px;font-weight:700;color:#5f5e5a;margin-bottom:4px;">'
+                f'{title}</div>{rows}</div>')
+
+    cols = (
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">'
+        + col("선두 · 이미 간 (돌파·연장)", lead, "아직 선두 종목이 없어요(섹터 초기)")
+        + col("후발 · 따라오는 (초입·눌림)", follow, "후발 주도주 없음")
+        + '</div>'
+    )
+    doc = (
+        '<div style="font-family:Pretendard,-apple-system,BlinkMacSystemFont,sans-serif;'
+        'color:#34352f;background:transparent;margin:0;">'
+        '<div style="border:1px solid #ECEDE7;border-radius:13px;background:#FFFFFF;padding:15px 18px;">'
+        + head + stats + trends + cols +
+        '</div></div>'
+    )
+    components.html(doc, height=540, scrolling=False)
+
+
 # ── 메인 ─────────────────────────────────────────────────────────────
  
 def render_leaders():
@@ -1054,6 +1207,21 @@ def render_leaders():
                     unsafe_allow_html=True)
         st.markdown(_sector_bars_html(sectors, leaders), unsafe_allow_html=True)
  
+    # ── 섹터 해부: 폭·자금·선두/후발(드롭다운 선택) ──
+    if sectors:
+        st.markdown('<div class="ldr-h">섹터 자세히 · 폭 · 자금 · 선두/후발</div>',
+                    unsafe_allow_html=True)
+        sec_pool = sectors[:SECTOR_PICK_N]
+
+        def _sec_label(i):
+            x = sec_pool[i]
+            return f'{i+1}. {x.get("upjong","")} · {x.get("score","")}점'
+
+        sidx = st.selectbox("섹터 선택", range(len(sec_pool)),
+                            format_func=_sec_label,
+                            label_visibility="collapsed", key="ldr_sector_pick")
+        _render_sector_panel(sec_pool[sidx], leaders, history)
+
     # ── (보조·접힘) 섹터별 주도주 자세히 ──
     leaders_by_upj = {}
     for s in leaders:
