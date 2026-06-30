@@ -770,8 +770,9 @@ def _collect_kosis_apt_volume(points=18):
 
 
 def collect_indicators():
-    """지표 탭용 시계열 6종. 각 항목 {key,label,sub,unit,col,series}.
-    가격지수는 전부 KB(신뢰 소스), 미분양 KOSIS, 금리 ECOS. 실패 항목은 자동 생략."""
+    """지표 탭용 시계열. 각 항목 {key,label,sub,unit,col,series}.
+    전부 KB(신뢰 소스): 매매·전세·선도50·매수우위·전세수급·매매전망·전세전망·전세가율
+    + 서울/수도권 중위·평균가격. 실패 항목은 자동 생략."""
     inds = []
     # 모든 지표 차트가 2020.1월부터 같은 시작점으로 정렬되도록 길이를 통일한다.
     # 시계열은 날짜 없이 값 배열만 반환하고, 뷰어가 ASOF에서 주(7일)·월(30일) 간격으로
@@ -829,23 +830,7 @@ def collect_indicators():
                              points=MN))
     except Exception as e:
         print(f"[realestate] KB 전세가율 실패: {e}")
-    try:
-        add("unsold", "미분양", "전국 · 월간(KOSIS)", "만호", "#8A7C9E",
-            _collect_kosis_unsold(points=MN))
-    except Exception as e:
-        print(f"[realestate] KOSIS 미분양 실패: {e}")
-    try:
-        add("rate", "주담대 금리", "월간(한은 ECOS)", "%", "#9a9b92",
-            _collect_mortgage_rate(points=MN))
-    except Exception as e:
-        print(f"[realestate] ECOS 금리 실패: {e}")
-    try:
-        # 실거래량(수도권 아파트 매매 '건수') — KOSIS 월별(단발 호출)로 2020.1까지 가볍게 정렬.
-        # (RTMS 49코드×개월 스윕은 무거워 제외 — _collect_apt_volume_series는 보존만.)
-        add("volume", "실거래량(수도권)", "월간 · KOSIS 부동산거래현황(아파트 매매)", "건", "#7E9A83",
-            _collect_kosis_apt_volume(points=MN))
-    except Exception as e:
-        print(f"[realestate] 실거래량 시계열 실패: {e}")
+    # (미분양·금리·실거래량은 지표 탭에서 제외 — KOSIS/ECOS 수집 중단)
     try:
         # 서울·수도권 매매 중위/평균가격(억) — 지표탭 '현재 매매가격' 블록용.
         # 카드(_INDV2_ORDER)엔 안 들어가고, 뷰어가 이 4개 키를 따로 묶어 블록으로 그린다.
