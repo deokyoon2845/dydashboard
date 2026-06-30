@@ -1,11 +1,11 @@
 """[뷰어] 증시 › IPO 탭 (A안 · 컴팩트 리스트 + 필터/정렬).
 
 구성
-  ① 향후 IPO 일정 : D-day 스트립 — 회사소개 + 상장 예상구간(추정) + N(네이버) 아이콘
-  ② 필터/정렬 바  : 시장(전체/코스피/코스닥) · 섹터 · 정렬(상장일/시총/등락/상장후수익률)
+  ① 향후 IPO 일정 : D-day 스트립 — 회사소개 + N(네이버) 아이콘
+  ② 필터/정렬 바  : 세그먼트 필 — 시장(전체/코스피/코스닥) · 섹터 · 정렬(상장일/시총/등락/상장후수익률)
   ③ 최근 상장 종목 : 한 종목 = 한 행
         행에 항상: 종목·시장·섹터·N아이콘 · 상장일 · 현재가(+상장일比) · 현재시총(+PER) · 추이
-        펼치면: PER·PBR·PSR · 매출·영업이익·당기순이익 · 상장일종가↔현재 · 섹터·보호예수 · 회사소개 · 큰 차트
+        펼치면: PER·PBR·PSR · 매출·영업이익·당기순이익 · 상장일종가↔현재 · 섹터·상장후 최고/최저·고점比 · 회사소개 · 큰 차트
 
 상장일比 = 상장 첫날 종가 대비 현재가 수익률(공모가는 무료 API 부재로 대체 지표).
 추이 스파크라인 = 상장후 전체(엔진 저장 spark 우선, 없으면 라이브 1회 폴백).
@@ -67,10 +67,10 @@ _SAMPLE = {
     ],
     "upcoming": [
         {"name": "○○바이오", "dday": "D-3", "state": "청약 06.29~30", "under": "한국투자증권",
-         "est_listing": "07.12~07.26 예상", "soon": True,
+         "soon": True,
          "intro": "항암 신약 타깃 단백질 분해(TPD) 플랫폼. 코스닥 예정."},
         {"name": "◇◇소프트", "dday": "접수", "state": "증권신고서 접수 06.18", "under": "삼성증권",
-         "est_listing": "07.16~07.30 예상", "soon": False,
+         "soon": False,
          "intro": "기업용 생성형 AI 에이전트 플랫폼. 코스닥 기술특례."},
     ],
 }
@@ -91,7 +91,6 @@ _CSS = """
 .ipo-up .sub{font-size:10.5px;color:var(--muted,#9a9b92);margin-top:5px;line-height:1.5;}
 .ipo-up .ds{font-size:11px;color:var(--pill-ink,#5d6258);margin-top:7px;line-height:1.5;word-break:keep-all;
   border-top:1px dashed var(--line,#ECEDE7);padding-top:6px;}
-.ipo-up .est{font-size:10.5px;color:var(--sage-deep,#7E9A83);font-weight:700;margin-top:6px;}
 .dday{font-size:10.5px;font-weight:800;color:#fff;background:var(--sage-deep,#7E9A83);
   padding:3px 8px;border-radius:6px;flex:none;}
 .dday.soon{background:#C2410C;} .dday.tbd{background:#B7BCB3;}
@@ -144,6 +143,32 @@ _CSS = """
 .ipo-intro{font-size:12px;color:var(--pill-ink,#5d6258);line-height:1.6;margin-top:11px;
   background:var(--summary-bg,#F6F7F2);border:1px solid var(--line,#ECEDE7);border-radius:9px;padding:9px 11px;word-break:keep-all;}
 .ipo-cna{font-size:12px;color:var(--muted,#9a9b92);padding:14px 2px;}
+/* 고점比 보조 텍스트 */
+.ipo-meta .v small{color:var(--muted,#9a9b92);font-weight:600;font-size:11px;margin-left:5px;}
+/* A안 — 세그먼트 필 (st.segmented_control 리스타일) */
+div[data-testid="stSegmentedControl"]{margin-top:2px;}
+div[data-testid="stSegmentedControl"] [role="radiogroup"],
+div[data-testid="stSegmentedControl"] > div{
+  display:inline-flex;gap:2px;background:var(--summary-bg,#F6F7F2);
+  border:1px solid var(--line,#ECEDE7);border-radius:11px;padding:3px;flex-wrap:wrap;}
+div[data-testid="stSegmentedControl"] button{
+  border:0!important;background:transparent!important;box-shadow:none!important;
+  color:var(--pill-ink,#5d6258)!important;font-weight:700!important;font-size:12.5px!important;
+  padding:6px 13px!important;border-radius:8px!important;min-height:0!important;
+  transition:all .16s ease;}
+div[data-testid="stSegmentedControl"] button:hover{color:var(--ink,#34352f)!important;
+  background:transparent!important;}
+div[data-testid="stSegmentedControl"] button p{font-weight:700!important;font-size:12.5px!important;
+  margin:0!important;}
+div[data-testid="stSegmentedControl"] button[aria-checked="true"],
+div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
+div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"]{
+  background:#fff!important;color:var(--sage-deep,#7E9A83)!important;
+  box-shadow:0 1px 3px rgba(52,53,47,.08)!important;}
+div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
+div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
+div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p{
+  color:var(--sage-deep,#7E9A83)!important;}
 @media(max-width:680px){
   .ipo-head,.ipo-row{grid-template-columns:1.5fr 92px 84px;}
   .ipo-head .dcol,.ipo-row .dt,.ipo-row .sp{display:none;}
@@ -333,6 +358,22 @@ def _since_return(s: dict):
         return None
 
 
+def _peak_drawdown(s: dict):
+    """상장후 최고가 대비 현재가 낙폭(%)과 최고가. spark 기반 — 추가 데이터·API 없음.
+    반환: (dd_pct<=0, peak_won) · 산출 불가 시 (None, None)."""
+    sp = [float(v) for v in (_get_spark(s) or []) if v is not None]
+    if len(sp) < 2:
+        return None, None
+    peak = max(sp)
+    if peak <= 0:
+        return None, None
+    try:
+        cur = float(s.get("price_won") or sp[-1])
+    except (TypeError, ValueError):
+        return None, None
+    return (cur / peak - 1) * 100, peak
+
+
 def _row_spark(s: dict) -> str:
     return _spark_svg(_get_spark(s))
 
@@ -493,7 +534,7 @@ def render_ipo_tab():
 
     # ① 향후 IPO 일정
     st.markdown('<div class="ipo-sec">향후 IPO 일정 '
-                '<span class="mut">· 회사소개 · 상장 예상구간은 접수일 기준 추정</span></div>',
+                '<span class="mut">· 회사소개</span></div>',
                 unsafe_allow_html=True)
     if upcoming:
         cards = ""
@@ -501,7 +542,6 @@ def render_ipo_tab():
             dday = u.get("dday", "") or "접수"
             cls = "soon" if u.get("soon") else ("tbd" if dday == "접수" else "")
             sub = " · ".join(x for x in [u.get("state", ""), u.get("under", "")] if x)
-            est = u.get("est_listing", "")
             nv = (f'<a class="nv" href="{html.escape(naver_stock_url(u.get("name","")))}" '
                   f'target="_blank" rel="noopener" title="네이버 증권에서 검색">N</a>')
             cards += (
@@ -510,7 +550,6 @@ def render_ipo_tab():
                 f'<span class="dday {cls}">{html.escape(dday)}</span></div>'
                 f'<div class="sub">{html.escape(sub)}</div>'
                 f'<div class="ds">{html.escape(u.get("intro",""))}</div>'
-                + (f'<div class="est">📅 상장 {html.escape(est)}</div>' if est else "")
                 + '</div>'
             )
         st.markdown(f'<div class="ipo-strip">{cards}</div>', unsafe_allow_html=True)
@@ -526,11 +565,23 @@ def render_ipo_tab():
         return
 
     sectors = sorted({(r.get("sector") or "기타") for r in recent})
-    c1, c2, c3, c4 = st.columns([1.25, 1.2, 1.35, 1.1])
-    market = c1.radio("시장", ["전체", "코스피", "코스닥"], horizontal=True, key="ipo_mkt")
-    sector = c2.selectbox("섹터", ["전체"] + sectors, key="ipo_sct")
-    sort = c3.radio("정렬", _SORTS, horizontal=True, key="ipo_sort")
-    mode = c4.radio("차트 기간", ["상장후", "3개월", "6개월", "1년"], key="ipo_mode")
+    _SORT_SHORT = {"상장일순": "상장일", "시총순": "시총", "등락순": "등락", "수익률순": "수익률"}
+    _MODE_SHORT = {"상장후": "상장후", "3개월": "3M", "6개월": "6M", "1년": "1Y"}
+    c1, c2, c3, c4 = st.columns([1.0, 1.2, 1.7, 1.25])
+    with c1:
+        market = st.segmented_control(
+            "시장", ["전체", "코스피", "코스닥"],
+            default="전체", key="ipo_mkt") or "전체"
+    with c2:
+        sector = st.selectbox("섹터", ["전체"] + sectors, key="ipo_sct")
+    with c3:
+        sort = st.segmented_control(
+            "정렬", _SORTS, default="상장일순",
+            format_func=lambda x: _SORT_SHORT.get(x, x), key="ipo_sort") or "상장일순"
+    with c4:
+        mode = st.segmented_control(
+            "차트 기간", ["상장후", "3개월", "6개월", "1년"], default="상장후",
+            format_func=lambda x: _MODE_SHORT.get(x, x), key="ipo_mode") or "상장후"
 
     rows = _apply(recent, market, sector, sort)
     st.caption(f"{len(rows)}종목")
@@ -551,6 +602,7 @@ def render_ipo_tab():
 
     st.caption("수익률=공모가 대비(공모가는 DART 증권발행실적보고서에서 파싱, 없으면 상장일 종가 대비). "
                "펼치면 현재가·PER·PBR·PSR과 매출·영업이익·당기순이익(DART 최근 연간)·회사소개가 나와요. "
+               "상장후 최고/최저·고점比는 일별 종가 기준이에요. "
                "추이=상장후 전체. 큰 차트=네이버 일별(약 15분 지연). N 아이콘·종목명=네이버 증권.")
 
 
@@ -591,6 +643,21 @@ def _detail_html(s: dict) -> str:
         f'<div class="cell"><div class="k">당기순이익</div>{_amt(s.get("net_income"))}</div>'
         '</div>'
     )
+    dd, peak = _peak_drawdown(s)
+    if dd is None:
+        dd_html = '<span class="v">-</span>'
+    elif dd >= -0.05:
+        dd_html = '<span class="v">고점 근접 <small>(상장후 신고가권)</small></span>'
+    else:
+        peak_txt = f' <small>(고점 {int(peak):,}원)</small>' if peak else ""
+        dd_html = f'<span class="v down">{dd:.1f}%{peak_txt}</span>'
+
+    nums = [float(v) for v in (sp or []) if v is not None]
+    if len(nums) >= 2:
+        hilo_html = (f'<span class="v"><b class="up">{round(max(nums)):,}</b>'
+                     f'<small> / </small><b class="down">{round(min(nums)):,}</b>원</span>')
+    else:
+        hilo_html = '<span class="v">-</span>'
     return (
         valuation + financials +
         '<div class="ipo-cmp2">'
@@ -599,7 +666,8 @@ def _detail_html(s: dict) -> str:
         '<div class="ipo-meta">'
         f'<span class="k">상장일</span><span class="v">{html.escape(str(s.get("listed","-")))}</span>'
         f'<span class="k">섹터</span><span class="v">{html.escape(str(s.get("sector") or "-"))}</span>'
-        f'<span class="k">보호예수</span><span class="v">{html.escape(str(s.get("lockup") or "-"))}</span>'
+        f'<span class="k">상장후 최고/최저</span>{hilo_html}'
+        f'<span class="k">상장후 고점比</span>{dd_html}'
         '</div>'
         f'<div class="ipo-intro">{html.escape(str(s.get("intro") or "회사소개 정보가 아직 없어요."))}</div>'
     )
