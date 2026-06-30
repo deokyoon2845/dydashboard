@@ -47,6 +47,15 @@ RRG_TAIL = 3               # RRG 꼬리 최대 세그먼트(=점 4개)
 RRG_SECTORS = 12           # RRG에 찍을 상위 섹터 수
 HIGH_BREAK = 99.5          # 신고가 '돌파/경신' 판정 임계(52주 고점 대비 %)
 EVENT_EX = 3               # 이벤트 칩에 미리보기로 보여줄 종목 수
+DETAIL_PICK_N = 30         # '종목 자세히' 드롭다운 후보 수(점수순 상위)
+
+# 국면 태그(종목이 추세상 어디쯤 와 있나) — 색·한줄 설명
+PHASES = {
+    "초입": {"c": "#7E9A83", "d": "막 진입 · 여력 있음"},
+    "돌파": {"c": "#B65F5A", "d": "신고가 경신 중"},
+    "연장": {"c": "#C08A6A", "d": "많이 감 · 과열 주의"},
+    "눌림": {"c": "#5A7CA0", "d": "고점서 조정 · 추세 유지"},
+}
  
 # 게이트 폴백(구버전 payload에 is_leader가 없을 때 뷰어가 근사 판정) — '중'에 준함
 _FB_HIGH_MIN = 80.0
@@ -754,6 +763,170 @@ def _rrg_components(rrg, n_days):
     components.html(doc, height=H + 8, scrolling=False)
 
 
+def _phase(s):
+    """종목 국면 태그 판정 → (라벨, 색). 저장된 high_ratio·mom_*·streak·aligned로 산출.
+       위에서부터 먼저 걸리는 것: 돌파 > 연장 > 눌림 > 초입(기본)."""
+    hr = s.get("high_ratio")
+    m1 = s.get("mom_1m") or 0
+    m1w = s.get("mom_1w")
+    stk = s.get("streak") or 0
+    aligned = bool(s.get("aligned"))
+    if hr is not None:
+        if hr >= 99.5:
+            lab = "돌파"
+        elif hr >= 96 and (m1 >= 25 or stk >= 5):
+            lab = "연장"
+        elif 88 <= hr < 96 and aligned and (m1w is not None and m1w <= 0):
+            lab = "눌림"
+        else:
+            lab = "초입"
+    else:
+        lab = "초입"
+    return lab, PHASES[lab]["c"]
+
+
+def _radar_svg(comp):
+    """5축 점수 프로파일(모멘텀·상대강도·추세·유동성·신고가) → 레이더 SVG."""
+    import math
+    order = ["mom", "rs", "trend", "liq", "high"]
+    axlab = ["모멘텀", "상대강도", "추세", "유동성", "신고가"]
+    vals = [max(0.0, min(100.0, (comp or {}).get(k) or 0)) for k in order]
+    W = Hh = 260
+    cx, cy, Rm, n = 130, 132, 92, 5
+
+    def pt(i, r):
+        a = -math.pi / 2 + i * 2 * math.pi / n
+        return cx + math.cos(a) * r, cy + math.sin(a) * r
+
+    s = [f'<svg viewBox="0 0 {W} {Hh}" width="100%" xmlns="http://www.w3.org/2000/svg" '
+         'style="max-width:280px;display:block;margin:0 auto;">']
+    for g in (20, 40, 60, 80, 100):
+        p = " ".join(f"{pt(i, Rm*g/100)[0]:.1f},{pt(i, Rm*g/100)[1]:.1f}" for i in range(n))
+        s.append(f'<polygon points="{p}" fill="none" stroke="#E4E2DB" stroke-width="1"/>')
+    for i in range(n):
+        x, y = pt(i, Rm)
+        s.append(f'<line x1="{cx}" y1="{cy}" x2="{x:.1f}" y2="{y:.1f}" stroke="#E4E2DB" stroke-width="1"/>')
+    dp = " ".join(f"{pt(i, Rm*vals[i]/100)[0]:.1f},{pt(i, Rm*vals[i]/100)[1]:.1f}" for i in range(n))
+    s.append(f'<polygon points="{dp}" fill="#7E9A83" fill-opacity="0.18" stroke="#7E9A83" stroke-width="1.8"/>')
+    for i in range(n):
+        x, y = pt(i, Rm * vals[i] / 100)
+        s.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2.6" fill="#7E9A83"/>')
+    for i in range(n):
+        x, y = pt(i, Rm + 15)
+        s.append(f'<text x="{x:.1f}" y="{y+3:.1f}" text-anchor="middle" font-size="10.5" fill="#9a9b92">{axlab[i]}</text>')
+    s.append('</svg>')
+    return "".join(s)
+
+
+def _detail_metrics_html(s):
+    def mv(label, val, move=False, pct=False):
+        if val is None:
+            v = '<span style="color:#b6b4ab">–</span>'
+        elif move:
+            c = "#B65F5A" if val >= 0 else "#5A7CA0"
+            v = f'<span style="color:{c}">{"+" if val >= 0 else ""}{val:g}%</span>'
+        elif pct:
+            v = f'{val:g}%'
+        else:
+            v = f'{val}'
+        return ('<div style="display:flex;justify-content:space-between;padding:6.5px 0;'
+                'border-bottom:1px solid #ECEDE7;">'
+                f'<span style="font-size:11.5px;color:#9a9b92;">{label}</span>'
+                f'<span style="font-size:12.5px;font-weight:700;">{v}</span></div>')
+    cap = s.get("mcap_eok")
+    cap_txt = f"{cap/10000:.1f}조" if cap and cap >= 10000 else (f"{cap:,.0f}억" if cap else "–")
+    turn = s.get("turnover_eok")
+    turn_txt = f"{turn/10000:.2f}조" if turn and turn >= 10000 else (f"{turn:,.0f}억" if turn else "–")
+    return (
+        '<div>'
+        + mv("3개월", s.get("mom_3m"), move=True)
+        + mv("1개월", s.get("mom_1m"), move=True)
+        + mv("1주", s.get("mom_1w"), move=True)
+        + mv("전일", s.get("mom_1d"), move=True)
+        + mv("상대강도 RS", s.get("rs_3m"), move=True)
+        + mv("52주 고점 대비", s.get("high_ratio"), pct=True)
+        + ('<div style="display:flex;justify-content:space-between;padding:6.5px 0;border-bottom:1px solid #ECEDE7;">'
+           f'<span style="font-size:11.5px;color:#9a9b92;">거래대금</span>'
+           f'<span style="font-size:12.5px;font-weight:700;">{turn_txt}</span></div>')
+        + ('<div style="display:flex;justify-content:space-between;padding:6.5px 0;">'
+           f'<span style="font-size:11.5px;color:#9a9b92;">시가총액</span>'
+           f'<span style="font-size:12.5px;font-weight:700;">{cap_txt}</span></div>')
+        + '</div>'
+    )
+
+
+def _detail_spark_svg(vals, up):
+    vals = [v for v in (vals or []) if isinstance(v, (int, float))]
+    if len(vals) < 2:
+        return '<div style="font-size:11px;color:#9a9b92;">시계열 데이터가 부족해요.</div>'
+    lo, hi = min(vals), max(vals)
+    rg = (hi - lo) or 1
+    n = len(vals)
+    W, Hh = 560, 60
+    pts = " ".join(f"{i/(n-1)*W:.1f},{Hh-4-((v-lo)/rg)*(Hh-8):.1f}" for i, v in enumerate(vals))
+    c = "#B65F5A" if up else "#5A7CA0"
+    return (f'<svg viewBox="0 0 {W} {Hh}" preserveAspectRatio="none" style="width:100%;height:60px;display:block;">'
+            f'<polygon points="{pts} {W},{Hh} 0,{Hh}" fill="{c}" opacity="0.08"/>'
+            f'<polyline points="{pts}" fill="none" stroke="{c}" stroke-width="2" opacity="0.9"/></svg>')
+
+
+def _detail_peers_html(sel, leaders):
+    upj = sel.get("upjong")
+    peers = [s for s in leaders
+             if s.get("upjong") == upj and s.get("code") != sel.get("code")]
+    peers = sorted(peers, key=lambda x: (x.get("score") or 0), reverse=True)[:4]
+    if not peers:
+        return '<div style="font-size:11px;color:#9a9b92;">같은 섹터에 다른 주도주가 없어요.</div>'
+    rows = ""
+    for p in peers:
+        lab, col = _phase(p)
+        url = html.escape(naver_stock_page_url(name=p.get("name", ""), code=p.get("code", "")))
+        rows += ('<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #ECEDE7;">'
+                 f'<a href="{url}" target="_blank" rel="noopener" '
+                 f'style="flex:1;font-size:12.5px;color:#34352f;text-decoration:none;">{html.escape(p.get("name",""))}</a>'
+                 f'<span style="font-size:11px;color:#9a9b92;">{p.get("score","")}점</span>'
+                 f'<span style="font-size:10px;font-weight:700;color:{col};background:{col}1f;'
+                 f'border-radius:5px;padding:1px 7px;">{lab}</span></div>')
+    return rows
+
+
+def _render_detail(s, leaders):
+    """선택 종목 디테일 패널 — 레이더·국면·지표·스파크·동료를 iframe 한 장으로."""
+    lab, col = _phase(s)
+    desc = PHASES[lab]["d"]
+    url = html.escape(naver_stock_page_url(name=s.get("name", ""), code=s.get("code", "")))
+    nm = html.escape(s.get("name", ""))
+    radar = _radar_svg(s.get("comp") or {})
+    mets = _detail_metrics_html(s)
+    up3 = (s.get("mom_3m") or 0) >= 0
+    spark = _detail_spark_svg(s.get("spark"), up3)
+    peers = _detail_peers_html(s, leaders)
+    doc = (
+        '<div style="font-family:Pretendard,-apple-system,BlinkMacSystemFont,sans-serif;'
+        'color:#34352f;background:transparent;margin:0;">'
+        '<div style="border:1px solid #ECEDE7;border-radius:13px;background:#FFFFFF;padding:15px 18px;">'
+        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:3px;">'
+        f'<a href="{url}" target="_blank" rel="noopener" '
+        f'style="font-size:17px;font-weight:700;color:#34352f;text-decoration:none;">{nm}</a>'
+        f'<span style="font-size:11px;font-weight:700;color:{col};background:{col}22;'
+        f'border-radius:6px;padding:2px 9px;">{lab}</span>'
+        f'<span style="font-size:11.5px;color:#9a9b92;">{html.escape(s.get("upjong","") or "")} · 주도 {s.get("score","")}점</span>'
+        '</div>'
+        f'<div style="font-size:11.5px;color:{col};margin-bottom:12px;">{desc}</div>'
+        '<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:18px;align-items:center;">'
+        f'<div>{radar}<div style="font-size:10px;color:#9a9b92;text-align:center;margin-top:2px;">'
+        '5축 점수 프로파일 · 0~100</div></div>'
+        f'<div>{mets}</div>'
+        '</div>'
+        '<div style="margin-top:14px;"><div style="font-size:11px;color:#9a9b92;margin-bottom:3px;">'
+        f'최근 3개월</div>{spark}</div>'
+        '<div style="margin-top:14px;"><div style="font-size:11px;color:#9a9b92;margin-bottom:4px;">'
+        f'같은 섹터 동료</div>{peers}</div>'
+        '</div></div>'
+    )
+    components.html(doc, height=590, scrolling=False)
+
+
 # ── 메인 ─────────────────────────────────────────────────────────────
  
 def render_leaders():
@@ -838,6 +1011,22 @@ def render_leaders():
                     f'TOP {LEADERBOARD_N}</div>', unsafe_allow_html=True)
         st.markdown(_leaderboard_compact(leaders, tl), unsafe_allow_html=True)
  
+    # ── 종목 해부: 5축 프로파일·국면(드롭다운 선택) ──
+    pick_pool = leaders[:DETAIL_PICK_N]
+    if pick_pool:
+        st.markdown('<div class="ldr-h">종목 자세히 · 5축 프로파일 · 국면</div>',
+                    unsafe_allow_html=True)
+
+        def _detail_label(i):
+            d = pick_pool[i]
+            lab, _ = _phase(d)
+            return f'{i+1}. {d.get("name","")} · {d.get("score","")}점 · {lab}'
+
+        idx = st.selectbox("종목 선택", range(len(pick_pool)),
+                           format_func=_detail_label,
+                           label_visibility="collapsed", key="ldr_detail_pick")
+        _render_detail(pick_pool[idx], leaders)
+
     # ── 주도 섹터 로테이션(시간 레이어) ──
     rrg = (tl or {}).get("sector_rrg") or []
     if rrg and (tl or {}).get("multi"):
@@ -889,6 +1078,7 @@ def render_leaders():
         + (f" ({int(w.get('mom',0)*100)}/{int(w.get('rs',0)*100)}/{int(w.get('trend',0)*100)}/"
            f"{int(w.get('liq',0)*100)}/{int(w.get('high',0)*100)})" if w else "")
         + gate_txt
+        + " · 국면: 돌파(52주 신고가 99.5%↑)·연장(고점권+과열)·눌림(고점서 조정·정배열)·초입(여력)"
         + " · 우선주·스팩·리츠·ETF 제외 · 상대강도=코스피/코스닥 대비 초과수익 · "
         "데이터: Naver · 장마감 후 1일 1회 갱신 · 투자판단의 근거가 아니라 모니터링용 참고치예요."
     )
