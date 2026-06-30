@@ -21,13 +21,12 @@ CAT_CLS = {"거시": "cat-macro", "섹터": "cat-sector", "종목": "cat-stock",
 
 _KW_CSS = """
 <style>
-/* ── A안: 에디토리얼 인덱스 — 데스크톱 2열(좌우 분할), 모바일 1열 ── */
-.kw-list{column-count:2;column-gap:32px;margin-top:4px;
-  border-top:1px solid var(--line,#ECEDE7);}
-@media(max-width:760px){.kw-list{column-count:1;}}
-.kw-row{display:grid;grid-template-columns:46px 1fr;gap:12px;
+/* ── A안: 에디토리얼 인덱스 — 데스크톱 2열(좌우 정렬 grid), 모바일 1열 ── */
+.kw-list{display:grid;grid-template-columns:1fr 1fr;column-gap:32px;align-items:stretch;
+  margin-top:4px;border-top:1px solid var(--line,#ECEDE7);}
+@media(max-width:760px){.kw-list{grid-template-columns:1fr;}}
+.kw-row{display:grid;grid-template-columns:48px 1fr;gap:12px;
   padding:15px 4px 14px;border-bottom:1px solid var(--line,#ECEDE7);
-  break-inside:avoid;-webkit-column-break-inside:avoid;page-break-inside:avoid;
   transition:background .18s ease;}
 .kw-row:hover{background:#fbfbf8;}
 .kw-row.kw-rowwatch{background:linear-gradient(90deg,rgba(217,169,60,.06),transparent 40%);}
@@ -35,7 +34,7 @@ _KW_CSS = """
 
 .kw-rank{font-family:'Fraunces','Noto Sans KR',Georgia,serif;font-size:27px;font-weight:500;
   line-height:1;color:var(--sage-deep,#7E9A83);text-align:right;padding-top:2px;
-  font-variant-numeric:tabular-nums;}
+  font-variant-numeric:tabular-nums;white-space:nowrap;}
 .kw-impbar{display:flex;gap:2px;justify-content:flex-end;margin-top:8px;}
 .kw-impbar i{width:5px;height:5px;border-radius:50%;background:var(--line,#ECEDE7);}
 .kw-impbar i.f{background:var(--sage,#A7BBA9);}
@@ -73,7 +72,7 @@ _KW_CSS = """
 .kw-weak{font-size:10.5px;color:var(--muted,#9a9b92);margin-top:5px;}
 
 @media(max-width:560px){
-  .kw-row{grid-template-columns:40px 1fr;gap:11px;}
+  .kw-row{grid-template-columns:44px 1fr;gap:11px;}
   .kw-rank{font-size:24px;}
   .kw-kw{font-size:16px;}
 }
