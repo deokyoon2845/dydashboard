@@ -95,8 +95,10 @@ _CSS = """
 .ldr-lb-row:last-child{border-bottom:none;}
 .ldr-lb-row .rk{width:16px;text-align:center;font-size:12px;font-weight:800;color:var(--muted);flex:none;}
 .ldr-lb-row .rk.top{color:var(--up);}
-.ldr-lb-row .nm{width:96px;flex:none;display:flex;align-items:center;font-size:13px;font-weight:700;}
-.ldr-lb-row .nm a{color:var(--ink);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;} .ldr-lb-row .nm a:hover{text-decoration:underline;}
+.ldr-lb-row .nmcell{width:96px;flex:none;display:flex;align-items:center;min-width:0;font-size:13px;font-weight:700;}
+.ldr-lb-row .nml{color:var(--ink);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;} .ldr-lb-row .nml:hover{text-decoration:underline;}
+.ldr-lb-row .nmbg{display:inline-flex;align-items:center;flex:none;}
+.ldr-lb-row .nmbg .stk-b{font-size:9px;color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:1px 4px;white-space:nowrap;margin-left:5px;}
 .ldr-lb-row .spk{width:118px;flex:none;height:24px;}
 .ldr-lb-row .spk svg{width:118px;height:24px;display:block;}
 .ldr-lb-row .m3{flex:1;text-align:right;font-size:11.5px;font-weight:700;min-width:54px;}
@@ -189,15 +191,25 @@ _CSS = """
 .ldr-ev .ex{font-size:10.5px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .ev-in{color:var(--sage-deep);} .ev-out{color:var(--down);} .ev-hi{color:var(--up);}
 .ldr-lb-row .dl{width:28px;flex:none;text-align:center;font-size:10.5px;font-weight:700;}
-.ldr-lb-row .stk{width:36px;flex:none;text-align:center;}
-.ldr-lb-row .stk span{font-size:9px;color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:1px 4px;white-space:nowrap;}
 .ldr-rk-up{color:var(--up);} .ldr-rk-dn{color:var(--down);} .ldr-rk-new{color:var(--sage-deep);font-weight:800;}
-.ldr-lb-row.t .nm{flex:1 1 auto;width:auto;min-width:0;} .ldr-lb-row.t .m3{flex:0 0 auto;width:56px;}
+.ldr-lb-row.t .nmcell{flex:1 1 auto;width:auto;min-width:0;} .ldr-lb-row.t .m3{flex:0 0 auto;width:56px;}
 .ldr-lb-row.t .spk{width:56px;} .ldr-lb-row.t .spk svg{width:56px !important;}
 .ldr-lb-row.t .d1{width:48px;}
 .ldr-rrgnote{font-size:11px;color:var(--muted);line-height:1.7;margin-top:2px;}
 .ldr-secbar .dl{width:50px;flex:none;text-align:right;font-size:10.5px;font-weight:700;}
 .ldr-secbar .dl .up{color:var(--up);} .ldr-secbar .dl .dn{color:var(--down);} .ldr-secbar .dl .fl{color:var(--muted);}
+
+/* ── 모바일 (≤680px) ── */
+@media(max-width:680px){
+  /* ④ 리더보드: 종목명은 한 줄 전체 사용, N·연속일(D+n) 배지는 종목명 아래 줄로 */
+  .ldr-lb-row .nmcell{flex:1 1 auto;width:auto;min-width:0;flex-direction:column;align-items:flex-start;gap:2px;}
+  .ldr-lb-row .nml{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.25;}
+  .ldr-lb-row .nmbg{gap:5px;}
+  .ldr-lb-row .nmbg .nv,.ldr-lb-row .nmbg .ldr-new,.ldr-lb-row .nmbg .stk-b{margin-left:0;}
+  /* ⑤ 섹터 로테이션/강도 막대: 좌우 2열 → 위에서 아래로 1열 */
+  .ldr-secgrid{grid-template-columns:1fr;gap:9px;}
+  .ldr-secbar .lab{width:104px;}
+}
 </style>
 """
  
@@ -411,13 +423,16 @@ def _leaderboard_compact(leaders, tl=None, n=LEADERBOARD_N):
         spc = "var(--up)" if up3 else "var(--down)"
         spark = _spark_svg(s.get("spark"), spc)
         dl = f'<div class="dl">{_rank_badge(rank_delta.get(code))}</div>' if has_time else ""
-        stk = f'<div class="stk">{_streak_badge(streak.get(code), capped)}</div>' if has_time else ""
+        sb_raw = _streak_badge(streak.get(code), capped) if has_time else ""
+        sb = sb_raw.replace('<span>', '<span class="stk-b">') if sb_raw else ""
         rows += (
             f'<div class="{rowcls}">'
             f'<div class="rk {rank_col}">{i+1}</div>'
             f'{dl}'
-            f'<div class="nm"><a href="{url}" target="_blank" rel="noopener">{nm}</a>{_nv_icon(s)}{new}</div>'
-            f'{stk}'
+            f'<div class="nmcell">'
+            f'<a class="nml" href="{url}" target="_blank" rel="noopener">{nm}</a>'
+            f'<span class="nmbg">{_nv_icon(s)}{new}{sb}</span>'
+            f'</div>'
             f'<div class="spk">{spark}</div>'
             f'<div class="m3">{_pc(s.get("mom_3m"))}</div>'
             f'<div class="d1">{_d1(s.get("mom_1d"))}<div class="d1l">전일</div></div>'
@@ -1198,13 +1213,20 @@ def _render_sector_panel(sec, leaders, history):
     doc = (
         '<div style="font-family:Pretendard,-apple-system,BlinkMacSystemFont,sans-serif;'
         'color:#34352f;background:transparent;margin:0;">'
+        '<style>html,body{margin:0;padding:0;}</style>'
         '<div style="border:1px solid #ECEDE7;border-radius:13px;background:#FFFFFF;padding:15px 18px;">'
         + head + stats + trends + cols +
         '</div></div>'
+        '<script>(function(){function f(){try{var h=Math.ceil('
+        'document.body.getBoundingClientRect().height)+2;if(window.frameElement){'
+        'window.frameElement.style.height=h+"px";window.frameElement.setAttribute("height",h);}}'
+        'catch(e){}}window.addEventListener("load",f);setTimeout(f,150);setTimeout(f,600);'
+        'setTimeout(f,1500);window.addEventListener("resize",f);'
+        'try{new ResizeObserver(f).observe(document.body);}catch(e){}})();</script>'
     )
-    # iframe 높이를 실제 내용(선두/후발 행 수)에 맞춰 동적 계산 → 하단 빈 공간 제거
+    # 초기 높이는 넉넉히(모바일 줄바꿈 대비) 잡고, 로드 후 스크립트가 실제 내용에 맞춰 정밀 보정
     n_rows = max(min(len(lead), 6), min(len(follow), 6), 1)
-    panel_h = 256 + n_rows * 28
+    panel_h = 320 + n_rows * 30
     components.html(doc, height=panel_h, scrolling=False)
 
 
