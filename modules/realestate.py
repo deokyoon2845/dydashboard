@@ -1124,7 +1124,7 @@ table.mx tr:hover{background:#FAFAF6}
 .note{color:var(--muted);font-size:10.8px;margin-top:9px;line-height:1.6}
 .draw{stroke-dasharray:var(--L);stroke-dashoffset:var(--L);}
 .drawn{stroke-dashoffset:0;transition:stroke-dashoffset .85s ease}
-@media(max-width:760px){.maparea{height:400px}.nav{width:116px}.mrow{flex-direction:column}.mleft,.mright{width:100%;flex:none}.mxwrap{max-height:280px}}
+@media(max-width:760px){.maparea{height:400px}.nav{display:none}.mrow{flex-direction:column}.mleft,.mright{width:100%;flex:none}.mxwrap{max-height:280px}}
 </style></head><body>
 <div class="hd">
   <div><div class="crumb"><span class="back" id="back">‹ 전국</span> <span>전국</span> › <b id="crName">서울</b>
@@ -1907,6 +1907,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kfont
 .cc:hover{border-color:var(--sage);transform:translateY(-1px);box-shadow:0 6px 16px rgba(52,53,47,.07)}
 .cc-top{display:flex;align-items:center;justify-content:space-between;gap:6px}
 .cc-name{font-size:12.5px;font-weight:800;color:var(--ink)}
+.cc-sub{font-size:10px;font-weight:600;color:var(--muted);margin-top:2px}
 .cc-val{font-size:23px;font-weight:800;letter-spacing:-.02em;margin:7px 0 2px}
 .cc-val .u{font-size:12px;font-weight:600;color:var(--muted);margin-left:2px}
 .cc-val .cc-bl{font-size:9.5px;color:var(--muted);font-weight:700;margin-left:6px}
@@ -2070,8 +2071,9 @@ function coreCard(m){const pts=makeSeries(m);const s=signal(m,pts);const d=delta
  const bl=m.baseline!=null?'<span class="cc-bl">기준 '+m.baseline+'</span>':'';
  const inv=m.inv?'<span class="inv">역행</span>':'';
  const dc=d?'<span class="dchip '+d.cls+'">'+arrowD(d.cls)+' '+d.abs+'<span class="lab">'+d.lab+'</span></span>':'';
+ const sub=m.sub?'<div class="cc-sub">'+m.sub+'</div>':'';
  return '<div class="cc"><div class="cc-top"><span class="cc-name">'+m.lab+'</span>'
-  +'<span class="sig '+s.cls+'">'+arrow(s.cls)+' '+s.txt+inv+'</span></div>'
+  +'<span class="sig '+s.cls+'">'+arrow(s.cls)+' '+s.txt+inv+'</span></div>'+sub
   +'<div class="cc-val">'+fmtV(m,m.base)+'<span class="u">'+m.unit+'</span>'+bl+dc+'</div>'
   +miniChart(m,pts)+(g?gaugeHTML(m,g):'')+'<div class="cc-interp">'+m.interp+'</div></div>';}
 function rowHTML(m){const pts=makeSeries(m);const s=signal(m,pts);const d=deltaOf(m);const g=gaugeOf(m);
