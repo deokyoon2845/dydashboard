@@ -1,7 +1,8 @@
 """오늘의 키워드 뷰 — 카테고리·중요도·연속배지·워치리스트★·인라인종목·아카이브.
 
-데스크톱: 2열 그리드 카드 (TOP15) / 모바일: 1열로 자동 전환.
-뉴스 제목은 카드 높이 균일화를 위해 1줄로 표시(말줄임).
+데스크톱: 2열 고정높이 카드 (TOP15) / 모바일: 1열로 자동 전환.
+카드 높이를 160px로 고정해 정렬을 맞추고, 넘치는 내용은 숨김(overflow) 처리.
+넘버링 숫자는 .kw-num span(nowrap)으로 분리해 두 자리(10~15)도 줄바꿈되지 않음.
 """
 
 import html
@@ -21,20 +22,23 @@ CAT_CLS = {"거시": "cat-macro", "섹터": "cat-sector", "종목": "cat-stock",
 
 _KW_CSS = """
 <style>
-/* ── A안: 에디토리얼 인덱스 — 데스크톱 2열(좌우 정렬 grid), 모바일 1열 ── */
-.kw-list{display:grid;grid-template-columns:1fr 1fr;column-gap:32px;align-items:stretch;
-  margin-top:4px;border-top:1px solid var(--line,#ECEDE7);}
+/* ── A안: 에디토리얼 인덱스 — 데스크톱 2열 고정높이 카드, 모바일 1열 ── */
+.kw-list{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:8px;}
 @media(max-width:760px){.kw-list{grid-template-columns:1fr;}}
-.kw-row{display:grid;grid-template-columns:48px 1fr;gap:12px;
-  padding:15px 4px 14px;border-bottom:1px solid var(--line,#ECEDE7);
-  transition:background .18s ease;}
-.kw-row:hover{background:#fbfbf8;}
-.kw-row.kw-rowwatch{background:linear-gradient(90deg,rgba(217,169,60,.06),transparent 40%);}
-.kw-row.kw-rowwatch:hover{background:linear-gradient(90deg,rgba(217,169,60,.10),transparent 45%);}
+.kw-row{display:grid;grid-template-columns:44px 1fr;gap:13px;
+  height:160px;overflow:hidden;
+  background:#fff;border:.5px solid var(--line,#ECEDE7);border-radius:12px;
+  padding:14px 16px;transition:border-color .18s ease,box-shadow .18s ease;}
+@media(max-width:760px){.kw-row{height:auto;min-height:120px;}}
+.kw-row:hover{border-color:var(--sage,#A7BBA9);box-shadow:0 2px 8px rgba(52,53,47,.06);}
+.kw-row.kw-rowwatch{border-color:#D9A93C;
+  background:linear-gradient(180deg,rgba(217,169,60,.05),transparent 60%);}
+.kw-row.kw-rowwatch:hover{box-shadow:0 2px 8px rgba(217,169,60,.14);}
 
-.kw-rank{font-family:'Fraunces','Noto Sans KR',Georgia,serif;font-size:27px;font-weight:500;
-  line-height:1;color:var(--sage-deep,#7E9A83);text-align:right;padding-top:2px;
-  font-variant-numeric:tabular-nums;white-space:nowrap;}
+.kw-rank{display:flex;flex-direction:column;align-items:flex-end;min-width:0;padding-top:1px;}
+.kw-num{font-family:'Fraunces','Noto Sans KR',Georgia,serif;font-size:26px;font-weight:500;
+  line-height:1;color:var(--sage-deep,#7E9A83);white-space:nowrap;
+  font-variant-numeric:tabular-nums;}
 .kw-impbar{display:flex;gap:2px;justify-content:flex-end;margin-top:8px;}
 .kw-impbar i{width:5px;height:5px;border-radius:50%;background:var(--line,#ECEDE7);}
 .kw-impbar i.f{background:var(--sage,#A7BBA9);}
@@ -72,8 +76,8 @@ _KW_CSS = """
 .kw-weak{font-size:10.5px;color:var(--muted,#9a9b92);margin-top:5px;}
 
 @media(max-width:560px){
-  .kw-row{grid-template-columns:44px 1fr;gap:11px;}
-  .kw-rank{font-size:24px;}
+  .kw-row{grid-template-columns:40px 1fr;gap:11px;}
+  .kw-num{font-size:23px;}
   .kw-kw{font-size:16px;}
 }
 
@@ -256,7 +260,7 @@ def _render_items(items, watch_set):
 
         rows.append(
             f'<div class="{row_cls}">'
-            f'<div class="kw-rank">{i}{impbar}</div>'
+            f'<div class="kw-rank"><span class="kw-num">{i}</span>{impbar}</div>'
             f'<div class="kw-main">'
             f'<div class="kw-head"><span class="kw-kw">{kw}</span>'
             f'<span class="kw-tags">{watch_html}{cat_html}{badge_html}</span></div>'
