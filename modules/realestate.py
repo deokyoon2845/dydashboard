@@ -470,8 +470,6 @@ _IND_META = {
     "jsup":    ("전세수급", "week", 100, "p"),
     "outlook": ("매매전망", "month", 100, "p"),
     "jr":      ("전세가율", "month", 100, "p"),
-    "unsold":  ("미분양", "month", 100, "%"),
-    "rate":    ("주담대금리", "month", 100, "p"),
 }
 # baseline(중립선 100)이 의미 있는 심리지표만 — 매수우위·전세수급·매매전망
 _IND_BASELINE = {"buy": 100, "jsup": 100, "outlook": 100}
@@ -482,7 +480,7 @@ _INDV2_GROUPS = {
     "lead":   {"name": "선행지표", "desc": "먼저 움직인다 — 방향 신호"},
     "coin":   {"name": "동행지표", "desc": "지금 가격·거래"},
     "supply": {"name": "수급·심리", "desc": "전세·갭·기대"},
-    "fund":   {"name": "펀더멘털·금융", "desc": "재고·공급·구매력 (역행)"},
+    "fund":   {"name": "공급·입주", "desc": "장래 공급 (연결 예정)"},
 }
 _INDV2_DEF = {
     "buy":      {"g": "lead", "cad": "week", "baseline": 100, "inv": False,
@@ -495,30 +493,24 @@ _INDV2_DEF = {
                  "interp": "실제 매매가 레벨. 시장의 '현재값'."},
     "jeonse":   {"g": "coin", "cad": "week", "baseline": None, "inv": False,
                  "interp": "전세가 레벨. 오르면 매매 하방을 받쳐줌."},
-    "volume":   {"g": "coin", "cad": "month", "baseline": None, "inv": False,
-                 "interp": "월별 아파트 매매 건수. 시장의 체온—거래가 살아나면 추세가 강해짐."},
     "jsup":     {"g": "supply", "cad": "week", "baseline": 100, "inv": False,
                  "interp": "100 위 = 전세 공급부족(수요>공급). 전세·매매 동반 자극."},
     "jr":       {"g": "supply", "cad": "month", "baseline": None, "inv": False,
                  "interp": "전세/매매 비율. 높을수록 갭 부담↓·하방 지지↑."},
     "joutlook": {"g": "supply", "cad": "month", "baseline": 100, "inv": False,
                  "interp": "전세 상승 기대. 전세 불안의 선행 신호."},
-    "unsold":   {"g": "fund", "cad": "month", "baseline": None, "inv": True,
-                 "interp": "재고. 줄면 수급 양호(상승 신호). ↑는 반대 해석."},
-    "rate":     {"g": "fund", "cad": "month", "baseline": None, "inv": True,
-                 "interp": "조달비용. 내리면 구매력↑(상승 신호). ↑는 반대 해석."},
 }
 # 카드 표시 순서(그룹 보기 내 정렬). 선도50은 선행 보조로 매매전망 뒤에 둠.
-_INDV2_ORDER = ["buy", "outlook", "lead50", "sale", "jeonse", "volume",
-                "jsup", "jr", "joutlook", "unsold", "rate"]
-# 연결예정 슬롯 — 데이터 소스 미연결. 가짜 데이터 대신 정직하게 자리만 표시(차트·신호 없음).
+_INDV2_ORDER = ["buy", "outlook", "lead50", "sale", "jeonse",
+                "jsup", "jr", "joutlook"]
+# 핵심(상단 강조 카드).
+_INDV2_CORE = ("buy", "outlook")
+# 연결예정 슬롯 — 데이터 소스 자체가 아직 미연결(진짜 '연결예정'). 가짜 데이터 없음.
 _INDV2_PENDING = [
-    {"k": "volume", "g": "coin", "lab": "실거래량(수도권)",
-     "note": "국토부 실거래 월별 집계 · 다음 자동수집(07:00)부터 채워집니다(최근 24개월)"},
     {"k": "auction", "g": "lead", "lab": "경매 낙찰가율",
-     "note": "법원경매 월간 · 데이터 소스 연결 예정"},
+     "note": "법원경매 월간 · 소스 연결 예정"},
     {"k": "supply", "g": "fund", "lab": "입주물량(수도권)",
-     "note": "국토부 입주예정 월별 · 연결 예정"},
+     "note": "국토부 입주예정 월별 · 소스 연결 예정"},
 ]
 
 # 엔진 연결 전(또는 DB 비었을 때) 샘플 — 현재 상승장 반영(가짜로 하락처럼 안 보이게)
@@ -529,10 +521,6 @@ _IND_SAMPLE = [
     {"key": "jeonse", "label": "전세가격지수", "sub": "서울 · 주간(KB)", "unit": "", "col": "#5A7CA0",
      "series": [95.0, 95.2, 95.4, 95.6, 95.8, 96.0, 96.1, 96.3, 96.4, 96.6,
                 96.7, 96.8, 96.9, 97.0, 97.1, 97.2, 97.3, 97.3, 97.4, 97.4]},
-    {"key": "volume", "label": "실거래량(수도권)", "sub": "월간 · 국토부 실거래(아파트 매매)", "unit": "건", "col": "#7E9A83",
-     "series": [4120, 3980, 4310, 4760, 5210, 4890, 4530, 4180, 3960, 4340,
-                4720, 5180, 5460, 5120, 4880, 4610, 4290, 4050, 4480, 4920,
-                5240, 5080, 4760, 4530]},
     {"key": "lead50", "label": "선도아파트50지수", "sub": "전국 · 주간(KB) · 상위 50개 단지", "unit": "", "col": "#A35F5A",
      "series": [94.8, 95.2, 95.7, 96.2, 96.6, 97.1, 97.6, 98.0, 98.5, 98.9,
                 99.3, 99.8, 100.2, 100.5, 100.9, 101.2, 101.5, 101.8, 102.0, 102.2]},
@@ -546,10 +534,6 @@ _IND_SAMPLE = [
      "series": [97, 99, 101, 103, 105, 107, 108, 110, 111, 111, 112, 112]},
     {"key": "jr", "label": "전세가율", "sub": "서울 · 월간(KB)", "unit": "%", "col": "#7E9A83",
      "series": [51.4, 51.7, 52.0, 52.3, 52.6, 52.9, 53.1, 53.3, 53.5, 53.7, 53.8, 53.9]},
-    {"key": "unsold", "label": "미분양", "sub": "전국 · 월간(KOSIS)", "unit": "만호", "col": "#8A7C9E",
-     "series": [6.9, 6.8, 6.7, 6.6, 6.5, 6.4, 6.3, 6.2, 6.1, 6.0, 5.9, 5.8]},
-    {"key": "rate", "label": "주담대 금리", "sub": "월간(한은 ECOS)", "unit": "%", "col": "#9a9b92",
-     "series": [4.05, 4.03, 4.00, 3.97, 3.94, 3.91, 3.88, 3.85, 3.82, 3.80, 3.77, 3.74]},
     # 서울·수도권 매매 중위/평균가격(억) — 지표탭 '현재 매매가격' 블록용(카드 아님)
     {"key": "med_seoul", "label": "서울 아파트 매매 중위가격", "sub": "서울 · 월간(KB)", "unit": "억", "col": "#7E9A83",
      "series": [9.8, 9.9, 10.0, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8, 10.9]},
@@ -588,12 +572,6 @@ def _phase_from_series(data):
     seg = ["가격 " + ("상승" if tr("sale") > 0 else "하락" if tr("sale") < 0 else "보합")]
     if by.get("buy"):
         seg.append("심리 " + ("매수우위" if by["buy"][-1] >= 100 else "매도우위"))
-    if by.get("unsold"):
-        seg.append("공급 부담 " + ("완화" if tr("unsold") < 0
-                                else "확대" if tr("unsold") > 0 else "보합"))
-    if by.get("rate"):
-        seg.append("금리 " + ("하락" if tr("rate") < 0
-                            else "상승" if tr("rate") > 0 else "보합"))
     spans = '<span style="color:#C9CBC2;margin:0 2px">·</span>'.join(
         f'<span class="seg">{s}</span>' for s in seg)
     return f'<div class="re-phase"><b>시장 국면</b>{spans}</div>'
@@ -1217,8 +1195,9 @@ function drawLegend(){let h="";
 
 let _paths=[],_vb=[0,0,100,100];
 function pathsHTML(big){const ps=_paths.map((d,i)=>`<path class="dist" data-i="${i}" d="${d.d}" fill="${fillOf(d)}"></path>`).join("");
-  const labs=_paths.map(d=>{const fs=big?13:(d.sl.length>3?9:11);
-    return `<text class="dlabel" x="${d.cx}" y="${d.cy}" text-anchor="middle" dominant-baseline="middle" font-size="${fs}" paint-order="stroke" stroke="#FCFCFA" stroke-width="2" stroke-linejoin="round">${d.sl}</text>`;}).join("");
+  const ref=Math.sqrt(_vb[2]*_vb[3]/Math.max(1,_paths.length));   // 평균 구역 한 변(viewBox 단위)
+  const labs=_paths.map(d=>{const fs=ref*(d.sl.length>3?0.135:0.165);   // 화면 픽셀 균일 + 밀도(N) 보정
+    return `<text class="dlabel" x="${d.cx}" y="${d.cy}" text-anchor="middle" dominant-baseline="middle" font-size="${fs.toFixed(1)}" paint-order="stroke" stroke="#FCFCFA" stroke-width="${(fs*0.22).toFixed(1)}" stroke-linejoin="round">${d.sl}</text>`;}).join("");
   return `<g id="paths">${ps}</g><g>${labs}</g>`;}
 function drawMap(){_paths=pathsOf(region);_vb=vbOf(_paths);const svg=document.getElementById("big");
   svg.setAttribute("viewBox",_vb.join(" "));const big=_paths.length<=8;
@@ -1230,7 +1209,8 @@ function drawMap(){_paths=pathsOf(region);_vb=vbOf(_paths);const svg=document.ge
         :`<div class="muted">거래 ${d.v}건${_vx?` · <span class="vctx ${_vx.cls}">${_vx.full}</span>`:""}</div>`;
       tip.innerHTML=`<div style="font-weight:800;margin-bottom:4px">${d.n}</div><div class="muted">매매 <span class="${cls(d.mm)}">${fmtP(d.mm)}</span> · 전세 <span class="${cls(d.js)}">${fmtP(d.js)}</span></div>${vline}<div class="muted">전세가율 ${d.jr==null?"-":d.jr+"%"}</div><div class="muted" style="font-size:10px;margin-top:3px;color:#A9AB9F">매매·전세·전세가율 월간(전월대비) · 거래 주간</div>`;
       tip.style.opacity="1";tip.style.transform="translateY(0)";
-      hl.setAttribute("x",d.cx);hl.setAttribute("y",d.cy);hl.setAttribute("font-size",big?15:12);hl.textContent=d.sl;hl.style.opacity="1";};
+      const _hf=Math.sqrt(_vb[2]*_vb[3]/Math.max(1,_paths.length))*0.20;
+      hl.setAttribute("x",d.cx);hl.setAttribute("y",d.cy);hl.setAttribute("font-size",_hf.toFixed(1));hl.setAttribute("stroke-width",(_hf*0.22).toFixed(1));hl.textContent=d.sl;hl.style.opacity="1";};
     p.onmouseleave=()=>{p.style.stroke="#fff";p.style.strokeWidth=".7";tip.style.opacity="0";hl.style.opacity="0";};});
   area.onmousemove=e=>{const b=area.getBoundingClientRect();let x=e.clientX-b.left,y=e.clientY-b.top;
     let tx=x+14,ty=y+14;if(tx>b.width-176)tx-=190;if(ty>b.height-96)ty-=104;tip.style.left=tx+"px";tip.style.top=ty+"px";};
@@ -1863,10 +1843,28 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kfont
 .stage.on{background:#FBEEED;color:var(--up);border-color:#E7C9C5}
 .stage small{display:block;font-size:9.5px;font-weight:600;color:var(--muted);margin-top:1px}
 .stage.on small{color:#B07A75}
-.cyc-read{font-size:12px;color:var(--muted);line-height:1.5}.cyc-read b{color:var(--ink)}
+.cyc-read{font-size:11px;color:var(--muted);line-height:1.5;margin-top:9px;padding-top:8px;border-top:1px solid var(--line)}.cyc-read b{color:var(--ink)}
+.cyc-why{margin-top:10px}
+.why-lab{font-size:9.5px;font-weight:700;color:var(--sage2);margin-bottom:6px}
+.why-chips{display:flex;flex-wrap:wrap;gap:6px}
+.why-chip{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;border:1px solid var(--line);background:var(--card)}
+.why-chip.up{color:var(--up)}.why-chip.dn{color:var(--dn)}.why-chip.fl{color:var(--muted)}
+.why-summ{font-size:10.5px;color:var(--muted);margin-top:8px;line-height:1.55}
+.why-summ b{font-weight:800;color:var(--ink)}.why-summ b.up{color:var(--up)}.why-summ b.dn{color:var(--dn)}
+.cyc-gauge{margin-top:11px}
+.cg-lab{font-size:9.5px;font-weight:700;color:var(--sage2);margin-bottom:7px}
+.cg-wrap{position:relative}
+.cg-track{display:flex;height:9px;border-radius:5px;overflow:hidden}
+.cg-zone{height:100%}
+.cg-needle{position:absolute;top:-3px;width:2.5px;height:15px;background:var(--ink);border-radius:2px;transform:translateX(-50%);box-shadow:0 0 0 2px var(--card)}
+.cg-ticks{position:relative;height:12px;margin-top:3px}
+.cg-ticks span{position:absolute;font-size:8.5px;font-weight:700;color:var(--muted);transform:translateX(-50%);white-space:nowrap}
+.cg-zlab{position:relative;height:13px;margin-top:0}
+.cg-zlab span{position:absolute;transform:translateX(-50%);font-size:9px;font-weight:700;color:var(--muted);white-space:nowrap}
+.cg-zlab span.on{color:var(--ink)}
 .sec{font-size:11.5px;font-weight:700;letter-spacing:.04em;color:var(--muted);text-transform:uppercase;margin:18px 2px 11px;display:flex;align-items:center;gap:9px}
 .sec::after{content:"";flex:1;height:1px;background:var(--line)}
-.core{display:grid;grid-template-columns:repeat(3,1fr);gap:11px}
+.core{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
 .cc{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px 14px 11px;transition:border-color .15s,transform .15s,box-shadow .15s}
 .cc:hover{border-color:var(--sage);transform:translateY(-1px);box-shadow:0 6px 16px rgba(52,53,47,.07)}
 .cc-top{display:flex;align-items:center;justify-content:space-between;gap:6px}
@@ -1874,6 +1872,12 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kfont
 .cc-val{font-size:23px;font-weight:800;letter-spacing:-.02em;margin:7px 0 2px}
 .cc-val .u{font-size:12px;font-weight:600;color:var(--muted);margin-left:2px}
 .cc-val .cc-bl{font-size:9.5px;color:var(--muted);font-weight:700;margin-left:6px}
+.dchip{display:inline-flex;align-items:baseline;gap:3px;font-size:11px;font-weight:800;padding:2px 7px;border-radius:7px;margin-left:7px;vertical-align:2px}
+.dchip.up{color:var(--up);background:var(--upT)}.dchip.dn{color:var(--dn);background:var(--dnT)}.dchip.fl{color:var(--muted);background:#F1F2EC}
+.dchip .lab{font-weight:600;font-size:9px;opacity:.85}
+.r-d{display:block;font-size:9.5px;font-weight:800;margin-top:1px}
+.r-d.up{color:var(--up)}.r-d.dn{color:var(--dn)}.r-d.fl{color:var(--muted)}
+.r-d .lab{color:var(--muted);font-weight:600;font-size:8.5px;margin-left:2px}
 .cc-interp{font-size:11px;color:var(--muted);line-height:1.5;margin-top:7px}
 .mini{width:100%;height:auto;display:block;margin:7px 0 2px;overflow:visible}
 .mc-ax{font-size:9px;fill:var(--muted)}
@@ -1885,14 +1889,34 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kfont
 .glab{font-size:12px;font-weight:800;color:var(--sage2);margin:0 2px 8px;display:flex;align-items:baseline;gap:7px}
 .glab em{font-style:normal;font-size:11px;font-weight:600;color:var(--muted)}
 .rows{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
-.row{display:grid;grid-template-columns:1.55fr 78px 1fr 86px;align-items:center;gap:10px;padding:9px 13px;border-bottom:1px solid var(--line)}
+.row{display:grid;grid-template-columns:1.5fr 90px 1fr 78px;align-items:center;gap:10px;padding:9px 13px;border-bottom:1px solid var(--line)}
 .row:last-child{border-bottom:none}
 .row.pend{background:var(--sum)}
 .r-name{font-size:12.5px;font-weight:700;color:var(--ink)}
 .r-name small{display:block;font-size:10px;font-weight:500;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .r-val{font-size:13px;font-weight:800;text-align:right}.r-val .u{font-size:10px;color:var(--muted);font-weight:600;margin-left:1px}
-.r-spark{width:100%;height:22px;display:block}
+.r-spark{width:100%;height:36px;display:block}
+.r-mid{display:block;min-width:0}
+.ig{margin-top:9px}
+.ig-lab{display:flex;justify-content:space-between;align-items:baseline;font-size:9.5px;color:var(--muted);margin-bottom:3px}
+.ig-lab b{color:var(--ink);font-weight:800;font-size:10px}
+.ig-track{position:relative;height:7px;background:#EFF0EA;border-radius:4px}
+.ig-1y{position:absolute;top:0;bottom:0;background:#D6DFD3;border-radius:4px}
+.ig-base{position:absolute;top:-2px;bottom:-2px;width:1.5px;background:#B9BBB0}
+.ig-mk{position:absolute;top:50%;width:11px;height:11px;border-radius:50%;border:2px solid #fff;transform:translate(-50%,-50%);box-shadow:0 0 0 1px rgba(52,53,47,.08)}
+.ig-ends{display:flex;justify-content:space-between;font-size:8.5px;color:#B7B8B0;margin-top:2px;font-weight:600}
+.rg{margin-top:4px;padding:0 1px}
+.rg-track{position:relative;height:5px;background:#EFF0EA;border-radius:3px}
+.rg-1y{position:absolute;top:0;bottom:0;background:#D6DFD3;border-radius:3px}
+.rg-base{position:absolute;top:-1px;bottom:-1px;width:1.5px;background:#C2C4B9}
+.rg-mk{position:absolute;top:50%;width:8px;height:8px;border-radius:50%;border:1.5px solid #fff;transform:translate(-50%,-50%)}
+.rsig{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.rg-pct{font-size:8.5px;color:var(--muted);font-weight:700;white-space:nowrap}
 .pend-tag{display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--muted);background:#fff;border:1px dashed var(--line2);padding:3px 8px;border-radius:7px}
+.row.pend.chk{background:#FCF7EC}
+.chk-tag{display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#9A7B43;background:#FBF5E6;border:1px solid #E7D8B4;padding:3px 8px;border-radius:7px}
+.cc.cc-miss{border-style:dashed;background:var(--sum)}
+.cc.cc-miss .cc-val{color:var(--muted);font-weight:700}
 .foot{font-size:11px;color:var(--muted);margin:14px 2px 2px;line-height:1.5}
 .price{display:grid;grid-template-columns:repeat(2,1fr);gap:11px}
 .pc{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px 15px 11px}
@@ -1904,12 +1928,17 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kfont
 .pc-val .lab{font-size:10px;font-weight:800;color:var(--sage2);background:#EEF3EF;border-radius:5px;padding:1px 5px;margin-left:7px;vertical-align:middle}
 .pc-mean{font-size:11.5px;color:var(--muted);font-weight:600}
 .pc-mean b{color:var(--ink);font-weight:800}
-@media(max-width:680px){.core{grid-template-columns:1fr}.row{grid-template-columns:1.4fr 64px 80px}.r-spark{display:none}.price{grid-template-columns:1fr}}
+.pc-mom{font-size:10.5px;font-weight:800;margin:0 0 2px}
+.pc-mom.up{color:var(--up)}.pc-mom.dn{color:var(--dn)}.pc-mom.fl{color:var(--muted)}
+.pc-mom small{font-weight:600;color:var(--muted);font-size:9px;margin-left:2px}
+@media(max-width:680px){.core{grid-template-columns:1fr}.row{grid-template-columns:1.3fr 96px 74px}.r-mid{display:none}.price{grid-template-columns:1fr}}
 </style></head><body><div class="box">
   <div class="cycle">
     <div class="cyc-top"><span class="t">부동산 사이클 위치</span>
       <span class="now">선행·심리 종합 → 현재 <b id="nowStage"></b></span></div>
     <div class="stages" id="stages"></div>
+    <div class="cyc-why" id="cycWhy"></div>
+    <div class="cyc-gauge" id="cycGauge"></div>
     <div class="cyc-read" id="cycRead"></div>
   </div>
   <div class="sec" id="priceSec" style="display:none">현재 아파트 매매가격</div>
@@ -1926,7 +1955,7 @@ const PRICE=__PRICE__;
 const ASOF=new Date("__ASOF__T00:00:00");
 const MON=["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
 const GORDER=["lead","coin","supply","fund"];
-const CORE=["buy","outlook","rate"];
+const CORE=["buy","outlook"];
 function byK(k){return IND.find(d=>d.k===k);}
 function makeSeries(m){const step=m.cad==="month"?30:7;
  const need=Math.min(m.real.length,Math.round(365/step)+1);
@@ -1963,61 +1992,139 @@ function miniChart(m,pts){const W=280,H=64,P={l:4,r:6,t:8,b:17};
   +'<path d="'+area+'" fill="'+m.col+'" opacity="0.10"/>'+bl+ax
   +'<path d="'+path+'" fill="none" stroke="'+m.col+'" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"/>'
   +tk+'</svg>';}
-function sparkSVG(m,pts){const W=200,H=22,P=2;const xs=i=>i/(pts.length-1)*W;
- const vv=pts.map(p=>p.v);let lo=Math.min.apply(null,vv),hi=Math.max.apply(null,vv);const sp=(hi-lo)||1;
- const ys=v=>P+(1-(v-lo)/sp)*(H-2*P);
+function deltaOf(m){const r=m.real||[];if(r.length<2)return null;
+ const d=r[r.length-1]-r[r.length-2],b=Math.abs(m.base||0),a=Math.abs(d);
+ const s=b>=1000?Math.round(a).toLocaleString():b<10?(Math.round(a*100)/100).toFixed(2):(Math.round(a*10)/10).toFixed(1);
+ const cls=a<1e-9?"fl":d>0?"up":"dn";
+ return {cls,abs:s,signed:(d>0?"+":d<0?"−":"±")+s,lab:m.cad==="month"?"전월":"전주"};}
+function arrowD(c){return c==="up"?"▲":c==="dn"?"▼":"±";}
+function sparkSVG(m,pts){const W=200,H=38,P={l:3,r:3,t:3,b:13};
+ const xs=i=>P.l+(pts.length<=1?0:i/(pts.length-1)*(W-P.l-P.r));
+ const vv=pts.map(p=>p.v);let lo=Math.min.apply(null,vv),hi=Math.max.apply(null,vv);
+ const sp=(hi-lo)||1,pd=sp*0.14,y0=lo-pd,y1=hi+pd;
+ const ys=v=>P.t+(1-(v-y0)/((y1-y0)||1))*(H-P.t-P.b);
  const path=pts.map((p,i)=>(i?"L":"M")+xs(i).toFixed(1)+" "+ys(p.v).toFixed(1)).join(" ");
- return '<svg class="r-spark" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'
-  +'<path d="'+path+'" fill="none" stroke="'+m.col+'" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/></svg>';}
-function coreCard(m){const pts=makeSeries(m);const s=signal(m,pts);
+ const ax='<line x1="'+P.l+'" y1="'+(H-P.b)+'" x2="'+(W-P.r)+'" y2="'+(H-P.b)+'" stroke="var(--line2)" stroke-width="1"/>';
+ let tks=monthTicks(pts);
+ if(tks.length>3)tks=[tks[0],tks[Math.floor((tks.length-1)/2)],tks[tks.length-1]];
+ const tk=tks.map(function(t,j){const x=xs(t.i),an=j===0?"start":j===tks.length-1?"end":"middle";
+   return '<line x1="'+x.toFixed(1)+'" x2="'+x.toFixed(1)+'" y1="'+(H-P.b)+'" y2="'+(H-P.b+2.5)+'" stroke="#C9CBC2"/>'
+    +'<text class="mc-ax" x="'+x.toFixed(1)+'" y="'+(H-2)+'" text-anchor="'+an+'">'+MON[t.mo]+'</text>';}).join("");
+ return '<svg class="r-spark" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet">'
+  +ax+'<path d="'+path+'" fill="none" stroke="'+m.col+'" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/>'+tk+'</svg>';}
+function gaugeOf(m){const r=m.real||[];if(r.length<3)return null;
+ const lo=Math.min.apply(null,r),hi=Math.max.apply(null,r);if(hi-lo<1e-9)return null;
+ const cur=r[r.length-1],pos=Math.max(0,Math.min(1,(cur-lo)/(hi-lo)));
+ const yr=makeSeries(m).map(p=>p.v),ylo=Math.min.apply(null,yr),yhi=Math.max.apply(null,yr);
+ const top=Math.round((1-pos)*100);
+ const tag=pos>=0.99?"전 기간 최고":pos<=0.01?"전 기간 최저":"상위 "+top+"%";
+ const baseP=(m.baseline!=null&&m.baseline>=lo&&m.baseline<=hi)?((m.baseline-lo)/(hi-lo))*100:null;
+ return {lo,hi,pos:pos*100,tag,baseP,y1l:((ylo-lo)/(hi-lo))*100,y1r:((hi-yhi)/(hi-lo))*100};}
+function gaugeHTML(m,g){const base=g.baseP!=null?'<div class="ig-base" style="left:'+g.baseP.toFixed(1)+'%"></div>':'';
+ return '<div class="ig"><div class="ig-lab"><span>수위 <b>'+g.tag+'</b></span><span>전 기간 범위</span></div>'
+  +'<div class="ig-track"><div class="ig-1y" style="left:'+g.y1l.toFixed(1)+'%;right:'+g.y1r.toFixed(1)+'%"></div>'
+  +base+'<div class="ig-mk" style="left:'+g.pos.toFixed(1)+'%;background:'+m.col+'"></div></div>'
+  +'<div class="ig-ends"><span>'+fmtV(m,g.lo)+'</span><span>'+fmtV(m,g.hi)+'</span></div></div>';}
+function rowGauge(m,g){const base=g.baseP!=null?'<div class="rg-base" style="left:'+g.baseP.toFixed(1)+'%"></div>':'';
+ return '<div class="rg"><div class="rg-track"><div class="rg-1y" style="left:'+g.y1l.toFixed(1)+'%;right:'+g.y1r.toFixed(1)+'%"></div>'
+  +base+'<div class="rg-mk" style="left:'+g.pos.toFixed(1)+'%;background:'+m.col+'"></div></div></div>';}
+function coreCard(m){const pts=makeSeries(m);const s=signal(m,pts);const d=deltaOf(m);const g=gaugeOf(m);
  const bl=m.baseline!=null?'<span class="cc-bl">기준 '+m.baseline+'</span>':'';
  const inv=m.inv?'<span class="inv">역행</span>':'';
+ const dc=d?'<span class="dchip '+d.cls+'">'+arrowD(d.cls)+' '+d.abs+'<span class="lab">'+d.lab+'</span></span>':'';
  return '<div class="cc"><div class="cc-top"><span class="cc-name">'+m.lab+'</span>'
   +'<span class="sig '+s.cls+'">'+arrow(s.cls)+' '+s.txt+inv+'</span></div>'
-  +'<div class="cc-val">'+fmtV(m,m.base)+'<span class="u">'+m.unit+'</span>'+bl+'</div>'
-  +miniChart(m,pts)+'<div class="cc-interp">'+m.interp+'</div></div>';}
-function rowHTML(m){const pts=makeSeries(m);const s=signal(m,pts);
+  +'<div class="cc-val">'+fmtV(m,m.base)+'<span class="u">'+m.unit+'</span>'+bl+dc+'</div>'
+  +miniChart(m,pts)+(g?gaugeHTML(m,g):'')+'<div class="cc-interp">'+m.interp+'</div></div>';}
+function rowHTML(m){const pts=makeSeries(m);const s=signal(m,pts);const d=deltaOf(m);const g=gaugeOf(m);
+ const dr=d?'<span class="r-d '+d.cls+'">'+d.signed+'<span class="lab">'+d.lab+'</span></span>':'';
+ const pct=g?'<span class="rg-pct">'+g.tag+'</span>':'';
  return '<div class="row"><span class="r-name">'+m.lab+'<small>'+m.sub+'</small></span>'
-  +'<span class="r-val">'+fmtV(m,m.base)+'<span class="u">'+m.unit+'</span></span>'
-  +sparkSVG(m,pts)
-  +'<span class="sig sm '+s.cls+'">'+arrow(s.cls)+' '+shortTxt(s.cls)+'</span></div>';}
-function pendRow(p){return '<div class="row pend"><span class="r-name">'+p.lab+'<small>'+p.note+'</small></span>'
-  +'<span class="r-val">—</span><span></span><span class="pend-tag">연결예정</span></div>';}
+  +'<span class="r-val">'+fmtV(m,m.base)+'<span class="u">'+m.unit+'</span>'+dr+'</span>'
+  +'<span class="r-mid">'+sparkSVG(m,pts)+(g?rowGauge(m,g):'')+'</span>'
+  +'<span class="rsig"><span class="sig sm '+s.cls+'">'+arrow(s.cls)+' '+shortTxt(s.cls)+'</span>'+pct+'</span></div>';}
+function pendRow(p){const chk=(p.st==="check");
+ return '<div class="row pend'+(chk?" chk":"")+'"><span class="r-name">'+p.lab+'<small>'+p.note+'</small></span>'
+  +'<span class="r-val">—</span><span></span><span class="'+(chk?"chk-tag":"pend-tag")+'">'+(chk?"점검 필요":"연결예정")+'</span></div>';}
+const CORELAB={buy:"매수우위지수",outlook:"매매가격전망지수"};
+function coreMissCard(k){return '<div class="cc cc-miss"><div class="cc-top"><span class="cc-name">'+(CORELAB[k]||k)+'</span>'
+ +'<span class="chk-tag">점검 필요</span></div><div class="cc-val">—</div>'
+ +'<div class="cc-interp">소스 수집 실패 — 데이터가 들어오면 자동으로 채워집니다.</div></div>';}
 function renderCore(){const host=document.getElementById("core");
- const cards=CORE.map(byK).filter(Boolean).map(coreCard);
- host.innerHTML=cards.length?cards.join(""):'<div class="cc-interp" style="padding:8px 2px">핵심 지표 수집 전 — 07:00 자동 수집 후 표시됩니다.</div>';}
+ host.innerHTML=CORE.map(function(k){const m=byK(k);return m?coreCard(m):coreMissCard(k);}).join("");}
 function renderGroups(){let html="";
- for(const gk of GORDER){const ms=IND.filter(m=>m.g===gk&&CORE.indexOf(m.k)<0);const ps=PEND.filter(p=>p.g===gk);
+ for(const gk of GORDER){const ms=IND.filter(m=>m.g===gk&&CORE.indexOf(m.k)<0);const ps=PEND.filter(p=>p.g===gk&&CORE.indexOf(p.k)<0);
   if(!ms.length&&!ps.length)continue;
   html+='<div class="grp"><div class="glab">'+G[gk].name+' <em>'+G[gk].desc+'</em></div>'
    +'<div class="rows">'+ms.map(rowHTML).join("")+ps.map(pendRow).join("")+'</div></div>';}
  document.getElementById("groups").innerHTML=html;}
+function priceDelta(arr){if(!arr||arr.length<2)return null;
+ const cur=arr[arr.length-1],prev=arr[arr.length-2],d=cur-prev;if(!prev)return null;
+ const pct=d/prev*100,cls=Math.abs(pct)<0.05?"fl":pct>0?"up":"dn";
+ return {cls,pct:(pct>0?"+":pct<0?"−":"±")+Math.abs(pct).toFixed(1),amt:(d>0?"+":d<0?"−":"±")+Math.abs(d).toFixed(2)};}
 function priceCard(p){const med=p.med||[],mean=p.mean||[];
  const lastMed=med.length?med[med.length-1]:null;
  const lastMean=mean.length?mean[mean.length-1]:null;
  const m={col:"#7E9A83",baseline:null,base:lastMed,unit:"억",cad:"month",real:med.length?med:mean};
- const pts=makeSeries(m);
+ const pts=makeSeries(m);const dm=priceDelta(med.length?med:mean);
  let big="";
  if(lastMed!=null)big='<div class="pc-val">'+lastMed.toFixed(1)+'<span class="u">억</span><span class="lab">중위</span></div>';
  else if(lastMean!=null)big='<div class="pc-val">'+lastMean.toFixed(1)+'<span class="u">억</span><span class="lab">평균</span></div>';
+ const mom=dm?'<div class="pc-mom '+dm.cls+'">전월 '+arrow(dm.cls)+' '+dm.pct+'%<small>'+dm.amt+'억</small></div>':'';
  const meanLine=(lastMean!=null&&lastMed!=null)?'<div class="pc-mean">평균 <b>'+lastMean.toFixed(1)+'억</b></div>':'';
  const chart=pts.length>1?miniChart(m,pts):'';
  return '<div class="pc"><div class="pc-top"><span class="pc-reg">'+p.lab+'</span>'
-  +'<span class="pc-tag">아파트 매매 · 월간(KB)</span></div>'+big+meanLine+chart+'</div>';}
+  +'<span class="pc-tag">아파트 매매 · 월간(KB)</span></div>'+big+mom+meanLine+chart+'</div>';}
 function renderPrice(){if(!PRICE||!PRICE.length)return;
  document.getElementById("price").innerHTML=PRICE.map(priceCard).join("");
  document.getElementById("priceSec").style.display="";}
 function renderCycle(){const order=["침체기","회복기","상승기","둔화기"];
  const subs={"침체기":"가격↓ 거래↓","회복기":"심리·거래 반등","상승기":"가격·심리 강세","둔화기":"상승폭 축소"};
- const lead=IND.filter(m=>m.g==="lead"||m.k==="jsup");let cur="회복기";
- if(lead.length){let sc=0;lead.forEach(m=>sc+=signal(m,makeSeries(m)).score);sc/=lead.length;
-  cur=sc>0.05?"상승기":sc>0.0?"회복기":sc>-0.05?"둔화기":"침체기";}
+ const lead=IND.filter(m=>m.g==="lead"||m.k==="jsup");
+ const CYCSHORT={buy:"매수우위",outlook:"매매전망",lead50:"선도50",jsup:"전세수급"};
+ function cycScore(mb){let sc=0,n=0;lead.forEach(function(m){const r=m.real||[];const off=mb*(m.cad==="month"?1:4);
+   if(r.length>off+2){const mm=Object.assign({},m,{real:off?r.slice(0,r.length-off):r});sc+=signal(mm,makeSeries(mm)).score;n++;}});
+  return n?sc/n:0;}
+ const sc=cycScore(0);
+ let cur=lead.length?(sc>0.05?"상승기":sc>0.0?"회복기":sc>-0.05?"둔화기":"침체기"):"회복기";
  document.getElementById("nowStage").textContent=cur;
  document.getElementById("stages").innerHTML=order.map(s=>'<div class="stage '+(s===cur?"on":"")+'">'+s+'<small>'+subs[s]+'</small></div>').join("");
- document.getElementById("cycRead").innerHTML='선행지표(매수우위·전망·선도50)와 전세수급을 종합해 <b>'+cur+'</b>로 판정. 국면 전환은 매수우위·전망지수가 기준 100을 위아래로 넘을 때 먼저 신호가 나와요.';}
-function renderFoot(){const n=PEND.length;
- document.getElementById("foot").innerHTML='미니차트는 최근 1년(가로축 월 단위) · 카드별 신호는 역행지표 자동 반전'
-  +(n?(' · 연결예정 '+n+'종('+PEND.map(p=>p.lab).join("·")+')'):"");}
+ // 판정 근거 — 기여 칩 + 종합 강도/추세
+ const sigs=lead.map(function(m){return {k:m.k,nm:CYCSHORT[m.k]||m.lab,c:signal(m,makeSeries(m)).cls};});
+ const chips=sigs.map(function(x){return '<span class="why-chip '+x.c+'">'+arrow(x.c)+' '+x.nm+'</span>';}).join("");
+ const ups=sigs.filter(x=>x.c==="up").length,dns=sigs.filter(x=>x.c==="dn").length;
+ let mix;if(lead.length&&ups===lead.length)mix='모두 <b class="up">상승 기여</b>';
+  else if(lead.length&&dns===lead.length)mix='모두 <b class="dn">하락 기여</b>';
+  else mix=ups+'개 <b class="up">상승</b> · '+dns+'개 <b class="dn">하락</b>'+((lead.length-ups-dns)?' · '+(lead.length-ups-dns)+'개 보합':'');
+ const dlt=sc-cycScore(1);
+ const traj=Math.abs(dlt)<0.005?'<b>유지</b>':(dlt>0?'<b class="up">강화 ↗</b>':'<b class="dn">약화 ↘</b>');
+ const scStr=(sc>=0?"+":"−")+Math.abs(sc).toFixed(2);
+ document.getElementById("cycWhy").innerHTML='<div class="why-lab">판정 근거 — 선행·심리 '+lead.length+'지표</div>'
+  +'<div class="why-chips">'+chips+'</div>'
+  +'<div class="why-summ">'+mix+' → 종합 강도 <b>'+scStr+'</b> · 직전 대비 '+traj+'</div>';
+ // 종합 강도 위치 게이지(임계 −.05 / 0 / +.05 표시 + needle)
+ function stageOf(s){return s>0.05?"상승기":s>0?"회복기":s>-0.05?"둔화기":"침체기";}
+ const Z=[["침체기","침체","#5A7CA0",0,33.33],["둔화기","둔화","#A9C0DA",33.33,50],
+          ["회복기","회복","#E9BDB8",50,66.67],["상승기","상승","#C16C64",66.67,100]];
+ const glo=-0.15,ghi=0.15,nx=Math.max(0,Math.min(100,(sc-glo)/(ghi-glo)*100));
+ const zoneDivs=Z.map(z=>'<div class="cg-zone" style="width:'+(z[4]-z[3]).toFixed(2)+'%;background:'+z[2]+'"></div>').join("");
+ const ticks='<span style="left:33.33%">−.05</span><span style="left:50%">0</span><span style="left:66.67%">+.05</span>';
+ const zlabs=Z.map(z=>'<span class="'+(z[0]===cur?"on":"")+'" style="left:'+((z[3]+z[4])/2).toFixed(2)+'%">'+z[1]+'</span>').join("");
+ document.getElementById("cycGauge").innerHTML=
+   '<div class="cg-lab">종합 강도 위치 — 임계 ±0.05 기준 국면 판정</div>'
+   +'<div class="cg-wrap"><div class="cg-track">'+zoneDivs+'</div><div class="cg-needle" style="left:'+nx.toFixed(1)+'%"></div></div>'
+   +'<div class="cg-ticks">'+ticks+'</div><div class="cg-zlab">'+zlabs+'</div>';
+ // 현재 국면 지속 개월수 + 직전 국면(궤적)
+ let hold=0,prev=cur;
+ for(let mb=1;mb<=24;mb++){const ps=cycScore(mb);const st=stageOf(ps);if(st!==cur){prev=st;break;}hold=mb;}
+ const trajLine=hold>0
+   ?'현재 <b>'+cur+'</b> '+(hold+1)+'개월차'+(prev!==cur?'(직전 '+prev+'에서 전환)':'')+'. '
+   :'현재 <b>'+cur+'</b>. ';
+ document.getElementById("cycRead").innerHTML=trajLine+'국면 전환은 매수우위·전망지수가 기준 100을 위아래로 넘을 때 먼저 신호가 나와요.';}
+function renderFoot(){const soon=PEND.filter(p=>p.st==="soon");
+ let s='미니차트는 최근 1년(가로축 월 단위)';
+ if(soon.length)s+=' · 연결예정 '+soon.length+'종('+soon.map(p=>p.lab).join("·")+')';
+ document.getElementById("foot").innerHTML=s;}
 renderCycle();renderPrice();renderCore();renderGroups();renderFoot();
 (function(){function _fit(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;if(window.frameElement){window.frameElement.style.height=h+"px";window.frameElement.setAttribute("height",h);}}catch(e){}}window.addEventListener("load",_fit);setTimeout(_fit,150);setTimeout(_fit,600);setTimeout(_fit,1500);window.addEventListener("resize",_fit);try{new ResizeObserver(_fit).observe(document.body);}catch(e){}})();
 </script></body></html>'''
@@ -2044,9 +2151,9 @@ def _indicators_v2_payload(data):
             "interp": meta["interp"], "base": round(series[-1], 2),
             "real": [round(v, 2) for v in series],
         })
-    # 연결예정 슬롯은 '아직 수집 안 된' 것만 표시(실데이터가 들어오면 자동으로 라이브 전환).
+    # pend 슬롯 = 연결예정(소스 자체 미연결). 라이브에 들어오면 자동으로 라이브 전환.
     live_keys = {d["k"] for d in ind}
-    pend = [p for p in _INDV2_PENDING if p["k"] not in live_keys]
+    pend = [{**p, "st": "soon"} for p in _INDV2_PENDING if p["k"] not in live_keys]
     return ind, pend
 
 
@@ -2092,25 +2199,25 @@ def _render_indicator_charts(data):
         return
     asof = date.today().strftime("%Y-%m-%d")
     price = _price_block_payload(data)
-    # 새 레이아웃 기준 높이 산정(클리핑 방지) — 헤더 + (가격블록) + 핵심3 + 그룹 행들.
-    _CORE = ("buy", "outlook", "rate")
-    core_n = sum(1 for m in ind if m["k"] in _CORE)
+    # 새 레이아웃 기준 높이 산정(클리핑 방지) — 헤더 + (가격블록) + 핵심 + 그룹 행들.
+    _CORE = _INDV2_CORE
+    core_n = len(_CORE)   # 핵심 카드(매수우위·매매전망)
     row_groups = {m["g"] for m in ind if m["k"] not in _CORE} | {p["g"] for p in pend}
     row_n = sum(1 for m in ind if m["k"] not in _CORE) + len(pend)
-    height = (170                      # 사이클 헤더
+    height = (300                      # 사이클 헤더 + 판정 근거 + 강도 게이지
               + (60 + len(price) * 210 if price else 0)  # 현재 매매가격 블록(모바일 적층 여유)
-              + 70                      # 핵심3 섹션 라벨
-              + ceil(max(core_n, 1) / 3) * 250   # 핵심3 카드(미니차트 포함)
+              + 70                      # 핵심 섹션 라벨
+              + ceil(max(core_n, 1) / 3) * 292   # 핵심 카드(미니차트+수위게이지)
               + 50                      # 그룹 섹션 라벨
               + len(row_groups) * 38    # 그룹 헤더들
-              + row_n * 50              # 행들
+              + row_n * 72              # 행들(스파크 시점축·Δ·수위게이지)
               + 80)                     # 푸터 여유
     components.html(_indicator_chart_component(ind, pend, price, asof),
                     height=height, scrolling=False)
-    src = ("KB·KOSIS·ECOS 실데이터" if live
+    src = ("KB 실데이터" if live
            else "샘플(엔진 수집 전 — 07:00 자동 수집 후 실데이터로 교체)")
-    st.caption("핵심 3(매수우위·매매전망·금리) 강조 + 선행/동행/수급·심리/펀더멘털 그룹 · "
-               f"미니차트 최근 1년(월 단위 축) · 역행지표 자동 반전 · {src}")
+    st.caption("핵심(매수우위·매매전망) + 선행/동행/수급·심리 그룹 · "
+               f"미니차트 최근 1년(월 단위 축) · {src}")
 
 
 def _render_indicators(cards=None):
@@ -2806,24 +2913,22 @@ def render_realestate():
     # st.tabs를 가장 먼저 만든다. 부동산 전용 CSS(_RE_CSS)는 별도 markdown
     # 블록으로 두면 그 블록이 세로 간격을 한 칸 더 먹어 증시보다 벌어지므로,
     # 첫 패널(지도)의 accent-bar와 한 블록으로 합쳐 주입한다(간격 일치).
-    t_map, t_ind, t_anom, t_sub, t_kw = st.tabs(
-        ["지도", "지표", "주목단지", "분양", "키워드"])
+    t_ind, t_map, t_anom, t_sub, t_kw = st.tabs(
+        ["지표", "지도", "주목단지", "분양", "키워드"])
 
-    with t_map:
+    with t_ind:
         st.markdown(_RE_CSS + '<div class="accent-bar"></div>',
                     unsafe_allow_html=True)
+        st.title("부동산 시장 지표")
+        _render_indicator_charts(_resolved_indicator_series())
+
+    with t_map:
+        st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
         st.title("수도권·광역시 아파트 가격지도")
         _render_collect_controls()
         _render_watchlist_band()
         _render_streak_section()
         _render_map()
-
-    with t_ind:
-        st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
-        st.title("부동산 시장 지표")
-        st.caption("사이클 위치 · 선행/동행/수급·심리/펀더멘털 그룹 · 카드별 신호·해석 · "
-                   "기능별/신호강도순 토글")
-        _render_indicator_charts(_resolved_indicator_series())
 
     with t_anom:
         st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
