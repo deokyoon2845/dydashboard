@@ -22,6 +22,7 @@ import html
 import altair as alt
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
  
 from modules.stocks import naver_stock_url, naver_stock_page_url, naver_n_icon
 from modules.ui import tab_header
@@ -37,6 +38,15 @@ MATRIX_HEIGHT = 600        # 매트릭스 높이(px) — 우측 리더보드 12�
 SECTOR_BARS = 10           # 섹터 강도 막대 개수
 CARDS_PER_SECTOR = 8       # 섹터 expander당 주도주 카드 수
 DETAIL_SECTORS = 6         # 보조(접힘) 섹터 상세 개수
+
+# ── 시간 레이어(어제 대비) 튜너블 ──
+HISTORY_DAYS = 4           # 과거 스냅샷 조회 일수(순위Δ·지속일·RRG 꼬리)
+RRG_K = 6.0                # 섹터 상대강도 표준화 스케일(100 중심)
+RRG_M = 1.8                # 섹터 모멘텀(상대강도 변화) 스케일
+RRG_TAIL = 3               # RRG 꼬리 최대 세그먼트(=점 4개)
+RRG_SECTORS = 12           # RRG에 찍을 상위 섹터 수
+HIGH_BREAK = 99.5          # 신고가 '돌파/경신' 판정 임계(52주 고점 대비 %)
+EVENT_EX = 3               # 이벤트 칩에 미리보기로 보여줄 종목 수
  
 # 게이트 폴백(구버전 payload에 is_leader가 없을 때 뷰어가 근사 판정) — '중'에 준함
 _FB_HIGH_MIN = 80.0
@@ -158,6 +168,24 @@ _CSS = """
   .ldr-lb-row .spk .ldr-spk-line{animation:none !important;stroke-dashoffset:0 !important;}
   .ldr-secbar .track>i{transform:none !important;}
 }
+
+/* ── 시간 레이어(어제 대비) ── */
+.ldr-evgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:2px 0 4px;}
+.ldr-ev{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:11px 14px;}
+.ldr-ev .h{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);font-weight:600;margin-bottom:3px;}
+.ldr-ev .h .ic{font-size:13px;line-height:1;}
+.ldr-ev .n{font-size:23px;font-weight:800;line-height:1.15;}
+.ldr-ev .ex{font-size:10.5px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ev-in{color:var(--sage-deep);} .ev-out{color:var(--down);} .ev-hi{color:var(--up);}
+.ldr-lb-row .dl{width:30px;flex:none;text-align:center;font-size:10.5px;font-weight:700;}
+.ldr-lb-row .stk{width:40px;flex:none;text-align:center;}
+.ldr-lb-row .stk span{font-size:9px;color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:1px 4px;white-space:nowrap;}
+.ldr-rk-up{color:var(--up);} .ldr-rk-dn{color:var(--down);} .ldr-rk-new{color:var(--sage-deep);font-weight:800;}
+.ldr-lb-row.t .nm{width:78px;} .ldr-lb-row.t .spk{width:62px;} .ldr-lb-row.t .spk svg{width:62px !important;}
+.ldr-lb-row.t .d1{width:50px;}
+.ldr-rrgnote{font-size:11px;color:var(--muted);line-height:1.7;margin-top:2px;}
+.ldr-secbar .dl{width:50px;flex:none;text-align:right;font-size:10.5px;font-weight:700;}
+.ldr-secbar .dl .up{color:var(--up);} .ldr-secbar .dl .dn{color:var(--down);} .ldr-secbar .dl .fl{color:var(--muted);}
 </style>
 """
  
@@ -301,9 +329,33 @@ def _stock_card_html(s):
     )
  
  
-def _leaderboard_compact(leaders, n=LEADERBOARD_N):
+def _rank_badge(d):
+    """순위 변화 배지. d = 어제순위 − 오늘순위(양수=상승). None=신규 진입."""
+    if d is None:
+        return '<span class="ldr-rk-new">NEW</span>'
+    if d > 0:
+        return f'<span class="ldr-rk-up">▲{d}</span>'
+    if d < 0:
+        return f'<span class="ldr-rk-dn">▼{-d}</span>'
+    return '<span style="color:var(--muted)">–</span>'
+
+
+def _streak_badge(days, capped):
+    """주도 지속일 배지(오늘 포함 연속 주도 일수). 윈도우 한계면 '+' 표기."""
+    if not days or days < 1:
+        return ''
+    return f'<span>D+{days}{"+" if capped else ""}</span>'
+
+
+def _leaderboard_compact(leaders, tl=None, n=LEADERBOARD_N):
+    rank_delta = (tl or {}).get("rank_delta") or {}
+    streak = (tl or {}).get("streak_days") or {}
+    capped = bool((tl or {}).get("streak_capped"))
+    has_time = bool(tl and tl.get("multi"))
+    rowcls = "ldr-lb-row t" if has_time else "ldr-lb-row"
     rows = ""
     for i, s in enumerate(leaders[:n]):
+        code = s.get("code")
         nm = html.escape(s.get("name", ""))
         url = html.escape(naver_stock_page_url(name=s.get("name", ""), code=s.get("code", "")))
         new = '<span class="ldr-new">N</span>' if s.get("is_new") else ""
@@ -311,10 +363,14 @@ def _leaderboard_compact(leaders, n=LEADERBOARD_N):
         up3 = (s.get("mom_3m") or 0) >= 0
         spc = "var(--up)" if up3 else "var(--down)"
         spark = _spark_svg(s.get("spark"), spc)
+        dl = f'<div class="dl">{_rank_badge(rank_delta.get(code))}</div>' if has_time else ""
+        stk = f'<div class="stk">{_streak_badge(streak.get(code), capped)}</div>' if has_time else ""
         rows += (
-            '<div class="ldr-lb-row">'
+            f'<div class="{rowcls}">'
             f'<div class="rk {rank_col}">{i+1}</div>'
+            f'{dl}'
             f'<div class="nm"><a href="{url}" target="_blank" rel="noopener">{nm}</a>{_nv_icon(s)}{new}</div>'
+            f'{stk}'
             f'<div class="spk">{spark}</div>'
             f'<div class="m3">{_pc(s.get("mom_3m"))}</div>'
             f'<div class="d1">{_d1(s.get("mom_1d"))}<div class="d1l">전일</div></div>'
@@ -438,6 +494,266 @@ def _render_sector_detail(rank, sec, leaders_by_upj):
         st.markdown(head + f'<div class="ldr-grid">{cards}</div>', unsafe_allow_html=True)
  
  
+# ── 시간 레이어(어제 대비): 순위 변화·주도 지속일·섹터 로테이션·이벤트 ──
+# 엔진을 다시 돌리지 않고, 이미 누적된 과거 스냅샷(db.load_leaders_history)만 읽어
+# Δ를 만든다. 추가 API·cron 0. 스냅샷이 1일뿐이면 비교정보는 비우고 graceful 폴백.
+
+def _day_leaders_sorted(payload):
+    ld = _leaders(payload.get("stocks") or [])
+    return sorted(ld, key=lambda x: (x.get("score") or 0), reverse=True)
+
+
+def _rs_map(payload):
+    """그날 섹터 점수를 횡단면 표준화 → {upjong: 상대강도(100 중심)}."""
+    secs = payload.get("sectors") or []
+    scores = [s.get("score") for s in secs if isinstance(s.get("score"), (int, float))]
+    if len(scores) < 2:
+        return {}
+    mean = sum(scores) / len(scores)
+    var = sum((x - mean) ** 2 for x in scores) / len(scores)
+    std = var ** 0.5 or 1.0
+    out = {}
+    for s in secs:
+        sc = s.get("score")
+        if isinstance(sc, (int, float)):
+            out[s.get("upjong")] = 100.0 + (sc - mean) / std * RRG_K
+    return out
+
+
+def _sector_rrg(days):
+    """days=[today, prev, ...] (최신순) → 섹터별 RRG 좌표·꼬리·Δ 리스트."""
+    if not days:
+        return []
+    chron = list(reversed(days))                  # 오래된→오늘
+    rs_series = [_rs_map(p) for p in chron]
+    today = days[0]
+    today_rs = rs_series[-1] if rs_series else {}
+    prev_score = {}
+    if len(days) > 1:
+        for s in (days[1].get("sectors") or []):
+            prev_score[s.get("upjong")] = s.get("score")
+    out = []
+    for s in (today.get("sectors") or [])[:RRG_SECTORS]:
+        u = s.get("upjong")
+        if u not in today_rs:
+            continue
+        series = [rmap.get(u) for rmap in rs_series]
+        pts = []
+        for i in range(len(series)):
+            if series[i] is None:
+                pts = []                          # 끊기면 현재까지 연속만 사용
+                continue
+            y = (100.0 + (series[i] - series[i - 1]) * RRG_M) \
+                if (i > 0 and series[i - 1] is not None) else None
+            pts.append((series[i], y))
+        usable = [(x, y) for (x, y) in pts if y is not None]
+        if not usable:                            # 점 하나(오늘)뿐이면 모멘텀 중립
+            usable = [(today_rs[u], 100.0)]
+        usable = usable[-(RRG_TAIL + 1):]
+        cur_x, cur_y = usable[-1]
+        dlt = None
+        ps, cs = prev_score.get(u), s.get("score")
+        if isinstance(ps, (int, float)) and isinstance(cs, (int, float)):
+            dlt = round(cs - ps, 1)
+        out.append({
+            "upjong": u, "group": s.get("group") or "기타",
+            "x": round(cur_x, 2), "y": round(cur_y, 2),
+            "tail": [(round(a, 2), round(b, 2)) for (a, b) in usable],
+            "score": cs, "dlt": dlt, "mom_1m": s.get("mom_1m"),
+            "breadth": s.get("breadth"),
+        })
+    return out
+
+
+def _time_layer(history):
+    """과거 스냅샷 비교 결과. history=[today, prev, ...] (최신순).
+       1일뿐이면 비교정보는 비고 streak=1로 채운다(graceful)."""
+    if not history:
+        return None
+    days = history
+    rank_by_day, set_by_day, smap_by_day = [], [], []
+    for p in days:
+        ld = _day_leaders_sorted(p)
+        rk = {s.get("code"): i + 1 for i, s in enumerate(ld) if s.get("code")}
+        rank_by_day.append(rk)
+        set_by_day.append(set(rk.keys()))
+        smap_by_day.append({s.get("code"): s for s in (p.get("stocks") or []) if s.get("code")})
+
+    today_rank = rank_by_day[0]
+    prev_rank = rank_by_day[1] if len(rank_by_day) > 1 else {}
+    rank_delta = {}
+    for code, r in today_rank.items():
+        pr = prev_rank.get(code)
+        rank_delta[code] = (pr - r) if pr is not None else None
+
+    streak_days = {}
+    for code in today_rank:
+        c = 0
+        for ds in set_by_day:
+            if code in ds:
+                c += 1
+            else:
+                break
+        streak_days[code] = c
+    streak_capped = len(days) >= 2 and any(v >= len(days) for v in streak_days.values())
+
+    today_set = set_by_day[0]
+    prev_set = set_by_day[1] if len(set_by_day) > 1 else set()
+    today_smap = smap_by_day[0]
+    prev_smap = smap_by_day[1] if len(smap_by_day) > 1 else {}
+    multi = len(days) > 1
+
+    entered = [today_smap[c] for c in (today_set - prev_set) if c in today_smap] if multi else []
+    exited = [prev_smap[c] for c in (prev_set - today_set) if c in prev_smap] if multi else []
+    broke = []
+    if multi:
+        for c in today_set:
+            s = today_smap.get(c)
+            if not s:
+                continue
+            hr = s.get("high_ratio")
+            if hr is None or hr < HIGH_BREAK:
+                continue
+            ps = prev_smap.get(c)
+            phr = ps.get("high_ratio") if ps else None
+            if phr is None or phr < HIGH_BREAK:
+                broke.append(s)
+
+    def _k(x):
+        return x.get("score") or 0
+    entered.sort(key=_k, reverse=True)
+    exited.sort(key=_k, reverse=True)
+    broke.sort(key=_k, reverse=True)
+
+    return {
+        "n_days": len(days), "multi": multi,
+        "rank_delta": rank_delta, "streak_days": streak_days, "streak_capped": streak_capped,
+        "entered": entered, "exited": exited, "broke_high": broke,
+        "sector_rrg": _sector_rrg(days),
+    }
+
+
+def _events_html(tl):
+    """오늘의 변화 칩(신규 주도 진입·이탈·52주 신고가 경신)."""
+    if not tl or not tl.get("multi"):
+        return None
+    ent, ext, brk = tl.get("entered") or [], tl.get("exited") or [], tl.get("broke_high") or []
+
+    def ex_names(lst):
+        names = [html.escape(x.get("name", "")) for x in lst[:EVENT_EX] if x.get("name")]
+        if not names:
+            return "—"
+        extra = len(lst) - len(names)
+        return " · ".join(names) + (f" 외 {extra}" if extra > 0 else "")
+
+    cells = [
+        ("신규 주도 진입", "ev-in", "▲", len(ent), ex_names(ent)),
+        ("주도 이탈", "ev-out", "▼", len(ext), ex_names(ext)),
+        ("52주 신고가 경신", "ev-hi", "●", len(brk), ex_names(brk)),
+    ]
+    chips = ""
+    for title, cls, ic, num, ex in cells:
+        chips += (
+            '<div class="ldr-ev">'
+            f'<div class="h"><span class="ic {cls}">{ic}</span>{title}</div>'
+            f'<div class="n {cls}">{num}</div>'
+            f'<div class="ex">{ex}</div>'
+            '</div>'
+        )
+    return f'<div class="ldr-evgrid">{chips}</div>'
+
+
+def _sector_bars_delta_html(sectors, leaders, tl):
+    """막대 + Δ: 기존 섹터 강도 막대 우측에 어제 대비 점수 Δ를 덧붙인다."""
+    if not sectors:
+        return '<div class="ldr-secwrap"><span class="ldr-sub">주도 섹터를 집계할 데이터가 부족해요.</span></div>'
+    dlt_by = {}
+    for r in ((tl or {}).get("sector_rrg") or []):
+        dlt_by[r.get("upjong")] = r.get("dlt")
+    lead_by_upj = {}
+    for s in leaders:
+        lead_by_upj[s.get("upjong")] = lead_by_upj.get(s.get("upjong"), 0) + 1
+    shown = sectors[:SECTOR_BARS]
+    maxsc = max((s.get("score") or 0) for s in shown) or 1
+    bars = ""
+    for s in shown:
+        upj = s.get("upjong", "")
+        sc = s.get("score") or 0
+        col = _heat_color(s.get("mom_1m"))
+        nlead = lead_by_upj.get(upj, 0)
+        lead_txt = f'<b>{nlead}</b>주도' if nlead else f'{s.get("n","")}종'
+        d = dlt_by.get(upj)
+        if d is None:
+            dl = '<div class="dl"><span class="fl">–</span></div>'
+        elif d > 0:
+            dl = f'<div class="dl"><span class="up">▲{d:g}</span></div>'
+        elif d < 0:
+            dl = f'<div class="dl"><span class="dn">▼{abs(d):g}</span></div>'
+        else:
+            dl = '<div class="dl"><span class="fl">0</span></div>'
+        bars += (
+            '<div class="ldr-secbar">'
+            f'<div class="lab" title="{html.escape(upj)}">{html.escape(upj)}</div>'
+            f'<div class="track"><i style="width:{sc/maxsc*100:.0f}%;background:{col}"></i></div>'
+            f'<div class="val"><b>{sc}</b> · 1M {_pc(s.get("mom_1m"))} · {lead_txt}</div>'
+            f'{dl}'
+            '</div>'
+        )
+    return f'<div class="ldr-secwrap"><div class="ldr-secgrid">{bars}</div></div>'
+
+
+def _rrg_components(rrg, n_days):
+    """섹터 로테이션 사분면(RRG)을 iframe SVG로 렌더(미니멀 미스트)."""
+    if not rrg:
+        st.caption("로테이션을 그릴 섹터 데이터가 부족해요.")
+        return
+    xs = [p["x"] for p in rrg] + [t[0] for p in rrg for t in p["tail"]]
+    ys = [p["y"] for p in rrg] + [t[1] for p in rrg for t in p["tail"]]
+    xmin, xmax = min(xs + [97.0]), max(xs + [103.0])
+    ymin, ymax = min(ys + [96.0]), max(ys + [104.0])
+    xpad = (xmax - xmin) * 0.14 + 0.5
+    ypad = (ymax - ymin) * 0.14 + 0.5
+    xmin -= xpad; xmax += xpad; ymin -= ypad; ymax += ypad
+    W, H, L, R, T, B = 660, 380, 60, 624, 26, 322
+
+    def px(x):
+        return L + (x - xmin) / (xmax - xmin) * (R - L)
+
+    def py(y):
+        return B - (y - ymin) / (ymax - ymin) * (B - T)
+
+    cx, cy = px(100.0), py(100.0)
+    s = [f'<svg viewBox="0 0 {W} {H}" width="100%" xmlns="http://www.w3.org/2000/svg">']
+    s.append(f'<rect x="{cx:.0f}" y="{T}" width="{R-cx:.0f}" height="{cy-T:.0f}" fill="#B65F5A" opacity="0.05"/>')
+    s.append(f'<rect x="{cx:.0f}" y="{cy:.0f}" width="{R-cx:.0f}" height="{B-cy:.0f}" fill="#C08A6A" opacity="0.05"/>')
+    s.append(f'<rect x="{L}" y="{cy:.0f}" width="{cx-L:.0f}" height="{B-cy:.0f}" fill="#5A7CA0" opacity="0.05"/>')
+    s.append(f'<rect x="{L}" y="{T}" width="{cx-L:.0f}" height="{cy-T:.0f}" fill="#7E9A83" opacity="0.06"/>')
+    s.append(f'<line x1="{cx:.0f}" y1="{T}" x2="{cx:.0f}" y2="{B}" stroke="#9a9b92" stroke-dasharray="4 4" opacity="0.55"/>')
+    s.append(f'<line x1="{L}" y1="{cy:.0f}" x2="{R}" y2="{cy:.0f}" stroke="#9a9b92" stroke-dasharray="4 4" opacity="0.55"/>')
+    s.append(f'<text x="{R-6}" y="{T+14}" text-anchor="end" font-size="11" fill="#B65F5A">선도</text>')
+    s.append(f'<text x="{R-6}" y="{B-7}" text-anchor="end" font-size="11" fill="#9A6E3A" opacity="0.85">약화</text>')
+    s.append(f'<text x="{L+6}" y="{B-7}" font-size="11" fill="#5A7CA0">후퇴</text>')
+    s.append(f'<text x="{L+6}" y="{T+14}" font-size="11" fill="#5E7A63">개선</text>')
+    s.append(f'<text x="{cx:.0f}" y="{B+17}" text-anchor="middle" font-size="10.5" fill="#9a9b92">상대강도 →</text>')
+    mid = (T + B) / 2
+    s.append(f'<text x="15" y="{mid:.0f}" font-size="10.5" fill="#9a9b92" transform="rotate(-90 15 {mid:.0f})">모멘텀 →</text>')
+    for d in rrg:
+        col = GROUP_COLORS.get(d["group"], GROUP_COLORS["기타"])
+        tail = d["tail"]
+        if len(tail) >= 2:
+            path = "M " + " L ".join(f"{px(a):.1f} {py(b):.1f}" for a, b in tail)
+            s.append(f'<path d="{path}" fill="none" stroke="{col}" stroke-width="1.6" opacity="0.45"/>')
+            for a, b in tail[:-1]:
+                s.append(f'<circle cx="{px(a):.1f}" cy="{py(b):.1f}" r="2" fill="{col}" opacity="0.32"/>')
+        x2, y2 = px(d["x"]), py(d["y"])
+        s.append(f'<circle cx="{x2:.1f}" cy="{y2:.1f}" r="6.5" fill="{col}" opacity="0.9"/>')
+        s.append(f'<text x="{x2+10:.1f}" y="{y2+4:.1f}" font-size="11" fill="#34352f">{html.escape(d["upjong"])}</text>')
+    s.append('</svg>')
+    doc = ('<div style="font-family:Pretendard,-apple-system,BlinkMacSystemFont,sans-serif;'
+           'background:transparent;margin:0;">' + "".join(s) + '</div>')
+    components.html(doc, height=H + 8, scrolling=False)
+
+
 # ── 메인 ─────────────────────────────────────────────────────────────
  
 def render_leaders():
@@ -448,11 +764,16 @@ def render_leaders():
         st.markdown(_HELP_MD)
         st.markdown('</div>', unsafe_allow_html=True)
  
+    history = []
+    payload = None
     try:
         from modules import db
-        payload = db.load_leaders() if db.supabase_configured() else None
+        if db.supabase_configured():
+            if hasattr(db, "load_leaders_history"):
+                history = db.load_leaders_history(HISTORY_DAYS) or []
+            payload = history[0] if history else db.load_leaders()
     except Exception:
-        payload = None
+        history, payload = [], None
  
     if not payload or not payload.get("stocks"):
         st.markdown(
@@ -473,6 +794,8 @@ def render_leaders():
         # 게이트가 너무 강해 0개면 점수 상위로 폴백 표시(빈 화면 방지)
         leaders = stocks[:MATRIX_LIMIT]
  
+    tl = _time_layer(history) if history else None
+
     n_new = sum(1 for s in leaders if s.get("is_new"))
     top_sec = sectors[0]["upjong"] if sectors else "–"
     gate = params.get("gate_preset", "")
@@ -493,6 +816,12 @@ def render_leaders():
                  f'주도 <b>{lead_n:,}</b>종목<span class="arw">·</span>'
                  f'주도 섹터 <b>{len(sectors)}</b>')
     st.markdown(f'<div class="ldr-strip">{strip}</div>', unsafe_allow_html=True)
+
+    # ── 오늘의 변화: 이벤트 피드(시간 레이어) ──
+    ev_html = _events_html(tl)
+    if ev_html:
+        st.markdown('<div class="ldr-h">오늘의 변화 · 이벤트</div>', unsafe_allow_html=True)
+        st.markdown(ev_html, unsafe_allow_html=True)
  
     # ── 한눈에 보기: 매트릭스(좌) + 리더보드(우) ──
     st.markdown('<div class="ldr-h">한눈에 보기</div>', unsafe_allow_html=True)
@@ -507,12 +836,34 @@ def render_leaders():
     with c_right:
         st.markdown('<div class="ldr-sub" style="margin-bottom:6px">통합 리더보드 · 점수순 '
                     f'TOP {LEADERBOARD_N}</div>', unsafe_allow_html=True)
-        st.markdown(_leaderboard_compact(leaders), unsafe_allow_html=True)
+        st.markdown(_leaderboard_compact(leaders, tl), unsafe_allow_html=True)
  
-    # ── 주도 섹터 강도 ──
-    st.markdown('<div class="ldr-h">주도 섹터 강도 · 색=1개월 모멘텀 · 길이=주도 점수</div>',
-                unsafe_allow_html=True)
-    st.markdown(_sector_bars_html(sectors, leaders), unsafe_allow_html=True)
+    # ── 주도 섹터 로테이션(시간 레이어) ──
+    rrg = (tl or {}).get("sector_rrg") or []
+    if rrg and (tl or {}).get("multi"):
+        st.markdown('<div class="ldr-h">주도 섹터 로테이션 · 돈이 어디로 흐르나</div>',
+                    unsafe_allow_html=True)
+        view = st.radio(
+            "섹터 로테이션 보기", ["사분면 (RRG)", "막대 + Δ"],
+            horizontal=True, label_visibility="collapsed", key="ldr_rot_view")
+        n_days = (tl or {}).get("n_days", 1)
+        if view == "막대 + Δ":
+            st.markdown('<div class="ldr-sub" style="margin-bottom:6px">색=1개월 모멘텀 · '
+                        '길이=주도 점수 · 우측 Δ=어제 대비 점수 변화</div>', unsafe_allow_html=True)
+            st.markdown(_sector_bars_delta_html(sectors, leaders, tl), unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="ldr-sub" style="margin-bottom:6px">상대강도(가로) × '
+                        '모멘텀(세로) · 꼬리=최근 궤적 · 색=대표그룹</div>', unsafe_allow_html=True)
+            _rrg_components(rrg, n_days)
+            st.markdown('<div class="ldr-rrgnote">우상(선도)으로 향하면 자금 유입 · '
+                        '좌하(후퇴)로 빠지면 이탈 · 점선=시장 평균(100) · '
+                        f'궤적 {max(0, n_days - 1)}일치(스냅샷 쌓일수록 길어져요).</div>',
+                        unsafe_allow_html=True)
+    else:
+        # 시간 레이어 없음(스냅샷 1일뿐/구버전 db) → 기존 섹터 강도 막대
+        st.markdown('<div class="ldr-h">주도 섹터 강도 · 색=1개월 모멘텀 · 길이=주도 점수</div>',
+                    unsafe_allow_html=True)
+        st.markdown(_sector_bars_html(sectors, leaders), unsafe_allow_html=True)
  
     # ── (보조·접힘) 섹터별 주도주 자세히 ──
     leaders_by_upj = {}
