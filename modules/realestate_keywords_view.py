@@ -28,15 +28,19 @@ CAT_CLS = {"정책": "cat-policy", "금리": "cat-macro", "공급": "cat-sector"
 
 _RE_KW_CSS = """
 <style>
-/* ── A안: 에디토리얼 인덱스 (매거진 목차형 1열 리스트) — 증시 키워드 탭과 동일 양식 ── */
-.rekw-list{border-top:1px solid var(--line,#ECEDE7);margin-top:4px;}
-.rekw-row{display:grid;grid-template-columns:54px 1fr;gap:14px;
-  padding:17px 4px 16px;border-bottom:1px solid var(--line,#ECEDE7);
-  transition:background .18s ease;}
-.rekw-row:hover{background:#fbfbf8;}
+/* ── 데스크톱 2열 고정높이 카드, 모바일 1열 — 증시 키워드 탭과 동일 양식 ── */
+.rekw-list{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:8px;}
+@media(max-width:760px){.rekw-list{grid-template-columns:1fr;}}
+.rekw-row{display:grid;grid-template-columns:44px 1fr;gap:13px;
+  height:160px;overflow:hidden;
+  background:#fff;border:.5px solid var(--line,#ECEDE7);border-radius:12px;
+  padding:14px 16px;transition:border-color .18s ease,box-shadow .18s ease;}
+@media(max-width:760px){.rekw-row{height:auto;min-height:120px;}}
+.rekw-row:hover{border-color:var(--sage,#A7BBA9);box-shadow:0 2px 8px rgba(52,53,47,.06);}
 
-.rekw-rank{font-family:'Fraunces','Noto Sans KR',Georgia,serif;font-size:30px;font-weight:500;
-  line-height:1;color:var(--sage-deep,#7E9A83);text-align:right;padding-top:2px;
+.rekw-rank{display:flex;flex-direction:column;align-items:flex-end;min-width:0;padding-top:1px;}
+.rekw-num{font-family:'Fraunces','Noto Sans KR',Georgia,serif;font-size:26px;font-weight:500;
+  line-height:1;color:var(--sage-deep,#7E9A83);white-space:nowrap;
   font-variant-numeric:tabular-nums;}
 .rekw-impbar{display:flex;gap:2px;justify-content:flex-end;margin-top:8px;}
 .rekw-impbar i{width:5px;height:5px;border-radius:50%;background:var(--line,#ECEDE7);}
@@ -70,7 +74,7 @@ _RE_KW_CSS = """
 
 @media(max-width:560px){
   .rekw-row{grid-template-columns:40px 1fr;gap:11px;}
-  .rekw-rank{font-size:24px;}
+  .rekw-num{font-size:23px;}
   .rekw-kw{font-size:16px;}
 }
 
@@ -236,7 +240,7 @@ def _render_items(items):
 
         rows.append(
             f'<div class="rekw-row">'
-            f'<div class="rekw-rank">{i}{impbar}</div>'
+            f'<div class="rekw-rank"><span class="rekw-num">{i}</span>{impbar}</div>'
             f'<div class="rekw-main">'
             f'<div class="rekw-head"><span class="rekw-kw">{kw}</span>'
             f'<span class="rekw-tagrow">{cat_html}{badge_html}</span></div>'
