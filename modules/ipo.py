@@ -4,8 +4,8 @@
   ① 향후 IPO 일정 : D-day 스트립 — 회사소개 + N(네이버) 아이콘
   ② 필터/정렬 바  : 세그먼트 필 — 시장(전체/코스피/코스닥) · 섹터 · 정렬(상장일/시총/등락/상장후수익률)
   ③ 최근 상장 종목 : 한 종목 = 한 행
-        행에 항상: 종목·시장·섹터·N아이콘 · 상장일 · 현재가(+상장일比) · 현재시총(+PER) · 추이
-        펼치면: PER·PBR·PSR · 매출·영업이익·당기순이익 · 상장일종가↔현재 · 섹터·상장후 최고/최저·고점比 · 회사소개 · 큰 차트
+        행에 항상: 종목·시장·섹터·N아이콘 · 회사소개(종목명 아래) · 상장일 · 추이 · 현재가(+상장일比) · 현재시총(+PER)
+        펼치면: PER·PBR·PSR · 매출·영업이익·당기순이익 · 상장일종가↔현재 · 섹터·상장후 최고/최저·고점比 · 큰 차트
 
 상장일比 = 상장 첫날 종가 대비 현재가 수익률(공모가는 무료 API 부재로 대체 지표).
 추이 스파크라인 = 상장후 전체(엔진 저장 spark 우선, 없으면 라이브 1회 폴백).
@@ -95,11 +95,11 @@ _CSS = """
   padding:3px 8px;border-radius:6px;flex:none;}
 .dday.soon{background:#C2410C;} .dday.tbd{background:#B7BCB3;}
 /* 최근 상장 — 정돈된 리스트 (B안: 데이터 테이블) */
-.ipo-head{display:grid;grid-template-columns:1.55fr 80px 1fr 94px 88px;gap:12px;
+.ipo-head{display:grid;grid-template-columns:1fr 78px 74px 92px 76px;gap:12px;
   padding:2px 6px 8px;font-size:10px;font-weight:700;color:var(--muted,#9a9b92);
   letter-spacing:.03em;border-bottom:1px solid var(--line,#ECEDE7);}
 .ipo-head .c{text-align:center;} .ipo-head .r{text-align:right;}
-.ipo-row{display:grid;grid-template-columns:1.55fr 80px 1fr 94px 88px;gap:12px;align-items:center;
+.ipo-row{display:grid;grid-template-columns:1fr 78px 74px 92px 76px;gap:12px;align-items:start;
   padding:12px 6px;border-bottom:1px solid var(--line,#ECEDE7);transition:background .15s ease;}
 .ipo-row:hover{background:#fbfbf8;}
 .ipo-row .nmcell{min-width:0;}
@@ -108,8 +108,10 @@ _CSS = """
   overflow:hidden;text-overflow:ellipsis;}
 .ipo-row .nmcell .nm a:hover{text-decoration:underline;}
 .ipo-row .nmcell .sub{font-size:10px;margin-top:4px;display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
+.ipo-row .nmcell .rowintro{font-size:11px;color:var(--pill-ink,#5d6258);line-height:1.55;
+  margin-top:6px;word-break:keep-all;max-width:62ch;}
 .ipo-row .dt{font-size:11.5px;color:var(--muted,#9a9b92);text-align:center;font-variant-numeric:tabular-nums;}
-.ipo-row .sp{line-height:0;}
+.ipo-row .sp{line-height:0;text-align:right;}
 .ipo-row .perf{text-align:right;font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.25;}
 .ipo-row .perf .pl{display:block;font-size:9px;color:var(--muted,#9a9b92);font-weight:600;margin-top:1px;}
 .ipo-row .capcell{text-align:right;font-size:12.5px;font-weight:700;color:var(--ink,#34352f);
@@ -475,6 +477,9 @@ def _row_html(s: dict) -> str:
     item = _naver_item_url(s.get("code", "")) or naver_stock_url(s.get("name", ""))
     nv = f'<a class="nv" href="{html.escape(item)}" target="_blank" rel="noopener" title="네이버 증권에서 보기">N</a>'
 
+    intro = str(s.get("intro") or "").strip()
+    intro_html = f'<div class="rowintro">{html.escape(intro)}</div>' if intro else ""
+
     # 대표 수익률(공모가比 우선, 없으면 상장일比) + 기준 라벨
     r = _ret_main(s)
     base = "공모比" if isinstance(s.get("ipo_return"), (int, float)) else "상장일比"
@@ -490,7 +495,8 @@ def _row_html(s: dict) -> str:
     return (
         '<div class="ipo-row">'
         f'<div class="nmcell"><div class="nm"><a href="{html.escape(item)}" target="_blank" rel="noopener">{nm}</a>{nv}</div>'
-        f'<div class="sub">{_mk_chip(s.get("market",""))}{sct}</div></div>'
+        f'<div class="sub">{_mk_chip(s.get("market",""))}{sct}</div>'
+        f'{intro_html}</div>'
         f'<div class="dt">{html.escape(str(s.get("listed","-")))}</div>'
         f'<div class="sp">{_row_spark(s)}</div>'
         f'{perf}{capcell}'
@@ -590,9 +596,9 @@ def render_ipo_tab():
         return
 
     st.markdown(
-        '<div class="ipo-head"><span>종목</span>'
-        '<span class="c dcol">상장일</span><span class="dcol">추이</span>'
-        '<span class="r">수익률</span><span class="r">현재시총</span></div>',
+        '<div class="ipo-head"><span>종목 · 회사소개</span>'
+        '<span class="c dcol">상장일</span><span class="r dcol">추이</span>'
+        '<span class="r">수익률</span><span class="r">시총</span></div>',
         unsafe_allow_html=True)
     for s in rows:
         st.markdown(_row_html(s), unsafe_allow_html=True)
@@ -601,7 +607,7 @@ def render_ipo_tab():
             st.markdown(_detail_html(s), unsafe_allow_html=True)
 
     st.caption("수익률=공모가 대비(공모가는 DART 증권발행실적보고서에서 파싱, 없으면 상장일 종가 대비). "
-               "펼치면 현재가·PER·PBR·PSR과 매출·영업이익·당기순이익(DART 최근 연간)·회사소개가 나와요. "
+               "회사소개는 종목명 아래에 표시되고, 펼치면 현재가·PER·PBR·PSR과 매출·영업이익·당기순이익(DART 최근 연간)이 나와요. "
                "상장후 최고/최저·고점比는 일별 종가 기준이에요. "
                "추이=상장후 전체. 큰 차트=네이버 일별(약 15분 지연). N 아이콘·종목명=네이버 증권.")
 
@@ -669,5 +675,4 @@ def _detail_html(s: dict) -> str:
         f'<span class="k">상장후 최고/최저</span>{hilo_html}'
         f'<span class="k">상장후 고점比</span>{dd_html}'
         '</div>'
-        f'<div class="ipo-intro">{html.escape(str(s.get("intro") or "회사소개 정보가 아직 없어요."))}</div>'
     )
