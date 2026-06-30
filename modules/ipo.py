@@ -82,10 +82,9 @@ _CSS = """
   color:var(--sage-deep,#7E9A83);margin:24px 0 12px;display:flex;align-items:center;gap:8px;}
 .ipo-sec:before{content:"";width:14px;height:2px;background:var(--sage,#A7BBA9);border-radius:2px;}
 .ipo-sec .mut{font-weight:600;font-size:11px;text-transform:none;letter-spacing:0;color:var(--muted,#9a9b92);}
-/* 향후 일정 스트립 */
-.ipo-strip{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 10px;}
-.ipo-strip::-webkit-scrollbar{height:5px;} .ipo-strip::-webkit-scrollbar-thumb{background:var(--line,#ECEDE7);border-radius:5px;}
-.ipo-up{flex:0 0 auto;min-width:198px;max-width:230px;background:var(--summary-bg,#F6F7F2);
+/* 향후 일정 — 한 화면에 wrap(여러 행), 가로 스크롤 없음 */
+.ipo-strip{display:flex;flex-wrap:wrap;gap:10px;padding:2px 2px 10px;}
+.ipo-up{flex:1 1 200px;min-width:200px;max-width:300px;background:var(--summary-bg,#F6F7F2);
   border:1px solid var(--line,#ECEDE7);border-radius:12px;padding:11px 13px;}
 .ipo-up .nm{font-size:13px;font-weight:800;display:flex;justify-content:space-between;gap:8px;align-items:center;}
 .ipo-up .sub{font-size:10.5px;color:var(--muted,#9a9b92);margin-top:5px;line-height:1.5;}
@@ -95,11 +94,11 @@ _CSS = """
   padding:3px 8px;border-radius:6px;flex:none;}
 .dday.soon{background:#C2410C;} .dday.tbd{background:#B7BCB3;}
 /* 최근 상장 — 정돈된 리스트 (B안: 데이터 테이블) */
-.ipo-head{display:grid;grid-template-columns:300px 80px 74px 80px 1fr;gap:12px;
+.ipo-head{display:grid;grid-template-columns:200px 82px 74px 82px 1fr;gap:12px;
   padding:2px 6px 8px;font-size:10px;font-weight:700;color:var(--muted,#9a9b92);
   letter-spacing:.03em;border-bottom:1px solid var(--line,#ECEDE7);}
 .ipo-head .c{text-align:center;} .ipo-head .r{text-align:right;}
-.ipo-row{display:grid;grid-template-columns:300px 80px 74px 80px 1fr;gap:12px;align-items:start;
+.ipo-row{display:grid;grid-template-columns:200px 82px 74px 82px 1fr;gap:12px;align-items:start;
   padding:12px 6px;border-bottom:1px solid var(--line,#ECEDE7);transition:background .15s ease;}
 .ipo-row:hover{background:#fbfbf8;}
 .ipo-row .nmcell{min-width:0;}
@@ -108,21 +107,19 @@ _CSS = """
   overflow:hidden;text-overflow:ellipsis;}
 .ipo-row .nmcell .nm a:hover{text-decoration:underline;}
 .ipo-row .nmcell .sub{font-size:10px;margin-top:4px;display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
-.ipo-row .nmcell .rowintro{font-size:11px;color:var(--pill-ink,#5d6258);line-height:1.55;
-  margin-top:6px;word-break:keep-all;max-width:62ch;}
+.ipo-row .rowintro{grid-column:1 / -1;font-size:11px;color:var(--pill-ink,#5d6258);
+  line-height:1.55;margin-top:3px;word-break:keep-all;}
 .ipo-row .dt{font-size:11.5px;color:var(--muted,#9a9b92);text-align:center;font-variant-numeric:tabular-nums;}
 .ipo-row .sp{line-height:0;text-align:right;}
-.ipo-row .perf{text-align:right;font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.25;}
-.ipo-row .perf .pl{display:block;font-size:9px;color:var(--muted,#9a9b92);font-weight:600;margin-top:1px;}
 .ipo-row .capcell{text-align:right;font-size:12.5px;font-weight:700;color:var(--ink,#34352f);
   font-variant-numeric:tabular-nums;line-height:1.25;}
 .ipo-row .capcell .pl{display:block;font-size:9px;color:var(--muted,#9a9b92);font-weight:600;margin-top:1px;}
-.ipo-row .lastcell{max-width:320px;font-size:11.5px;line-height:1.3;}
-.ipo-row .lastcell .lc-row{display:flex;justify-content:space-between;gap:10px;
-  font-variant-numeric:tabular-nums;padding:1px 0;}
-.ipo-row .lastcell .lc-row+.lc-row{margin-top:5px;}
-.ipo-row .lastcell .lc-k{font-size:10px;color:var(--muted,#9a9b92);font-weight:600;white-space:nowrap;}
-.ipo-row .lastcell .lc-v{font-weight:700;text-align:right;color:var(--ink,#34352f);}
+.ipo-row .lastcell{font-size:11.5px;line-height:1.35;display:flex;flex-wrap:wrap;
+  gap:6px 24px;align-items:baseline;}
+.ipo-row .lastcell .lc-grp{display:flex;gap:8px;align-items:baseline;white-space:nowrap;
+  font-variant-numeric:tabular-nums;}
+.ipo-row .lastcell .lc-k{font-size:10px;color:var(--muted,#9a9b92);font-weight:600;}
+.ipo-row .lastcell .lc-v{font-weight:700;color:var(--ink,#34352f);}
 .ipo-row .lastcell .lc-v .na{color:var(--muted,#9a9b92);}
 .mk{font-size:10px;font-weight:700;padding:1px 6px;border-radius:5px;}
 .mk.kospi{background:#EBF1F5;color:#3E6488;} .mk.kosdaq{background:#F0E9F3;color:#6B4A7C;}
@@ -179,11 +176,10 @@ div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p{
   color:var(--sage-deep,#7E9A83)!important;}
 @media(max-width:680px){
-  .ipo-head,.ipo-row{grid-template-columns:1fr 66px 132px;}
+  .ipo-head,.ipo-row{grid-template-columns:1fr 66px 150px;}
   .ipo-head .dcol,.ipo-row .dt,.ipo-row .sp{display:none;}
-  .ipo-row .lastcell{max-width:none;}
-  .ipo-row .lastcell .lc-row{flex-direction:column;gap:0;align-items:flex-end;}
-  .ipo-row .lastcell .lc-k{font-size:9px;}
+  .ipo-row .lastcell{gap:4px 12px;}
+  .ipo-row .lastcell .lc-grp{white-space:normal;}
 }
 </style>
 """
@@ -489,16 +485,16 @@ def _last_cell(s: dict) -> str:
                 f' / <b class="down">{round(min(nums)):,}</b>원</span>')
     else:
         hilo = '<span class="lc-v"><span class="na">—</span></span>'
-    hilo_row = f'<div class="lc-row"><span class="lc-k">상장후 최고/최저</span>{hilo}</div>'
+    hilo_grp = f'<div class="lc-grp"><span class="lc-k">상장후 최고/최저</span>{hilo}</div>'
 
     cur = html.escape(str(s.get("price", "-")))
     seed = f"{int(sp[0]):,}" if sp else "–"
     r = _since_return(s)
     rtxt = (f' <b class="{_ret_cls(r)}">{"+" if r >= 0 else ""}{r:.1f}%</b>'
             if r is not None else "")
-    seed_row = (f'<div class="lc-row"><span class="lc-k">상장일종가→현재</span>'
+    seed_grp = (f'<div class="lc-grp"><span class="lc-k">상장일종가→현재</span>'
                 f'<span class="lc-v">{seed} → {cur}원{rtxt}</span></div>')
-    return f'<div class="lastcell">{hilo_row}{seed_row}</div>'
+    return f'<div class="lastcell">{hilo_grp}{seed_grp}</div>'
 
 
 def _row_html(s: dict) -> str:
@@ -518,11 +514,11 @@ def _row_html(s: dict) -> str:
     return (
         '<div class="ipo-row">'
         f'<div class="nmcell"><div class="nm"><a href="{html.escape(item)}" target="_blank" rel="noopener">{nm}</a>{nv}</div>'
-        f'<div class="sub">{_mk_chip(s.get("market",""))}{sct}</div>'
-        f'{intro_html}</div>'
+        f'<div class="sub">{_mk_chip(s.get("market",""))}{sct}</div></div>'
         f'<div class="dt">{html.escape(str(s.get("listed","-")))}</div>'
         f'<div class="sp">{_row_spark(s)}</div>'
         f'{capcell}{lastcell}'
+        f'{intro_html}'
         '</div>'
     )
 
