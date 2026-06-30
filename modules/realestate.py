@@ -1228,11 +1228,29 @@ function drawTable(){const rows=_paths.length?_paths:pathsOf(region);
 
 function trendOf(r){if(SUDO.has(r))return TREND[r]||{};const o=(LOCAL[r]||{}).others||{};return{sale:o.sale,jeonse:o.jeonse};}
 function sliceP(a){const wk=SUDO.has(region);const n=period==="1y"?(wk?52:12):period==="3y"?(wk?156:36):1e9;return (a||[]).slice(-n);}
+let _trH=230,_trB=188;   // 추이 차트 viewBox 높이(좌측 표 높이에 맞춰 동적 산정)
+function fitTrendHeight(){
+  try{
+    const svg=document.getElementById("trChart");if(!svg){drawTrend();return;}
+    const svgC=svg.parentElement;                 // position:relative 컨테이너
+    const panel=svgC.closest(".panel");
+    const left=document.querySelector(".mleft");
+    const W=svgC.clientWidth||svg.clientWidth||500;
+    if(left&&panel&&W>1){
+      const headH=svgC.getBoundingClientRect().top-panel.getBoundingClientRect().top; // 패널 헤더+컨트롤 높이
+      const targetH=Math.max(230,left.offsetHeight-headH-12);   // 좌측 표 높이 − 헤더 − 패딩
+      _trH=Math.round(620*targetH/W);             // 렌더 높이 ≈ targetH 되도록 viewBox 높이 환산
+    }else _trH=230;
+    _trB=_trH-42;                                 // 플롯 바닥(축 라벨 42 확보)
+    svg.setAttribute("viewBox","0 0 620 "+_trH);
+  }catch(e){_trH=230;_trB=188;}
+  drawTrend();
+}
 function drawChart(){const tk=trendOf(region);const sale=sliceP(tk.sale),jeon=sliceP(tk.jeonse);
   document.getElementById("trTitle").textContent=RNAME[region]+" 가격지수 추이";
   const svg=document.getElementById("trChart");const all=(sale||[]).concat(jeon||[]).filter(v=>v!=null);
-  if(all.length<2){svg.innerHTML='<text class="axt" x="310" y="110" text-anchor="middle">추이 데이터가 아직 없어요</text>';return;}
-  const L=52,Rr=606,T0=14,B=188,W=Rr-L,Hh=B-T0,n=sale.length,wk=SUDO.has(region);
+  if(all.length<2){svg.innerHTML='<text class="axt" x="310" y="'+(_trH/2).toFixed(0)+'" text-anchor="middle">추이 데이터가 아직 없어요</text>';return;}
+  const L=52,Rr=606,T0=14,B=_trB,W=Rr-L,Hh=B-T0,n=sale.length,wk=SUDO.has(region);
   let dmn=Math.min(...all),dmx=Math.max(...all);const pad=(dmx-dmn)*0.14||1,lo=dmn-pad,hi=dmx+pad,rr=(hi-lo)||1;
   const X=i=>L+(n<=1?0:i/(n-1)*W),Y=v=>B-(v-lo)/rr*Hh;
   const line=s=>s.map((v,i)=>v==null?"":`${(i&&s[i-1]!=null)?"L":"M"}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
@@ -1251,7 +1269,7 @@ function drawChart(){const tk=trendOf(region);const sale=sliceP(tk.sale),jeon=sl
     +`<path id="trSale" class="draw" d="${line(sale)}" fill="none" stroke="#B65F5A" stroke-width="2.2"/>`
     +`<circle id="trDotS" cx="${X(n-1)}" cy="${Y(sale[n-1])}" r="4" fill="#B65F5A" stroke="#fff" stroke-width="1.4" opacity="0" style="transition:opacity .3s ease .7s"/>`
     +`<circle id="trDotJ" cx="${X(n-1)}" cy="${Y(jeon[n-1])}" r="3.2" fill="#5A7CA0" stroke="#fff" stroke-width="1.2" opacity="0" style="transition:opacity .3s ease .7s"/>`
-    +xt+`<text class="axtitle" x="${((L+Rr)/2).toFixed(0)}" y="224" text-anchor="middle">시점(${wk?"주간 지수":"월간 지수"})</text>`
+    +xt+`<text class="axtitle" x="${((L+Rr)/2).toFixed(0)}" y="${_trH-6}" text-anchor="middle">시점(${wk?"주간 지수":"월간 지수"})</text>`
     +`<text class="axtitle" x="14" y="${ycy}" text-anchor="middle" transform="rotate(-90 14 ${ycy})">가격지수 (2022.1.10=100)</text>`
     +`<line class="vx" x1="${L}" x2="${L}" y1="${T0}" y2="${B}" stroke="#B9BBB0" stroke-dasharray="3 3" opacity="0"/>`
     +`<circle class="vd1" r="3" fill="#B65F5A" opacity="0"/><circle class="vd2" r="2.6" fill="#5A7CA0" opacity="0"/>`;
@@ -1287,10 +1305,10 @@ function drawCompare(){
   document.getElementById("vtip").style.opacity="0";
   const pm=period==="1y"?12:period==="3y"?36:1e9;
   let series=cmpSel.map(k=>({k,c:CMPC[k],nm:RNAME[k],s:cmpSeries(k,cmpMet)})).filter(o=>o.s&&o.s.length>=2);
-  if(!series.length){svg.innerHTML='<text class="axt" x="310" y="110" text-anchor="middle">비교할 지역을 선택하세요</text>';return;}
+  if(!series.length){svg.innerHTML='<text class="axt" x="310" y="'+(_trH/2).toFixed(0)+'" text-anchor="middle">비교할 지역을 선택하세요</text>';return;}
   let K=Math.min(...series.map(o=>o.s.length));K=Math.min(K,pm);
   series=series.map(o=>({k:o.k,c:o.c,nm:o.nm,s:o.s.slice(-K)}));
-  const L=52,Rr=606,T0=14,B=188,W=Rr-L,Hh=B-T0,n=K;
+  const L=52,Rr=606,T0=14,B=_trB,W=Rr-L,Hh=B-T0,n=K;
   let all=[];series.forEach(o=>all=all.concat(o.s));
   let dmn=Math.min(...all),dmx=Math.max(...all);const pad=(dmx-dmn)*0.14||1,lo=dmn-pad,hi=dmx+pad,rr=(hi-lo)||1;
   const X=i=>L+(n<=1?0:i/(n-1)*W),Y=v=>B-(v-lo)/rr*Hh;
@@ -1305,7 +1323,7 @@ function drawCompare(){
     lines+=`<circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="3.4" fill="${o.c}" stroke="#fff" stroke-width="1.3"/><text class="axt" x="${(lx+6).toFixed(1)}" y="${(ly+3).toFixed(1)}" fill="${o.c}" font-weight="700">${o.s[n-1].toFixed(0)}</text>`;});
   const ycy=((T0+B)/2).toFixed(0);
   svg.innerHTML=grid+`<line x1="${L}" y1="${B}" x2="${Rr}" y2="${B}" stroke="#D7D8D0"/>`+xt
-    +`<text class="axtitle" x="${((L+Rr)/2).toFixed(0)}" y="224" text-anchor="middle">시점(월간)</text>`
+    +`<text class="axtitle" x="${((L+Rr)/2).toFixed(0)}" y="${_trH-6}" text-anchor="middle">시점(월간)</text>`
     +`<text class="axtitle" x="14" y="${ycy}" text-anchor="middle" transform="rotate(-90 14 ${ycy})">가격지수 (2022.1.10=100)</text>`+lines;}
 function drawTrend(){if(cmpMode)drawCompare();else drawChart();}
 function drawCmpChips(){document.getElementById("cmpChips").innerHTML=ORDER.map(k=>{const on=cmpSel.includes(k),c=CMPC[k];
@@ -1323,13 +1341,13 @@ function updateNote(){const ph=!SUDO.has(region);
     +" · 매매·전세Δ=KB 월간 가격지수 전월대비, 전세가율=KB 월간, 거래=주간 실거래(평소比=현재주 vs 최근2개월 주당 평균·현재주 제외, 신고지연으로 참고용) · 추이=KB 지수("
     +(ph?"월간":"수도권 주간·지방 월간")+", 2022.1.10=100)";}
 
-function refresh(){drawChips();drawNav();drawLegend();drawMap();drawTable();drawTrend();updateNote();document.getElementById("crName").textContent=RNAME[region];
+function refresh(){drawChips();drawNav();drawLegend();drawMap();drawTable();fitTrendHeight();updateNote();document.getElementById("crName").textContent=RNAME[region];
   document.getElementById("phbadge").hidden=SUDO.has(region);}
 function setRegion(k){if(!RNAME[k]||busy)return;busy=true;region=k;
   drawChips();drawNav();document.getElementById("crName").textContent=RNAME[k];
   const svg=document.getElementById("big");svg.style.transformOrigin="50% 46%";svg.style.transition="transform .16s ease, opacity .16s ease";
   svg.style.opacity="0";svg.style.transform="scale(1.12)";
-  setTimeout(()=>{drawLegend();drawMap();drawTable();drawTrend();updateNote();
+  setTimeout(()=>{drawLegend();drawMap();drawTable();fitTrendHeight();updateNote();
     svg.style.transition="none";svg.style.opacity="0";svg.style.transform="scale(.9)";svg.getBoundingClientRect();
     requestAnimationFrame(()=>requestAnimationFrame(()=>{svg.style.transition="transform .44s cubic-bezier(.18,.7,.3,1), opacity .3s ease";svg.style.opacity="1";svg.style.transform="scale(1)";}));
     setTimeout(()=>{busy=false;},480);},190);}
@@ -1341,6 +1359,8 @@ document.querySelectorAll("#cmpMet button").forEach(b=>b.onclick=()=>{document.q
 document.querySelectorAll("#metricPills button").forEach(b=>b.onclick=()=>{document.querySelectorAll("#metricPills button").forEach(x=>x.classList.remove("on"));b.classList.add("on");metric=b.dataset.m;drawLegend();drawMap();drawTable();});
 document.getElementById("back").onclick=()=>setRegion("seoul");
 refresh();
+setTimeout(fitTrendHeight,220);setTimeout(fitTrendHeight,750);   // 폰트·레이아웃 안정 후 재맞춤
+(function(){let _rt;window.addEventListener("resize",function(){clearTimeout(_rt);_rt=setTimeout(fitTrendHeight,180);});})();
 (function(){function _fit(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;if(window.frameElement){window.frameElement.style.height=h+"px";window.frameElement.setAttribute("height",h);}}catch(e){}}window.addEventListener("load",_fit);setTimeout(_fit,150);setTimeout(_fit,600);setTimeout(_fit,1500);window.addEventListener("resize",_fit);try{new ResizeObserver(_fit).observe(document.body);}catch(e){}})();
 </script></body></html>
 '''
