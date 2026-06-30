@@ -4,8 +4,8 @@
   ① 향후 IPO 일정 : D-day 스트립 — 회사소개 + N(네이버) 아이콘
   ② 필터/정렬 바  : 세그먼트 필 — 시장(전체/코스피/코스닥) · 섹터 · 정렬(상장일/시총/등락/상장후수익률)
   ③ 최근 상장 종목 : 한 종목 = 한 행
-        행에 항상: 종목·시장·섹터·N아이콘 · 회사소개(종목명 아래) · 상장일 · 추이 · 현재가(+상장일比) · 현재시총(+PER)
-        펼치면: PER·PBR·PSR · 매출·영업이익·당기순이익 · 상장일종가↔현재 · 섹터·상장후 최고/최저·고점比 · 큰 차트
+        행에 항상: 종목·시장·섹터·N아이콘 · 회사소개(종목명 아래) · 상장일 · 추이 · 현재시총 · 상장후 최고/최저 · 상장일종가→현재
+        펼치면: 큰 차트 · PER·PBR·PSR · 매출·영업이익·당기순이익
 
 상장일比 = 상장 첫날 종가 대비 현재가 수익률(공모가는 무료 API 부재로 대체 지표).
 추이 스파크라인 = 상장후 전체(엔진 저장 spark 우선, 없으면 라이브 1회 폴백).
@@ -95,11 +95,11 @@ _CSS = """
   padding:3px 8px;border-radius:6px;flex:none;}
 .dday.soon{background:#C2410C;} .dday.tbd{background:#B7BCB3;}
 /* 최근 상장 — 정돈된 리스트 (B안: 데이터 테이블) */
-.ipo-head{display:grid;grid-template-columns:1fr 78px 74px 92px 76px;gap:12px;
+.ipo-head{display:grid;grid-template-columns:300px 80px 74px 80px 1fr;gap:12px;
   padding:2px 6px 8px;font-size:10px;font-weight:700;color:var(--muted,#9a9b92);
   letter-spacing:.03em;border-bottom:1px solid var(--line,#ECEDE7);}
 .ipo-head .c{text-align:center;} .ipo-head .r{text-align:right;}
-.ipo-row{display:grid;grid-template-columns:1fr 78px 74px 92px 76px;gap:12px;align-items:start;
+.ipo-row{display:grid;grid-template-columns:300px 80px 74px 80px 1fr;gap:12px;align-items:start;
   padding:12px 6px;border-bottom:1px solid var(--line,#ECEDE7);transition:background .15s ease;}
 .ipo-row:hover{background:#fbfbf8;}
 .ipo-row .nmcell{min-width:0;}
@@ -117,6 +117,13 @@ _CSS = """
 .ipo-row .capcell{text-align:right;font-size:12.5px;font-weight:700;color:var(--ink,#34352f);
   font-variant-numeric:tabular-nums;line-height:1.25;}
 .ipo-row .capcell .pl{display:block;font-size:9px;color:var(--muted,#9a9b92);font-weight:600;margin-top:1px;}
+.ipo-row .lastcell{max-width:320px;font-size:11.5px;line-height:1.3;}
+.ipo-row .lastcell .lc-row{display:flex;justify-content:space-between;gap:10px;
+  font-variant-numeric:tabular-nums;padding:1px 0;}
+.ipo-row .lastcell .lc-row+.lc-row{margin-top:5px;}
+.ipo-row .lastcell .lc-k{font-size:10px;color:var(--muted,#9a9b92);font-weight:600;white-space:nowrap;}
+.ipo-row .lastcell .lc-v{font-weight:700;text-align:right;color:var(--ink,#34352f);}
+.ipo-row .lastcell .lc-v .na{color:var(--muted,#9a9b92);}
 .mk{font-size:10px;font-weight:700;padding:1px 6px;border-radius:5px;}
 .mk.kospi{background:#EBF1F5;color:#3E6488;} .mk.kosdaq{background:#F0E9F3;color:#6B4A7C;}
 .sct{font-size:10px;font-weight:600;color:var(--muted,#9a9b92);}
@@ -172,8 +179,11 @@ div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p{
   color:var(--sage-deep,#7E9A83)!important;}
 @media(max-width:680px){
-  .ipo-head,.ipo-row{grid-template-columns:1.5fr 92px 84px;}
+  .ipo-head,.ipo-row{grid-template-columns:1fr 66px 132px;}
   .ipo-head .dcol,.ipo-row .dt,.ipo-row .sp{display:none;}
+  .ipo-row .lastcell{max-width:none;}
+  .ipo-row .lastcell .lc-row{flex-direction:column;gap:0;align-items:flex-end;}
+  .ipo-row .lastcell .lc-k{font-size:9px;}
 }
 </style>
 """
@@ -470,6 +480,27 @@ def _cap_cell(s: dict) -> str:
     return f'<div class="cmp">{now}{was}</div>'
 
 
+def _last_cell(s: dict) -> str:
+    """상장후 최고/최저 + 상장일종가→현재(상장일比). spark 기반."""
+    sp = _get_spark(s)
+    nums = [float(v) for v in (sp or []) if v is not None]
+    if len(nums) >= 2:
+        hilo = (f'<span class="lc-v"><b class="up">{round(max(nums)):,}</b>'
+                f' / <b class="down">{round(min(nums)):,}</b>원</span>')
+    else:
+        hilo = '<span class="lc-v"><span class="na">—</span></span>'
+    hilo_row = f'<div class="lc-row"><span class="lc-k">상장후 최고/최저</span>{hilo}</div>'
+
+    cur = html.escape(str(s.get("price", "-")))
+    seed = f"{int(sp[0]):,}" if sp else "–"
+    r = _since_return(s)
+    rtxt = (f' <b class="{_ret_cls(r)}">{"+" if r >= 0 else ""}{r:.1f}%</b>'
+            if r is not None else "")
+    seed_row = (f'<div class="lc-row"><span class="lc-k">상장일종가→현재</span>'
+                f'<span class="lc-v">{seed} → {cur}원{rtxt}</span></div>')
+    return f'<div class="lastcell">{hilo_row}{seed_row}</div>'
+
+
 def _row_html(s: dict) -> str:
     nm = html.escape(s.get("name", ""))
     sector = s.get("sector")
@@ -480,17 +511,9 @@ def _row_html(s: dict) -> str:
     intro = str(s.get("intro") or "").strip()
     intro_html = f'<div class="rowintro">{html.escape(intro)}</div>' if intro else ""
 
-    # 대표 수익률(공모가比 우선, 없으면 상장일比) + 기준 라벨
-    r = _ret_main(s)
-    base = "공모比" if isinstance(s.get("ipo_return"), (int, float)) else "상장일比"
-    if isinstance(r, (int, float)):
-        perf = (f'<div class="perf {_ret_cls(r)}">{"+" if r >= 0 else ""}{r:.1f}%'
-                f'<span class="pl">{base}</span></div>')
-    else:
-        perf = '<div class="perf"><span class="pl">—</span></div>'
-
     cap = html.escape(str(s.get("cap", "-")))
     capcell = f'<div class="capcell">{cap}<span class="pl">시총</span></div>'
+    lastcell = _last_cell(s)
 
     return (
         '<div class="ipo-row">'
@@ -499,7 +522,7 @@ def _row_html(s: dict) -> str:
         f'{intro_html}</div>'
         f'<div class="dt">{html.escape(str(s.get("listed","-")))}</div>'
         f'<div class="sp">{_row_spark(s)}</div>'
-        f'{perf}{capcell}'
+        f'{capcell}{lastcell}'
         '</div>'
     )
 
@@ -598,7 +621,7 @@ def render_ipo_tab():
     st.markdown(
         '<div class="ipo-head"><span>종목 · 회사소개</span>'
         '<span class="c dcol">상장일</span><span class="r dcol">추이</span>'
-        '<span class="r">수익률</span><span class="r">시총</span></div>',
+        '<span class="r">시총</span><span>상장후 고저 · 상장일종가→현재</span></div>',
         unsafe_allow_html=True)
     for s in rows:
         st.markdown(_row_html(s), unsafe_allow_html=True)
@@ -606,28 +629,14 @@ def render_ipo_tab():
             _ipo_chart(s.get("name", ""), s.get("listed", ""), mode)
             st.markdown(_detail_html(s), unsafe_allow_html=True)
 
-    st.caption("수익률=공모가 대비(공모가는 DART 증권발행실적보고서에서 파싱, 없으면 상장일 종가 대비). "
-               "회사소개는 종목명 아래에 표시되고, 펼치면 현재가·PER·PBR·PSR과 매출·영업이익·당기순이익(DART 최근 연간)이 나와요. "
-               "상장후 최고/최저·고점比는 일별 종가 기준이에요. "
+    st.caption("상장일종가→현재 = 상장 첫날 종가 대비 현재가 수익률(공모가는 무료 API 부재로 대체 지표). "
+               "회사소개·상장후 최고/최저·상장일종가→현재는 각 종목 행에 표시되고, "
+               "펼치면 큰 차트와 PER·PBR·PSR·매출·영업이익·당기순이익(DART 최근 연간)이 나와요. "
+               "최고/최저는 상장후 일별 종가 기준이에요. "
                "추이=상장후 전체. 큰 차트=네이버 일별(약 15분 지연). N 아이콘·종목명=네이버 증권.")
 
 
 def _detail_html(s: dict) -> str:
-    sp = _get_spark(s)
-    cur = html.escape(str(s.get("price", "-")))
-    ipo = s.get("ipo_return")
-    if isinstance(ipo, (int, float)):
-        head_k = "공모가→현재"
-        base = html.escape(str(s.get("ipo_price") or "–"))
-        ret = ipo
-    else:
-        head_k = "상장일종가→현재"
-        base = f"{int(sp[0]):,}" if sp else "–"
-        ret = _since_return(s)
-    ret_html = (f'<span class="ret {_ret_cls(ret)}">{"+" if ret >= 0 else ""}{ret:.1f}%</span>'
-                if ret is not None else "<span></span>")
-    price_pair = f'<span class="pair">{base}원<span class="arw">→</span>{cur}원</span>'
-
     def _num(v, fmt):
         return f'<div class="v">{fmt.format(v)}</div>' if isinstance(v, (int, float)) else '<div class="v na">적자·N/A</div>'
 
@@ -649,30 +658,4 @@ def _detail_html(s: dict) -> str:
         f'<div class="cell"><div class="k">당기순이익</div>{_amt(s.get("net_income"))}</div>'
         '</div>'
     )
-    dd, peak = _peak_drawdown(s)
-    if dd is None:
-        dd_html = '<span class="v">-</span>'
-    elif dd >= -0.05:
-        dd_html = '<span class="v">고점 근접 <small>(상장후 신고가권)</small></span>'
-    else:
-        peak_txt = f' <small>(고점 {int(peak):,}원)</small>' if peak else ""
-        dd_html = f'<span class="v down">{dd:.1f}%{peak_txt}</span>'
-
-    nums = [float(v) for v in (sp or []) if v is not None]
-    if len(nums) >= 2:
-        hilo_html = (f'<span class="v"><b class="up">{round(max(nums)):,}</b>'
-                     f'<small> / </small><b class="down">{round(min(nums)):,}</b>원</span>')
-    else:
-        hilo_html = '<span class="v">-</span>'
-    return (
-        valuation + financials +
-        '<div class="ipo-cmp2">'
-        f'<span class="k">{head_k}</span>{price_pair}{ret_html}'
-        '</div>'
-        '<div class="ipo-meta">'
-        f'<span class="k">상장일</span><span class="v">{html.escape(str(s.get("listed","-")))}</span>'
-        f'<span class="k">섹터</span><span class="v">{html.escape(str(s.get("sector") or "-"))}</span>'
-        f'<span class="k">상장후 최고/최저</span>{hilo_html}'
-        f'<span class="k">상장후 고점比</span>{dd_html}'
-        '</div>'
-    )
+    return valuation + financials
