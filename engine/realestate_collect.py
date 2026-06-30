@@ -1764,7 +1764,7 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
                 "vol_chg": round((len(rec) / max(len(prev), 1) - 1) * 100),
                 "price": med_price, "price_eok": _fmt_eok(med_price),
                 "chg": chg, "area": f"{area}㎡", "freq": len(rs), "search": None,
-                "rec_ppa": rec_ppa,
+                "rec_ppa": rec_ppa, "area_num": area,
                 "_rows": rs, "_rec": rec,
             }
     if not agg:
@@ -1893,10 +1893,64 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
         gain_leaders.sort(key=lambda c: c["yoy"], reverse=True)
         gain_leaders = gain_leaders[:gain_top]
 
+    # 전세가율·갭(P1) — 표시 대상 단지가 속한 '구'만 전세 스윕(콜 최소화).
+    #   전세가율 = 단지 전세 ㎡당가 중위 ÷ 매매 ㎡당가 중위(rec_ppa).
+    #   갭 = (매매 ㎡당 − 전세 ㎡당) × 대표면적 → 억. 표본<2·이상치(30~95% 밖)는 None.
+    #   전세 권한 없음/실패는 통째 생략(가짜 없음). 엔진/스키마 무변경 — 새 dict 필드만.
+    jr_map = {}
+    try:
+        show_gus = {d["gu"] for d in ranked}
+        if with_cap:
+            show_gus |= {c["gu"] for c in cap_leaders}
+        if with_gain:
+            show_gus |= {g["gu"] for g in gain_leaders}
+        jeon = {}
+        for gu in show_gus:
+            for code in SIGUNGU_CODES.get(gu, []):
+                for ym in yms:
+                    for r in _fetch(key, code, ym, "전월세", stats):
+                        if exclude_direct and r["direct"]:
+                            continue
+                        jeon.setdefault((gu, r["apt"]), []).append(r["ppa"])
+        for (gu, apt), ppas in jeon.items():
+            if len(ppas) < 2:
+                continue
+            a = agg.get((gu, apt))
+            rec_ppa = a.get("rec_ppa") if a else None
+            if not rec_ppa:
+                continue
+            jeon_ppa = statistics.median(ppas)
+            jr = jeon_ppa / rec_ppa * 100
+            if jr < 30 or jr > 95:        # 월세혼입·데이터오류 등 이상치 제외
+                continue
+            area_num = a.get("area_num") or 0
+            gap_manwon = (rec_ppa - jeon_ppa) * area_num
+            jr_map[(gu, apt)] = {
+                "jr": round(jr),
+                "gap_eok": round(gap_manwon / 1e4, 1) if area_num else None,
+            }
+    except Exception as e:
+        print(f"[realestate] 전세가율·갭 생략: {e}")
+
+    def _apply_jr(d):
+        info_jr = jr_map.get((d["gu"], d["apt"]))
+        d["jr"] = info_jr["jr"] if info_jr else None
+        d["gap_eok"] = info_jr["gap_eok"] if info_jr else None
+
+    for d in ranked:
+        _apply_jr(d)
+    if with_cap:
+        for c in cap_leaders:
+            _apply_jr(c)
+    if with_gain:
+        for g in gain_leaders:
+            _apply_jr(g)
+
     # hot 랭킹 보강(세대수·면적별가·소재지) — 여기서 _rows 제거
     for d in ranked:
         rs = d.pop("_rows", []) or []
         d.pop("_rec", None)
+        d.pop("area_num", None)
         d["p59"] = _recent_price_in_band(rs, 49.0, 63.0)
         d["p84"] = _recent_price_in_band(rs, 74.0, 90.0)
         d["p59_eok"] = _fmt_eok(d["p59"]) if d["p59"] else None
