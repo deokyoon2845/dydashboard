@@ -133,16 +133,15 @@ def _client() -> Client:
 _KST = timezone(timedelta(hours=9))
 
 
-def collected_today(table: str, ts_col: str = "updated_at") -> bool:
-    """지정 테이블의 최신 updated_at(KST 기준)이 '오늘'이면 True.
+def last_updated_kst(table: str, ts_col: str = "updated_at"):
+    """지정 테이블의 최신 updated_at을 KST aware datetime으로 반환. 없으면 None.
 
-    다중 cron 슬롯(예: 06:07·07:07·08:07 KST)에서 '이미 오늘 수집을 마쳤는지'
-    판정해, 뒤 슬롯이 중복 수집·중복 API 과금(특히 Anthropic)을 하지 않게 막는다.
     - GitHub 러너는 UTC라 updated_at은 대개 tz 없는 UTC 값 → UTC로 간주해 KST 변환.
-    - 미설정·행없음·파싱실패는 모두 False(=수집 진행)로 안전 폴백한다.
+    - 미설정·행없음·파싱실패는 모두 None으로 안전 폴백한다.
+    화면의 '자동 갱신 현황'(최근 갱신 시각)과 엔진 멱등 가드가 공유하는 단일 소스.
     """
     if not supabase_configured():
-        return False
+        return None
     try:
         res = (_client().table(table)
                .select(ts_col)
@@ -150,19 +149,30 @@ def collected_today(table: str, ts_col: str = "updated_at") -> bool:
                .limit(1).execute())
         rows = res.data or []
         if not rows:
-            return False
+            return None
         raw = rows[0].get(ts_col)
         if not raw:
-            return False
+            return None
         dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
-        last_kst = dt.astimezone(_KST).date()
-        today_kst = datetime.now(_KST).date()
-        return last_kst == today_kst
+        return dt.astimezone(_KST)
     except Exception as e:
-        print(f"[db.collected_today] 판정 실패({table}) → 수집 진행: {e}", flush=True)
+        print(f"[db.last_updated_kst] 실패({table}): {e}", flush=True)
+        return None
+
+
+def collected_today(table: str, ts_col: str = "updated_at") -> bool:
+    """지정 테이블의 최신 updated_at(KST 기준)이 '오늘'이면 True.
+
+    다중 cron 슬롯(예: 06:07·07:07·08:07 KST)에서 '이미 오늘 수집을 마쳤는지'
+    판정해, 뒤 슬롯이 중복 수집·중복 API 과금(특히 Anthropic)을 하지 않게 막는다.
+    미설정·행없음·파싱실패는 False(=수집 진행)로 안전 폴백한다.
+    """
+    dt = last_updated_kst(table, ts_col)
+    if dt is None:
         return False
+    return dt.date() == datetime.now(_KST).date()
 
 
 # ── 엔진 공용 캐시(engine_cache) — 세대수 맵·작년말 baseline 등 ──────
