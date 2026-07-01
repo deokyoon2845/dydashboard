@@ -22,6 +22,13 @@ def main():
         print("[ipo_run] SUPABASE 미설정 — 저장 건너뜀(키 확인).", flush=True)
         return 1
 
+    # ── 멱등 가드: 오늘(KST) 이미 수집을 마쳤으면 다음 슬롯은 즉시 스킵 ──
+    #   ipo.yml은 14:00·15:00 KST 두 슬롯. 첫 성공이 잡으면 여기서 빠져
+    #   중복 수집·중복 회사소개(Anthropic) 과금을 막는다.
+    if db.collected_today("ipo_snapshots"):
+        print("[ipo_run] 오늘 이미 수집 완료 — 스킵(멱등 가드).", flush=True)
+        return 0
+
     try:
         data = collect()
     except Exception:
