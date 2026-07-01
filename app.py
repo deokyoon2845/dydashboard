@@ -919,30 +919,84 @@ def _inject_countup():
     )
 
 
-# ── 수집 상태 패널(신선도·카운트 — 조용한 실패 방어) ───────────────
+# ── 자동 갱신 현황 패널 (실제 DB 갱신 시각 + cron 다음 예정) ───────────
+#  각 소스의 '최근 갱신'은 Supabase updated_at(KST)에서, '다음 예정'은 워크플로
+#  cron의 첫 슬롯에서 계산한다. GitHub cron 지연으로 실제 실행은 최대 1시간(주도주는
+#  더) 늦을 수 있어, '예정'은 목표 시각이다.
+from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+
+_KST_TZ = _tz(_td(hours=9))
+_WD = ["월", "화", "수", "목", "금", "토", "일"]
+
+# 소스별 '다음 예정' 첫 슬롯(KST). weekday=평일만. None=수동(예정 없음).
+#  · 부동산/부동산 키워드 → realestate.yml 첫 슬롯 06:07
+#  · 종목마스터 → stock_master.yml 첫 슬롯 06:20
+#  · 공모주(IPO) → ipo.yml 14:00
+#  · 주도주/증시 키워드 → leaders.yml 평일 첫 슬롯 16:40
+#  · 시황 보고서 → 수동 전용
+_SCHED = {
+    "주도주":       {"h": 16, "m": 40, "weekday": True},
+    "증시 키워드":  {"h": 16, "m": 40, "weekday": True},
+    "공모주(IPO)":  {"h": 14, "m": 0,  "weekday": False},
+    "시황 보고서":  None,
+    "종목마스터":   {"h": 6,  "m": 20, "weekday": False},
+    "부동산":       {"h": 6,  "m": 7,  "weekday": False},
+    "부동산 키워드": {"h": 6,  "m": 7,  "weekday": False},
+}
+
+
 @st.cache_data(ttl=600, show_spinner=False)
 def _collect_status():
-    """소스별 최신 asof·카운트 수집(10분 캐시). DB 미설정이면 None."""
-    from datetime import date
-    from modules.db import (supabase_configured, load_realestate,
-                            load_keywords_latest, list_recent,
-                            load_leaders, load_ipo)
+    """소스별 최근 갱신(updated_at, KST iso)·카운트 수집(10분 캐시). 미설정이면 None."""
+    from modules.db import (supabase_configured, last_updated_kst,
+                            load_realestate, load_keywords_latest, list_recent,
+                            load_leaders, load_ipo, load_realestate_keywords_latest)
     if not supabase_configured():
         return None
-    today = date.today()
 
-    def age(d):
-        try:
-            return (today - date.fromisoformat(str(d)[:10])).days
-        except Exception:
-            return None
+    def lu(table):
+        dt = last_updated_kst(table)
+        return dt.isoformat() if dt else None
 
     out = []
+    # ── 증시 ──
+    try:
+        ld = load_leaders() or {}
+        out.append({"src": "주도주", "last": lu("leaders"),
+                    "counts": [("종목", len(ld.get("stocks") or [])),
+                               ("섹터", len(ld.get("sectors") or []))],
+                    "fallback": ["종목"]})
+    except Exception as e:
+        out.append({"src": "주도주", "error": str(e)[:80]})
+    try:
+        kw = load_keywords_latest() or {}
+        out.append({"src": "증시 키워드", "last": lu("keywords"),
+                    "counts": [("키워드", len(kw.get("items") or []))],
+                    "fallback": ["키워드"]})
+    except Exception as e:
+        out.append({"src": "증시 키워드", "error": str(e)[:80]})
+    try:
+        ip = load_ipo() or {}
+        out.append({"src": "공모주(IPO)", "last": lu("ipo_snapshots"),
+                    "counts": [("최근", len(ip.get("recent") or [])),
+                               ("예정", len(ip.get("upcoming") or []))]})
+    except Exception as e:
+        out.append({"src": "공모주(IPO)", "error": str(e)[:80]})
+    try:
+        rep = list_recent(1) or []
+        out.append({"src": "시황 보고서", "last": lu("reports"),
+                    "counts": [("최근행", len(rep))]})
+    except Exception as e:
+        out.append({"src": "시황 보고서", "error": str(e)[:80]})
+    try:
+        out.append({"src": "종목마스터", "last": lu("stock_master"), "counts": []})
+    except Exception as e:
+        out.append({"src": "종목마스터", "error": str(e)[:80]})
+    # ── 부동산 ──
     try:
         r = load_realestate() or {}
         m = r.get("metrics") or {}
-        ad = (r.get("asof") or "")[:10]
-        out.append({"src": "부동산", "asof": ad, "age": age(ad), "limit": 2,
+        out.append({"src": "부동산", "last": lu("realestate_snapshots"),
                     "counts": [("주목", len(m.get("_hot") or [])),
                                ("시총", len(m.get("_caplead") or [])),
                                ("상승률", len(m.get("_capgain") or [])),
@@ -953,83 +1007,97 @@ def _collect_status():
     except Exception as e:
         out.append({"src": "부동산", "error": str(e)[:80]})
     try:
-        rep = list_recent(1) or []
-        rd = (rep[0].get("report_date") if rep else "") or ""
-        out.append({"src": "시황 보고서", "asof": rd[:10], "age": age(rd),
-                    "limit": None, "counts": [("최근행", len(rep))]})
-    except Exception as e:
-        out.append({"src": "시황 보고서", "error": str(e)[:80]})
-    try:
-        kw = load_keywords_latest() or {}
-        out.append({"src": "키워드", "asof": (kw.get("kw_date") or "")[:10],
-                    "age": age(kw.get("kw_date")), "limit": 3,
-                    "counts": [("키워드", len(kw.get("items") or []))],
+        rk = load_realestate_keywords_latest() or {}
+        out.append({"src": "부동산 키워드", "last": lu("realestate_keywords"),
+                    "counts": [("키워드", len(rk.get("items") or []))],
                     "fallback": ["키워드"]})
     except Exception as e:
-        out.append({"src": "키워드", "error": str(e)[:80]})
-    try:
-        ld = load_leaders() or {}
-        key = ld.get("asof_date") or ld.get("asof")
-        out.append({"src": "주도주", "asof": (str(key) or "")[:10], "age": age(key),
-                    "limit": 3, "counts": [("종목", len(ld.get("stocks") or [])),
-                                           ("섹터", len(ld.get("sectors") or []))],
-                    "fallback": ["종목"]})
-    except Exception as e:
-        out.append({"src": "주도주", "error": str(e)[:80]})
-    try:
-        ip = load_ipo() or {}
-        out.append({"src": "IPO", "asof": (ip.get("asof") or "")[:10],
-                    "age": age(ip.get("asof")), "limit": 3,
-                    "counts": [("최근", len(ip.get("recent") or [])),
-                               ("예정", len(ip.get("upcoming") or []))]})
-    except Exception as e:
-        out.append({"src": "IPO", "error": str(e)[:80]})
+        out.append({"src": "부동산 키워드", "error": str(e)[:80]})
     return out
 
 
-def _age_txt(a):
-    if a is None:
-        return "?"
-    return "오늘" if a == 0 else ("어제" if a == 1 else f"{a}일 전")
+def _fmt_last(iso, now):
+    """최근 갱신 iso(KST) → '오늘 16:45' / '어제 07:03' / '6/29 16:45' / '없음'."""
+    if not iso:
+        return "없음", None
+    try:
+        dt = _dt.fromisoformat(iso)
+    except Exception:
+        return "?", None
+    age = (now.date() - dt.date()).days
+    hm = dt.strftime("%H:%M")
+    if age == 0:
+        return f"오늘 {hm}", age
+    if age == 1:
+        return f"어제 {hm}", age
+    return f"{dt.month}/{dt.day} {hm}", age
+
+
+def _fmt_next(src, now):
+    """cron 첫 슬롯에서 다음 예정 시각 계산 → '오늘 16:40' / '내일 06:07' / '월 16:40' / '수동'."""
+    cfg = _SCHED.get(src)
+    if cfg is None:
+        return "수동"
+    cand = now.replace(hour=cfg["h"], minute=cfg["m"], second=0, microsecond=0)
+    if cand <= now:
+        cand += _td(days=1)
+    if cfg["weekday"]:
+        while cand.weekday() >= 5:      # 토(5)·일(6) 건너뜀
+            cand += _td(days=1)
+    hm = cand.strftime("%H:%M")
+    d = (cand.date() - now.date()).days
+    if d == 0:
+        return f"오늘 {hm}"
+    if d == 1:
+        return f"내일 {hm}"
+    return f"{_WD[cand.weekday()]} {hm}"
 
 
 def _render_status_panel():
-    """🩺 수집 상태 — 소스별 신선도·카운트. 0건 폴백(샘플 표시)을 드러낸다."""
+    """🕐 자동 갱신 현황 — 소스별 최근 갱신 시각 + 다음 예정 시각(KST)."""
     try:
         rows = _collect_status()
     except Exception as e:
-        with st.expander("🩺 수집 상태", expanded=False):
+        with st.expander("🕐 자동 갱신 현황", expanded=False):
             st.caption(f"상태 확인 실패: {str(e)[:120]}")
         return
-    with st.expander("🩺 수집 상태", expanded=False):
+    with st.expander("🕐 자동 갱신 현황", expanded=False):
         if rows is None:
-            st.caption("Supabase 미설정 — 상태를 확인할 수 없어요.")
+            st.caption("Supabase 미설정 — 갱신 현황을 확인할 수 없어요.")
             return
+        now = _dt.now(_KST_TZ)
         lines = []
         for r in rows:
+            src = r["src"]
             if r.get("error"):
-                lines.append(f"🔴 **{r['src']}** · 로드 실패: {r['error']}")
+                lines.append(f"🔴 **{src}** · 로드 실패: {r['error']}")
                 continue
-            asof = r.get("asof") or ""
-            a = r.get("age")
-            lim = r.get("limit")
+            last_txt, age = _fmt_last(r.get("last"), now)
+            next_txt = _fmt_next(src, now)
             counts = r.get("counts", [])
             fb = set(r.get("fallback") or [])
             zeros = [k for k, v in counts if k in fb and v == 0]
-            if not asof:
+            # 신선도 판정: 없음→🔴 / 0건 샘플·지연→🟡 / 정상→🟢
+            weekday_job = (_SCHED.get(src) or {}).get("weekday")
+            manual = _SCHED.get(src) is None
+            stale_lim = 3 if weekday_job else 1     # 주도주 계열은 주말 감안 3일
+            if r.get("last") is None:
                 badge = "🔴"
-            elif zeros or (lim is not None and a is not None and a > lim):
+            elif zeros or (age is not None and not manual and age > stale_lim):
                 badge = "🟡"
             else:
                 badge = "🟢"
             cnt = " · ".join(f"{k} {v}" for k, v in counts)
             ztxt = f"  ⚠️ {'·'.join(zeros)} 0건(샘플 표시 중)" if zeros else ""
-            lines.append(f"{badge} **{r['src']}** · {asof or '—'} "
-                         f"({_age_txt(a)}) · {cnt}{ztxt}")
+            tail = f" · {cnt}" if cnt else ""
+            lines.append(f"{badge} **{src}** · 최근 {last_txt} · 다음 {next_txt}"
+                         f"{tail}{ztxt}")
         st.markdown("\n\n".join(lines))
-        st.caption("🟢 신선 · 🟡 지연 또는 일부 0건(샘플 폴백) · 🔴 없음·실패 — "
-                   "0건 항목은 수집이 실패해도 화면엔 샘플이 떠서 안 보일 수 있으니 "
-                   "여기서 확인하세요. (10분 캐시)")
+        st.caption("모든 시각 KST · '최근'은 실제 DB 갱신 시각, '다음'은 예약 목표 시각 "
+                   "(GitHub 지연으로 실제 실행은 최대 1시간 늦을 수 있어요) · "
+                   "🟢신선 🟡지연·일부 0건(샘플) 🔴없음·실패 · 시황 보고서는 수동 생성 · "
+                   "10분 캐시")
+
 
 
 # ── 탭 ──
