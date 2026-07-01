@@ -36,6 +36,18 @@ def main():
         except Exception as e:
             print(f"[realestate] 주목 단지 수집 실패(생략): {e}")
 
+    # 주요 단지 유니버스(지역별 세대수 TOP-N) — engine_cache(re_universe) 30일 TTL, 월1회 실질 재빌드.
+    #   시총·주목단지·특이거래가 이 위에서 계산되도록 먼저 '확보·적재'한다(현재 단계: 확보만,
+    #   기존 탭 계산은 무변경). metrics 페이로드에 _universe로 실어 뷰어가 같은 스냅샷에서 읽게 함.
+    try:
+        from engine.realestate_collect import collect_universe
+        uni = collect_universe()
+        if isinstance(metrics, dict) and isinstance(uni, dict):
+            metrics["_universe"] = uni
+        print(f"[realestate] 유니버스 {len(uni.get('flat', []))}단지 확보")
+    except Exception as e:
+        print(f"[realestate] 유니버스 확보 실패(생략): {e}")
+
     try:
         indicators = collect_indicators()
         print(f"[realestate] 지표 시계열 {len(indicators)}종 수집")
