@@ -106,15 +106,17 @@ ANOM_MONTHS = 12       # 특이거래 판정 윈도우(개월) — 신고가=최
 # 늘리면 추세가 길어지지만 API 쿼터·수집시간이 비례해 늘어난다(보수적으로 24).
 _APT_VOLUME_MONTHS = 24
 JUMP_PCT = 7.0         # 급등/급락 임계(직전 거래 대비 %)
-VOL_SURGE = 2.0        # 거래량 급증 배수(최근주 vs 윈도우 주평균)
+VOL_SURGE = 2.0        # 거래량 급증 배수(최근 1개월 vs 평소 월평균)
+ANOM_SURGE_MIN_BASE = 0.75   # 거래량 급증 분모(평소 월평균) 하한 — 소표본 폭주(+8200%) 차단
 # 특이거래 '생성(엔진)'은 가장 느슨하게 슈퍼셋으로 만들고, 뷰어가 프리셋(느슨/표준/엄격)으로
-# 좁힌다. 소형/저유동 단지는 '후보 컷(거래빈도)'으로 생성 단계에서 제외한다(세대수 API 비의존).
-ANOM_GEN = {"freq": 5,        # 최근 12개월 단지 매매건수 ≥ (소형/저유동 제외)
-            "jump": 7.0,      # 급등/급락 직전거래 대비 % ≥
-            "margin": 0.3,    # 신고가/신저가: 직전 최고/최저 초과 마진 % ≥
-            "surge": 100.0,   # 거래량 급증 surge% ≥ (×2.0 ≈ +100%)
-            "surge_n": 3,     # 거래량 급증 최근 4주 절대건수 ≥
-            "days": 45}       # 표시 후보 기간(최근 N일 신고분, 신고지연 흡수)
+# 좁힌다. 대상은 '주요 단지 유니버스'로 제한(소형 노이즈 원천 차단, 세대수 API 비의존).
+ANOM_GEN = {"freq": 5,          # 최근 12개월 단지 매매건수 ≥ (저유동 보조 컷)
+            "jump": 7.0,        # 급등/급락 직전거래 대비 % ≥
+            "margin": 0.3,      # 신고가/신저가: 직전 최고/최저 초과 마진 % ≥
+            "surge": 1.5,       # 거래량 급증 배수 ≥ (평소 월평균 대비 ×)
+            "surge_n": 3,       # 거래량 급증 최근 1개월 절대건수 ≥
+            "high_months": 6,   # 신고가/신저가 판정 창(개월) — 6개월 내 최고/최저 대비
+            "days": 45}         # 표시 후보 기간(최근 N일 신고분, 신고지연 흡수)
 
 _DIAG_CODE = "11680"   # 진단용 시험 호출 시군구(강남구 — 거래가 늘 있는 편)
 
@@ -1537,24 +1539,37 @@ def _apt_info_fetch(pairs):
 
 def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=150):
     """특이거래 리스트(느슨 슈퍼셋 — 뷰어가 프리셋으로 좁힘).
-    소형/저유동 단지는 '거래빈도 컷'으로 생성 단계에서 제외(세대수 API 비의존).
+    대상은 '주요 단지 유니버스'로 제한(소형 노이즈 차단, 세대수 API 비의존). 유니버스
+    미확보 시 전체 지역 폴백. 신고가/신저가는 최근 6개월 창, 거래량 급증은 월 단위 배수.
     반환 14-튜플:
       (유형, 배경, 글자색, 단지, 지역, 면적, 가격, 변동, 거래유형, 제외, 거래일ISO,
-       세대수|None, 빈도(12개월 거래수), 신호강도%(신고가=마진/급등=변동/거래량=surge))
+       세대수|None, 빈도(12개월 거래수),
+       신호강도(신고가/신저가=마진%, 급등/급락=변동%, 거래량 급증=평소 대비 배수))
     [호환] 과거 11/12-튜플 스냅샷도 뷰어 _anom_norm이 그대로 정규화한다."""
     asof = asof or date.today()
     _preflight(asof)
     key = _get_key()
     yms = _months_back(asof, months)
     gen = ANOM_GEN
-    recent0 = asof - timedelta(days=gen["days"] - 1)     # 표시 후보 기간
-    recent4w0 = asof - timedelta(days=27)                 # 거래량 급증용 최근 4주
-    other_weeks = max((months * 30 - 28) / 7.0, 1)        # 4주 외 기간의 주 수
+    recent0 = asof - timedelta(days=gen["days"] - 1)          # 표시 후보 기간
+    high0 = asof - timedelta(days=gen["high_months"] * 31)    # 신고가/신저가 비교 창
+    recent_m0 = asof - timedelta(days=29)                     # 거래량 급증: 최근 1개월
+    base_months = max(months - 1, 1)                          # 평소 월평균 산정 개월(최근월 제외)
     stats = {"ok": 0, "fail": 0, "rows": 0, "calls": 0, "empty200": 0,
              "http": {}, "last_err": ""}
 
+    # 대상 = '주요 단지 유니버스'로 제한(소형 노이즈 원천 차단). 미확보 시 전체(하위호환).
+    uni = load_universe()
+    uni = uni if (isinstance(uni, dict) and uni.get("flat")) else None
+    uni_mem = universe_membership(uni) if uni else set()
+    regions = universe_scope() if uni_mem else list(SIGUNGU_CODES.keys())
+
+    def _in_uni(gu, apt):
+        return (not uni_mem) or (f"{gu}|{_norm_apt(apt)}" in uni_mem)
+
     items = []
-    for name, codes in SIGUNGU_CODES.items():
+    for name in regions:
+        codes = SIGUNGU_CODES.get(name) or []
         rows = []
         for code in codes:
             for ym in yms:
@@ -1562,18 +1577,20 @@ def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=
         if not rows:
             continue
 
-        # 단지별 12개월 거래수(유동성/규모 프록시 — 소형 제외용 컷)
+        # 단지별 12개월 거래수(유동성 프록시 — 저유동 보조 컷)
         freq = {}
         for r in rows:
             freq[r["apt"]] = freq.get(r["apt"], 0) + 1
 
-        # ── 신고가/신저가·급등/급락 (단지·면적 그룹) ──
+        # ── 신고가/신저가·급등/급락 (유니버스 단지, 면적 그룹) ──
         groups = {}
         for r in rows:
+            if not _in_uni(name, r["apt"]):        # 유니버스 단지만 탐지
+                continue
             groups.setdefault((r["apt"], round(r["area"])), []).append(r)
         for (apt, area), grp in groups.items():
             f = freq.get(apt, 0)
-            if f < gen["freq"]:           # 소형/저유동 단지 제외(후보 컷)
+            if f < gen["freq"]:
                 continue
             grp.sort(key=lambda r: r["date"])
             recent = [r for r in grp if r["date"] >= recent0]
@@ -1583,8 +1600,8 @@ def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=
                 if exclude_direct and r["direct"]:
                     continue
                 base = (apt, name, f"{round(area)}㎡", _fmt_eok(r["price"]))
-                prior = [g["price"] for g in grp if g["date"] < r["date"]]
-                # 신고가/신저가: 직전까지 최고/최저를 '마진' 초과해야 인정(상승장 노이즈 컷)
+                # 신고가/신저가: 최근 high_months개월 내 직전 최고/최저를 '마진' 초과해야 인정
+                prior = [g["price"] for g in grp if high0 <= g["date"] < r["date"]]
                 if len(prior) >= 2:
                     p_hi, p_lo = max(prior), min(prior)
                     if r["price"] > p_hi:
@@ -1614,22 +1631,26 @@ def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=
                                           r["trade"] or "-", r["direct"],
                                           r["date"].isoformat(), None, f, round(abs(dpct), 2)))
 
-        # ── 거래량 급증 (단지 단위, 최근 4주 vs 그 외 기간 주평균) ──
-        rc4, total = {}, {}
+        # ── 거래량 급증 (유니버스 단지, 최근 1개월 vs 평소 월평균 배수) ──
+        #   배수 = 최근1개월 건수 ÷ max(평소 월평균, 분모하한). 분모하한·절대건수하한이
+        #   소표본 폭주(+8200%)를 차단한다. 주 단위 → 월 단위로 안정화.
+        rc_m, total = {}, {}
         for r in rows:
-            total[r["apt"]] = total.get(r["apt"], 0) + 1
-            if r["date"] >= recent4w0:
-                rc4[r["apt"]] = rc4.get(r["apt"], 0) + 1
-        for apt, c4 in rc4.items():
-            if freq.get(apt, 0) < gen["freq"]:
+            if not _in_uni(name, r["apt"]):
                 continue
-            base_wk = (total[apt] - c4) / other_weeks
-            cur_wk = c4 / 4.0
-            if base_wk > 0 and c4 >= gen["surge_n"] and cur_wk >= (gen["surge"] / 100 + 1) * base_wk:
-                surge = (cur_wk / base_wk - 1) * 100
+            total[r["apt"]] = total.get(r["apt"], 0) + 1
+            if r["date"] >= recent_m0:
+                rc_m[r["apt"]] = rc_m.get(r["apt"], 0) + 1
+        for apt, cm in rc_m.items():
+            if freq.get(apt, 0) < gen["freq"] or cm < gen["surge_n"]:
+                continue
+            base_month = (total[apt] - cm) / base_months
+            base_eff = max(base_month, ANOM_SURGE_MIN_BASE)
+            mult = cm / base_eff
+            if mult >= gen["surge"]:
                 items.append(("거래량 급증", *_BG["거래량 급증"], apt, name, "전체",
-                              f"{c4}건/4주", f"+{round(surge)}%", "-", False,
-                              asof.isoformat(), None, freq.get(apt, 0), round(surge, 2)))
+                              f"{cm}건/월", f"×{mult:.1f}", "-", False,
+                              asof.isoformat(), None, freq.get(apt, 0), round(mult, 2)))
 
     if stats["rows"] == 0:
         raise RuntimeError("특이거래 판정용 실거래를 한 건도 받지 못했어요." + _zero_hint(stats))
@@ -1667,6 +1688,7 @@ def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=
 UNIVERSE_CACHE_KEY = "re_universe"
 UNIVERSE_TTL_DAYS = 30       # 재빌드 주기(세대수 정적 → 월 1회면 충분)
 UNIVERSE_MONTHS = 12         # 후보 발굴용 실거래 스윕 개월
+UNIVERSE_PRICE_MONTHS = 6    # 대표가 산정 우선 윈도우(최근 N개월, 부족 시 12개월 폴백)
 UNIVERSE_TOP_N = 15          # 지역별 세대수 상위 N
 UNIVERSE_MIN_UNITS = 500     # 최소 세대수 컷(소형 제외)
 UNIVERSE_CAND = 25           # 지역별 세대수 조회 후보 상한(거래빈도 상위) — 콜드빌드 비용 상한
@@ -1715,8 +1737,11 @@ def collect_universe(asof=None, force=False):
 
     반환 dict:
       {'asof': ISO, 'scope': [지역...],
-       'regions': {지역: [{'apt','gu','sd','units','builder','dong','freq'}...]},  # 세대수 내림차순
-       'flat':    [위 dict...],                 # 전 지역 평탄화(세대수 내림차순)
+       'regions': {지역: [row...]},            # 세대수 내림차순. row 필드:
+           #   apt,gu,sd,units,builder,dong,freq,
+           #   price(만원),price_eok,ppa(㎡당 만원),area(대표전용㎡),last_deal(ISO),
+           #   p59,p84(만원|None),jr(전세가율%|None),gap(갭 억|None)
+       'flat':    [위 row...],                 # 전 지역 평탄화(세대수 내림차순)
        'keys':    ['지역|단지명norm'...]}         # 소속판정 set 재료
     신선한 캐시가 있으면(force=False) 재빌드 없이 그대로 반환(API 0콜).
     스윕 전수 실패 시 기존 캐시가 있으면 유지(빈 유니버스로 덮지 않음)."""
@@ -1734,29 +1759,62 @@ def collect_universe(asof=None, force=False):
     stats = {"ok": 0, "fail": 0, "rows": 0, "calls": 0, "empty200": 0,
              "http": {}, "last_err": ""}
 
-    # 1) 지역별 후보 발굴 — 12개월 매매 스윕 → 단지별 거래빈도 + 대표 동(dong)
-    region_cands = {}          # 지역 → [(apt, freq, dong)]
+    # 1) 지역별 후보 발굴 + 대표가 산출 — 12개월 매매 스윕(행 보존) → 거래빈도 상위 후보.
+    #    대표가는 최근 UNIVERSE_PRICE_MONTHS개월 우선(없으면 12개월 전체)로 뽑아 '현재가'에 근접.
+    price_cut = asof - timedelta(days=UNIVERSE_PRICE_MONTHS * 31)
+    region_cands = {}          # 지역 → [단지 dict(가격 포함)]
     for name in scope:
         codes = SIGUNGU_CODES.get(name) or []
-        freq, dongs = {}, {}
+        per = {}               # apt → [매매 rows]
         for code in codes:
             for ym in yms:
                 for r in _fetch(key, code, ym, "매매", stats):
-                    a = r["apt"]
-                    if not a:
+                    if r.get("direct"):        # 직거래(증여추정) 제외 — 가격 왜곡 방지
                         continue
-                    freq[a] = freq.get(a, 0) + 1
-                    if r.get("dong"):
-                        d = dongs.setdefault(a, {})
-                        d[r["dong"]] = d.get(r["dong"], 0) + 1
-        cands = sorted(((a, f) for a, f in freq.items() if f >= UNIVERSE_MIN_FREQ),
-                       key=lambda t: t[1], reverse=True)[:UNIVERSE_CAND]
+                    a = r["apt"]
+                    if a:
+                        per.setdefault(a, []).append(r)
+        # 후보: 거래빈도 상위(대단지일수록 잦음) → ≥MIN_FREQ → 상위 CAND
+        cand_apts = sorted(((a, len(rs)) for a, rs in per.items() if len(rs) >= UNIVERSE_MIN_FREQ),
+                           key=lambda t: t[1], reverse=True)[:UNIVERSE_CAND]
+        if not cand_apts:
+            continue
+        # 전세 스윕(같은 지역·기간) — 후보 전세가율/갭 산출용(월1회 비용이라 OK)
+        jeon = {}
+        for code in codes:
+            for ym in yms:
+                for r in _fetch(key, code, ym, "전월세", stats):
+                    if r.get("direct"):
+                        continue
+                    jeon.setdefault(r["apt"], []).append(r["ppa"])
         picked = []
-        for a, f in cands:
-            dnm = max(dongs[a].items(), key=lambda kv: kv[1])[0] if dongs.get(a) else ""
-            picked.append((a, f, dnm))
-        if picked:
-            region_cands[name] = picked
+        for a, f in cand_apts:
+            rs = per[a]
+            rec = [r for r in rs if r["date"] >= price_cut] or rs
+            price = statistics.median([r["price"] for r in rec])
+            ppa = statistics.median([r["ppa"] for r in rec])
+            area = round(statistics.median([r["area"] for r in rec]))
+            dcount = {}
+            for r in rs:
+                if r.get("dong"):
+                    dcount[r["dong"]] = dcount.get(r["dong"], 0) + 1
+            dnm = max(dcount.items(), key=lambda kv: kv[1])[0] if dcount else ""
+            jr = gap = None
+            jp = jeon.get(a, [])
+            if len(jp) >= 2 and ppa:
+                jrv = statistics.median(jp) / ppa * 100
+                if 30 <= jrv <= 95:            # 월세혼입·오류 이상치 제외
+                    jr = round(jrv)
+                    gap = round((ppa - statistics.median(jp)) * area / 1e4, 1) if area else None
+            picked.append({
+                "apt": a, "gu": name, "freq": f, "dong": dnm,
+                "price": price, "price_eok": _fmt_eok(price), "ppa": round(ppa, 1),
+                "area": area, "last_deal": max(r["date"] for r in rs).isoformat(),
+                "p59": _recent_price_in_band(rs, 49.0, 63.0),
+                "p84": _recent_price_in_band(rs, 74.0, 90.0),
+                "jr": jr, "gap": gap,
+            })
+        region_cands[name] = picked
 
     if stats["rows"] == 0:
         prev = load_universe()      # 전수 실패 → 기존 유니버스라도 유지
@@ -1766,7 +1824,7 @@ def collect_universe(asof=None, force=False):
         raise RuntimeError("유니버스 후보 실거래를 한 건도 받지 못했어요." + _zero_hint(stats))
 
     # 2) 세대수 보강(후보 합집합 1회 조회) → ≥MIN_UNITS 컷 → 지역별 세대수 TOP-N
-    pairs = {(name, a) for name, lst in region_cands.items() for (a, _f, _d) in lst}
+    pairs = {(name, d["apt"]) for name, lst in region_cands.items() for d in lst}
     info = {}
     try:
         info = _apt_info_map(list(pairs))
@@ -1776,17 +1834,15 @@ def collect_universe(asof=None, force=False):
     regions, flat = {}, []
     for name, lst in region_cands.items():
         rows = []
-        for a, f, dnm in lst:
-            inf = info.get((name, a)) or {}
+        for d in lst:
+            inf = info.get((name, d["apt"])) or {}
             units = inf.get("units")
             if not units or units < UNIVERSE_MIN_UNITS:
                 continue
-            rows.append({
-                "apt": a, "gu": name,
-                "sd": "seoul" if name in seoul_gu else "gg",
-                "units": int(units), "builder": inf.get("builder"),
-                "dong": dnm, "freq": f,
-            })
+            d["sd"] = "seoul" if name in seoul_gu else "gg"
+            d["units"] = int(units)
+            d["builder"] = inf.get("builder")
+            rows.append(d)
         rows.sort(key=lambda d: d["units"], reverse=True)
         rows = rows[:UNIVERSE_TOP_N]
         if rows:
@@ -1826,6 +1882,7 @@ def collect_universe(asof=None, force=False):
 HOT_MONTHS = 3          # 주목 단지 산정 윈도우(개월) — 특이거래보다 가볍게
 HOT_MIN_FREQ = 6        # 후보 컷: 윈도우 내 단지 거래 ≥ (소형 제외)
 HOT_RECENT_DAYS = 30    # '최근' 거래 정의(신고지연 흡수)
+HOT_VOL_WEIGHT = 4.0    # 주목단지 heat 점수 = chg% + (vol_mult−1)×이 가중치(거래 가속 반영)
 
 
 def _datalab_interest(names, ref="부동산", months=3):
@@ -1942,13 +1999,44 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
     if not agg:
         return _empty()
     from collections import Counter
-    # 랭킹: 최근 거래수 우선 + 상승률 가점
-    ranked = sorted(agg.values(),
-                    key=lambda d: (d["recent"], d["chg"]), reverse=True)[:top]
 
-    # 시총 리더 후보: 구별 거래빈도 상위(대단지일수록 거래 잦음 → 포착) — 같은 agg 재사용
+    # 유니버스 1회 로드 — 주목단지 랭킹 제한 + 시총(cap) 둘 다 재사용(중복 캐시읽기 방지).
+    uni = load_universe()
+    uni = uni if (isinstance(uni, dict) and uni.get("flat")) else None
+    uni_mem = universe_membership(uni) if uni else set()
+
+    # 주목단지 랭킹 — '유니버스 중 움직이는 대장주'.
+    #   기존 (최근거래수, 상승률)은 회전율 높은 중소단지를 위로 올렸다. 대신:
+    #   ① 유니버스(주요 단지)로 대상 제한 ② heat = 가격 모멘텀(chg%) + 거래 가속(vol_mult>1)
+    #      → 규모 아닌 '움직임'으로 정렬(대단지도 스케일 무관하게 비교). 세대수는 동점 tiebreak.
+    #   유니버스 미확보/유니버스 단지 최근활동 0이면 기존 정렬로 폴백(하위호환).
+    def _heat(d):
+        vb = 0.0
+        m = d.get("vol_mult")
+        if isinstance(m, (int, float)):
+            vb = max(m - 1.0, 0.0) * HOT_VOL_WEIGHT
+        return round((d.get("chg") or 0) + vb, 2)
+
+    pool = ([d for d in agg.values()
+             if f"{d['gu']}|{_norm_apt(d['apt'])}" in uni_mem] if uni_mem else [])
+    if pool:
+        ranked = sorted(pool, key=lambda d: (_heat(d), d.get("recent", 0),
+                                             d.get("freq", 0)), reverse=True)[:top]
+        for d in ranked:
+            d["heat"] = _heat(d)
+    else:
+        ranked = sorted(agg.values(),
+                        key=lambda d: (d["recent"], d["chg"]), reverse=True)[:top]
+
+    # ── 시총(시가총액) 리더 — '주요 단지 유니버스' 기반(대단지 누락 방지) ──────
+    #   유니버스 있으면: 대상=지역별 세대수 TOP-N 유니버스. 세대수·전세가율·갭은 유니버스,
+    #     가격은 '오늘 3개월 스윕에 최근 거래 있으면 그 신선가, 없으면 유니버스 대표가'.
+    #     → 조용한 대단지도 절대 안 빠지고, 최근 거래 단지는 최신가 반영.
+    #   유니버스 없으면(수집 전): 기존 로직(구별 거래빈도 상위 후보 → 세대수 조회)으로 폴백.
+    uni_cap = uni if with_cap else None
+
     cap_cands = []
-    if with_cap:
+    if with_cap and not uni_cap:
         bygu = {}
         for d in agg.values():
             bygu.setdefault(d["gu"], []).append(d)
@@ -1956,9 +2044,9 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
             lst.sort(key=lambda d: (d["freq"], d["recent"]), reverse=True)
             cap_cands.extend(lst[:cap_cand])
 
-    # 단지정보 보강(세대수·시공사) — hot 랭킹 + 시총 후보 합집합 1회 조회(중복 비용 제거)
+    # 단지정보 보강(세대수·시공사) — hot 랭킹 + (폴백 시)시총 후보 합집합 1회 조회
     pairs = {(d["gu"], d["apt"]) for d in ranked}
-    if with_cap:
+    if with_cap and not uni_cap:
         pairs |= {(d["gu"], d["apt"]) for d in cap_cands}
     info = {}
     try:
@@ -1967,9 +2055,39 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
         print(f"[realestate] 단지정보 보강 생략: {e}")
 
     # 시총 리더 출력(독립 dict) — ranked의 _rows 제거 전에 먼저 만든다.
-    #   시총 = 단지 최근 실거래 중위 거래금액(만원) × 세대수. 세대수 없으면 제외(가짜 없음).
     cap_leaders = []
-    if with_cap:
+    if with_cap and uni_cap:
+        # 오늘 스윕(agg) 정규화 인덱스 — 유니버스 단지에 최신가/㎡가/면적/행 매칭
+        agg_norm = {(gu, _norm_apt(apt)): v for (gu, apt), v in agg.items()}
+        for d in uni_cap["flat"]:
+            units = d.get("units")
+            if not units:
+                continue
+            a = agg_norm.get((d["gu"], _norm_apt(d["apt"])))
+            price = (a.get("price") if a else None) or d.get("price")
+            if not price:
+                continue
+            rs = (a.get("_rows") if a else None) or []
+            p59 = (_recent_price_in_band(rs, 49.0, 63.0) if rs else None) or d.get("p59")
+            p84 = (_recent_price_in_band(rs, 74.0, 90.0) if rs else None) or d.get("p84")
+            cap_manwon = price * units
+            area = d.get("area")
+            cap_leaders.append({
+                "apt": d["apt"], "gu": d["gu"], "sd": d.get("sd"),
+                "units": units, "builder": d.get("builder"),
+                "price": price, "price_eok": _fmt_eok(price),
+                "area": f"{area}㎡" if area else "",
+                "freq": d.get("freq"), "cap_manwon": cap_manwon,
+                "cap_eok": round(cap_manwon / 1e4), "cap_fmt": _fmt_cap(cap_manwon),
+                "p59_eok": _fmt_eok(p59) if p59 else None,
+                "p84_eok": _fmt_eok(p84) if p84 else None,
+                "dong": d.get("dong") or "",
+                "addr": (d["gu"] + " " + (d.get("dong") or "")).strip(),
+                "jr": d.get("jr"), "gap_eok": d.get("gap"),   # 전세가율·갭은 유니버스에서
+                "fresh": bool(a),                              # 최근3개월 거래 있음(최신가)
+            })
+        cap_leaders.sort(key=lambda c: c["cap_manwon"], reverse=True)
+    elif with_cap:
         for d in cap_cands:
             inf = info.get((d["gu"], d["apt"]), {})
             units = inf.get("units")
@@ -1992,7 +2110,6 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
                 "dong": dnm, "addr": (d["gu"] + " " + dnm).strip(),
             })
         # 구별 시총 top cap_per_gu(작은 구도 노출 보장) ∪ 전체 시총 top cap_overall
-        # (강남3구 합산·수도권 전체 같은 그룹/전체 재랭킹을 뷰어가 정확히 하도록 둘 다 담음)
         bygu2 = {}
         for c in cap_leaders:
             bygu2.setdefault(c["gu"], []).append(c)
@@ -2101,7 +2218,7 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
     jr_map = {}
     try:
         show_gus = {d["gu"] for d in ranked}
-        if with_cap:
+        if with_cap and not uni_cap:      # 유니버스 cap은 전세가율을 유니버스에서 이미 확보
             show_gus |= {c["gu"] for c in cap_leaders}
         if with_gain:
             show_gus |= {g["gu"] for g in gain_leaders}
@@ -2140,7 +2257,7 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
 
     for d in ranked:
         _apply_jr(d)
-    if with_cap:
+    if with_cap and not uni_cap:          # 유니버스 cap은 jr/gap을 유니버스에서 이미 채움
         for c in cap_leaders:
             _apply_jr(c)
     if with_gain:
