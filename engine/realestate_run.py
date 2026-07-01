@@ -9,10 +9,17 @@ GitHub Actions(.github/workflows/realestate.yml)의 일일 스케줄, 또는 수
 
 from engine.realestate_collect import (collect_region_metrics, collect_anomalies,
                                         collect_indicators)
-from modules.db import save_realestate
+from modules.db import save_realestate, collected_today
 
 
 def main():
+    # ── 멱등 가드: 오늘(KST) 이미 수집을 마쳤으면 다음 슬롯은 즉시 스킵 ──
+    #   realestate.yml은 06:07·07:07·08:07 KST 세 슬롯. 첫 성공이 잡으면 여기서
+    #   빠져 중복 수집·중복 부동산 키워드(Anthropic) 과금을 막는다.
+    if collected_today("realestate_snapshots"):
+        print("[realestate] 오늘 이미 수집 완료 — 스킵(멱등 가드).", flush=True)
+        return
+
     metrics = None
     anomalies = None
     indicators = None
