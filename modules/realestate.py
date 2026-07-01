@@ -3141,7 +3141,7 @@ def render_realestate():
     # 블록으로 두면 그 블록이 세로 간격을 한 칸 더 먹어 증시보다 벌어지므로,
     # 첫 패널(지도)의 accent-bar와 한 블록으로 합쳐 주입한다(간격 일치).
     t_ind, t_map, t_anom, t_sub, t_kw = st.tabs(
-        ["지표", "지도", "아파트", "분양", "키워드"])
+        ["사이클", "지도", "실거래", "분양", "테마"])
 
     with t_ind:
         st.markdown(_RE_CSS + '<div class="accent-bar"></div>',
@@ -3159,7 +3159,7 @@ def render_realestate():
 
     with t_anom:
         st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
-        st.title("아파트")
+        st.title("아파트 실거래")
         st.caption("아파트 단지·실거래 종합 — 시장 방향·특이거래·시총·주목단지 · "
                    "국토부 실거래 기준 · 직거래 기본 제외")
         _render_market_band()
