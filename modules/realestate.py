@@ -2834,7 +2834,11 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);-
     <div><div class="kl">거래활발</div><div class="kv">__ACT__<small>단지</small></div></div>
     <div><div class="kl">평균 상승률</div><div class="kv" style="color:__GCOL__">__GAIN__</div></div>
   </div>
-</div></body></html>'''
+</div>
+<script>
+(function(){function _fit(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;if(window.frameElement){window.frameElement.style.height=h+"px";window.frameElement.setAttribute("height",h);}}catch(e){}}window.addEventListener("load",_fit);setTimeout(_fit,150);setTimeout(_fit,600);setTimeout(_fit,1500);window.addEventListener("resize",_fit);try{new ResizeObserver(_fit).observe(document.body);}catch(e){}})();
+</script>
+</body></html>'''
 
 
 def _market_summary():
@@ -2907,7 +2911,7 @@ def _render_market_band():
             .replace("__ACT__", str(s["act"]))
             .replace("__GCOL__", gcol)
             .replace("__GAIN__", gain))
-    components.html(html, height=130, scrolling=False)
+    components.html(html, height=210, scrolling=False)
     st.caption("상승압력=신고가÷(신고가+신저가) · 특이거래 탭 기본(표준 민감도·직거래 제외)과 "
                "동일 집계 · 거래활발=주목단지 랭킹 단지수 · 평균 상승률=주목단지 평균")
 
