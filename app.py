@@ -29,7 +29,7 @@ from modules.watchlist_brief import render_watchlist_tab
 from modules.ipo import render_ipo_tab
 
 load_dotenv()
-st.set_page_config(page_title="DY Monitoring", page_icon="📈", layout="wide")
+st.set_page_config(page_title="DY Monitoring", page_icon="🔭", layout="wide")
 
 # ── 타임라인 카드 클릭(?rpt=파일명) → 해당 보고서 선택 ──
 try:
