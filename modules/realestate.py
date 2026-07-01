@@ -2301,9 +2301,11 @@ def _region_of(gu):
 
 
 def _chg_abs(chg):
-    """'+8.1%'·'-4.0%'·'+148%' → 절대 변동률(정렬·강조용)."""
+    """'+8.1%'·'-4.0%'·'+148%'·'×2.5'(거래량 배수) → 절대 크기(정렬·강조용)."""
     try:
-        return abs(float(str(chg).replace("%", "").replace("+", "").strip()))
+        s = (str(chg).replace("%", "").replace("+", "")
+             .replace("평소", "").replace("×", "").strip())
+        return abs(float(s))
     except Exception:
         return 0.0
 
@@ -2380,9 +2382,9 @@ def _anom_daylabel(d):
 
 
 _ANOM_PRESETS = {
-    "느슨": {"freq": 5, "jump": 7.0, "margin": 0.3, "surge": 80, "days": 45},
-    "표준": {"freq": 8, "jump": 10.0, "margin": 1.0, "surge": 150, "days": 30},
-    "엄격": {"freq": 14, "jump": 13.0, "margin": 2.0, "surge": 200, "days": 21},
+    "느슨": {"freq": 5, "jump": 7.0, "margin": 0.3, "surge": 1.6, "days": 45},
+    "표준": {"freq": 8, "jump": 10.0, "margin": 1.0, "surge": 2.0, "days": 30},
+    "엄격": {"freq": 14, "jump": 13.0, "margin": 2.0, "surge": 3.0, "days": 21},
 }
 
 
@@ -2519,7 +2521,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);f
   <div class="picker"><label>지역</label><select id="sel" onchange="fill()"></select>
     <span class="sum-line" id="sumline"></span></div>
   <div class="rk" id="rk"></div>
-  <div class="note">※ <b>시가총액(추정)</b> = 단지 최근 실거래 중위가 × 세대수. 강남3구·마용성 같은 그룹은 합산 재정렬 TOP10, 개별 구는 TOP5. 최근 거래가 있는 단지만 집계(거래 없는 단지·세대수 미상 제외) · 매일 04:55 갱신.</div>
+  <div class="note">※ <b>시가총액(추정)</b> = 최근 실거래가(최근 거래 없으면 최근 대표가) × 세대수. <b>주요 단지 유니버스</b>(지역별 세대수 상위 단지)를 대상으로 집계해 조용한 대단지도 빠지지 않아요. 강남3구·마용성 같은 그룹은 합산 재정렬 TOP10, 개별 구는 TOP5 · 매일 04:55 갱신.</div>
 </div>
 <script>
 const CAP=__CAP__;
@@ -2543,7 +2545,7 @@ function fill(){var v=document.getElementById("sel").value,list,limit,label;
   var su=list.slice(0,limit).reduce(function(s,c){return s+c.cap;},0);
   label='<b>'+v+'</b> 합산 · '+GROUPS[v].join("·")+' · 표시 시총합 <b>'+(su/10000).toFixed(1)+'조</b>';}
  else{list=(byGu[v]||[]).slice().sort(function(a,b){return b.cap-a.cap;});limit=5;label='<b>'+v+'</b> 시총 TOP5';}
- document.getElementById("rk").innerHTML=list.length?rowsRK(list,limit):'<div class="empty">해당 지역은 최근 거래 단지가 없어요.</div>';
+ document.getElementById("rk").innerHTML=list.length?rowsRK(list,limit):'<div class="empty">해당 지역 유니버스 단지가 없어요.</div>';
  document.getElementById("sumline").innerHTML=label;}
 function flat(){var all=CAP.slice().sort(function(a,b){return b.cap-a.cap;}).slice(0,10);
  document.getElementById("flat").innerHTML=all.length?all.map(function(c,i){
@@ -2585,7 +2587,7 @@ def _render_cap_leaders():
     components.html(html, height=height, scrolling=False)
     src = ("국토부 실거래 × 공동주택 세대수" if fetch_cap_leaders() is not _SAMPLE_CAPLEAD
            else "샘플(엔진 수집 전 — 04:55 자동 수집 후 실데이터로 교체)")
-    st.caption(f"시총=최근 실거래 중위가×세대수 · {n_gu}개 지역 집계 · {src}")
+    st.caption(f"시총=최근 실거래가(없으면 대표가)×세대수 · 주요 단지 유니버스 {n_gu}개 지역 · {src}")
 
 
 def _render_hot_complexes():
@@ -2595,7 +2597,7 @@ def _render_hot_complexes():
     if not hot:
         return
     st.markdown('<div class="re-grp">주목 단지'
-                '<span class="sub">최근 거래 활발·상승 · 국토부 실거래</span></div>',
+                '<span class="sub">주요 단지 중 가격·거래가 움직이는 대장주 · 국토부 실거래</span></div>',
                 unsafe_allow_html=True)
 
     def _pp(lbl, val):
@@ -2651,7 +2653,8 @@ def _render_hot_complexes():
             f'<a class="re-hc-map" href="{_naver_map_url(mq)}" target="_blank" '
             f'rel="noopener">네이버 지도 ↗</a></div>')
     st.markdown(f'<div class="re-hcwrap">{body}</div>', unsafe_allow_html=True)
-    st.caption("최근 거래가 몰린 상승 단지(국토부 실거래 기준 · 직거래 제외) · "
+    st.caption("주요 단지 유니버스 중 가격 모멘텀(3개월 등락)+거래 가속이 큰 대장주 순 "
+               "(국토부 실거래 기준 · 직거래 제외) · "
                "‘평소 ×N’=최근 30일 거래밀도÷직전 60일 평균(기간 정규화) · "
                "59·84㎡는 각 면적대 최근 실거래가 · 전세가율=전세 ㎡당가÷매매 ㎡당가 · "
                "갭=(매매−전세)×대표면적 · 추이=대표면적대 ㎡당가 시퀀스 · "
@@ -2788,8 +2791,8 @@ def _render_anomalies():
                  f'<div><div class="re-price">{price}</div>'
                  f'<div class="re-chg {chg_cls} {emph}">{chg}</div></div></div>')
     st.markdown(html, unsafe_allow_html=True)
-    st.caption("소형·저유동 단지는 거래빈도 컷으로 제외(세대수 미의존) · 신고가=최근 1년 최고 "
-               "초과 · 급등락=직전 동일면적 거래 대비 · 거래량 급증=최근 4주 vs 평균 · "
+    st.caption("주요 단지 유니버스 대상(소형 노이즈 제외) · 신고가=최근 6개월 최고 초과 · "
+               "급등락=직전 동일면적 거래 대비 · 거래량 급증=최근 1개월 vs 평소 월평균 배수(×) · "
                "민감도로 양 조절 · 직거래(증여추정) 기본 제외 · 단지명 클릭 시 네이버부동산.")
 
 
