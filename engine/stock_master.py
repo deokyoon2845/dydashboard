@@ -120,6 +120,12 @@ def main():
         print("[stock_master] SUPABASE 미설정 — 저장 건너뜀(키 확인).", flush=True)
         return 1
 
+    # ── 멱등 가드: 오늘(KST) 이미 수집을 마쳤으면 다음 슬롯은 즉시 스킵 ──
+    #   stock_master.yml은 06:20·07:20 KST 두 슬롯. 첫 성공이 잡으면 여기서 빠진다.
+    if db.collected_today("stock_master"):
+        print("[stock_master] 오늘 이미 수집 완료 — 스킵(멱등 가드).", flush=True)
+        return 0
+
     try:
         rows, basdt = collect()
     except Exception:
