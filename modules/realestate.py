@@ -1665,7 +1665,7 @@ def _render_trend_charts(data):
     from datetime import date
     inds = _trend_series_3(data)
     if not inds:
-        st.caption("추이 데이터가 아직 없어요. 매일 07:00 수집 후 표시됩니다.")
+        st.caption("추이 데이터가 아직 없어요. 매일 아침 자동 수집 후 표시됩니다.")
         return
     asof = date.today().strftime("%Y-%m-%d")
     components.html(_trend_component(inds, asof), height=508, scrolling=False)
@@ -2228,13 +2228,13 @@ def _indicator_chart_component(ind, pend, price, asof):
 
 def _render_indicator_charts(data):
     """지표 탭 v2 — 사이클 위치 + 핵심 3 강조 카드 + 그룹별 컴팩트 행(미니차트 1년·월축).
-    데이터는 엔진(07:00 수집) 가격지수 시계열을 그대로 쓰고, 미연결 항목은 '연결예정'으로 표시."""
+    데이터는 엔진(매일 아침 수집) 가격지수 시계열을 그대로 쓰고, 미연결 항목은 '연결예정'으로 표시."""
     from datetime import date
     from math import ceil
     live = data is not _IND_SAMPLE
     ind, pend = _indicators_v2_payload(data)
     if not ind:
-        st.caption("지표 데이터가 아직 없어요. 매일 07:00 수집 후 표시됩니다.")
+        st.caption("지표 데이터가 아직 없어요. 매일 아침 자동 수집 후 표시됩니다.")
         return
     asof = date.today().strftime("%Y-%m-%d")
     price = _price_block_payload(data)
@@ -2254,7 +2254,7 @@ def _render_indicator_charts(data):
     components.html(_indicator_chart_component(ind, pend, price, asof),
                     height=height, scrolling=False)
     src = ("KB 실데이터" if live
-           else "샘플(엔진 수집 전 — 07:00 자동 수집 후 실데이터로 교체)")
+           else "샘플(엔진 수집 전 — 아침 자동 수집 후 실데이터로 교체)")
     st.caption("핵심(매수우위·매매전망) + 선행/동행/수급·심리 그룹 · "
                f"미니차트 최근 1년(월 단위 축) · {src}")
 
@@ -2417,7 +2417,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);f
 <script>
 const GAIN=__GAIN__;
 function flat(){
- if(!GAIN||!GAIN.length){document.getElementById("flat").innerHTML='<div class="empty">데이터가 아직 없어요. 매일 04:55 수집 후 표시됩니다.</div>';return;}
+ if(!GAIN||!GAIN.length){document.getElementById("flat").innerHTML='<div class="empty">데이터가 아직 없어요. 매일 아침 자동 수집 후 표시됩니다.</div>';return;}
  document.getElementById("flat").innerHTML=GAIN.map(function(c,i){
   var meta=c.units?(c.units.toLocaleString()+'세대 · '+c.dong):c.dong;
   var sub='현재 '+(c.peok||'—')+(c.cap?' · 시총 '+c.cap:'');
@@ -2448,23 +2448,23 @@ def _render_cap_gainers(metric="ytd", top=10):
                      "units": c.get("units"), "peok": c.get("price_eok") or "",
                      "cap": c.get("cap_fmt") or "", "dong": c.get("dong") or ""})
     if not rows:
-        st.caption("데이터가 아직 없어요. 매일 04:55 수집 후 표시됩니다.")
+        st.caption("데이터가 아직 없어요. 매일 아침 자동 수집 후 표시됩니다.")
         return
     rows.sort(key=lambda r: r["val"], reverse=True)
     rows = rows[:top]
     is_sample = fetch_cap_gainers() is _SAMPLE_CAPGAIN
     src = ("국토부 실거래 평단가" if not is_sample
-           else "샘플(엔진 수집 전 — 04:55 자동 수집 후 실데이터로 교체)")
+           else "샘플(엔진 수집 전 — 아침 자동 수집 후 실데이터로 교체)")
     if metric == "ytd":
         base = f"{date.today().year - 1}.12"
         note = (f'※ <b>작년말({base}) 대비</b> 면적정규화 평단가(㎡당가) 상승률. '
                 f'세대수 불변이라 시총 상승률과 동일. 작년말·현재 모두 거래가 있는 단지만'
-                f'(표본 부족·하락 단지 제외) · 매일 04:55 갱신.')
+                f'(표본 부족·하락 단지 제외) · 매일 아침 갱신.')
         cap = f"작년말 대비 평단가 상승률 · 시총 상승률과 동일(세대수 불변) · {src}"
     else:
         note = ('※ <b>3개월 전 대비</b> 평단가 모멘텀(최근 vs 3개월 전 ㎡당가). '
                 'YTD가 누적 상승폭이라면 모멘텀은 <b>최근 가속/감속</b> 신호 · '
-                '3개월 전·현재 모두 거래가 있는 단지만 · 매일 04:55 갱신.')
+                '3개월 전·현재 모두 거래가 있는 단지만 · 매일 아침 갱신.')
         cap = f"최근 3개월 모멘텀(3개월 전 대비 평단가) · 가속/감속 선행신호 · {src}"
     height = 70 + len(rows) * 56 + 80
     html = (_CAPGAIN_HTML
@@ -2521,7 +2521,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);f
   <div class="picker"><label>지역</label><select id="sel" onchange="fill()"></select>
     <span class="sum-line" id="sumline"></span></div>
   <div class="rk" id="rk"></div>
-  <div class="note">※ <b>시가총액(추정)</b> = 최근 실거래가(최근 거래 없으면 최근 대표가) × 세대수. <b>주요 단지 유니버스</b>(지역별 세대수 상위 단지)를 대상으로 집계해 조용한 대단지도 빠지지 않아요. 강남3구·마용성 같은 그룹은 합산 재정렬 TOP10, 개별 구는 TOP5 · 매일 04:55 갱신.</div>
+  <div class="note">※ <b>시가총액(추정)</b> = 최근 실거래가(최근 거래 없으면 최근 대표가) × 세대수. <b>주요 단지 유니버스</b>(지역별 세대수 상위 단지)를 대상으로 집계해 조용한 대단지도 빠지지 않아요. 강남3구·마용성 같은 그룹은 합산 재정렬 TOP10, 개별 구는 TOP5 · 매일 아침 갱신.</div>
 </div>
 <script>
 const CAP=__CAP__;
@@ -2552,7 +2552,7 @@ function flat(){var all=CAP.slice().sort(function(a,b){return b.cap-a.cap;}).sli
   return '<div class="fr'+(i===0?' top1':'')+'"><div class="rank">'+(i+1)+'</div>'
    +'<div class="nm"><span class="gu-badge">'+c.gu+'</span>'+c.apt+'<small style="font-weight:600;color:var(--muted)">'+c.units.toLocaleString()+'세대 · '+c.dong+'</small>'+jrHtml(c)+'</div>'
    +'<div class="cap"><b>'+capFmt(c.cap)+'</b><small>최근 '+(c.peok||'—')+'</small></div></div>';}).join("")
-  :'<div class="empty">시총 데이터가 아직 없어요. 매일 04:55 수집 후 표시됩니다.</div>';}
+  :'<div class="empty">시총 데이터가 아직 없어요. 매일 아침 자동 수집 후 표시됩니다.</div>';}
 (function(){var sel=document.getElementById("sel");
  var h='<optgroup label="그룹">'+Object.keys(GROUPS).map(function(g){return '<option>'+g+'</option>';}).join("")+'</optgroup>';
  h+='<optgroup label="자치구·시">'+GUS.map(function(g){return '<option>'+g+'</option>';}).join("")+'</optgroup>';
@@ -2579,14 +2579,14 @@ def _render_cap_leaders():
                      "b": c.get("builder") or "", "dong": c.get("dong") or "",
                      "jr": c.get("jr"), "gap": c.get("gap_eok")})
     if not rows:
-        st.caption("시총 데이터가 아직 없어요. 매일 04:55 수집 후 표시됩니다.")
+        st.caption("시총 데이터가 아직 없어요. 매일 아침 자동 수집 후 표시됩니다.")
         return
     n_gu = len(set(r["gu"] for r in rows))
     height = 110 + min(len(rows), 10) * 76 + 110 + 10 * 80 + 90
     html = _CAPLEAD_HTML.replace("__CAP__", _json.dumps(rows, ensure_ascii=False))
     components.html(html, height=height, scrolling=False)
     src = ("국토부 실거래 × 공동주택 세대수" if fetch_cap_leaders() is not _SAMPLE_CAPLEAD
-           else "샘플(엔진 수집 전 — 04:55 자동 수집 후 실데이터로 교체)")
+           else "샘플(엔진 수집 전 — 아침 자동 수집 후 실데이터로 교체)")
     st.caption(f"시총=최근 실거래가(없으면 대표가)×세대수 · 주요 단지 유니버스 {n_gu}개 지역 · {src}")
 
 
@@ -3037,9 +3037,9 @@ def _run_collection():
     """뷰어 '최신 데이터 불러오기' — 라이브 API를 호출하지 않고 DB 스냅샷만 다시 읽는다.
 
     KB(data-api.kbland.kr)는 Streamlit Cloud IP에서 차단/타임아웃되고, 국토부 대량 호출도
-    뷰어에서는 불안정하다(엔진-우선 원칙). 그래서 실제 수집은 매일 07:00 GitHub Actions가
+    뷰어에서는 불안정하다(엔진-우선 원칙). 그래서 실제 수집은 매일 아침 GitHub Actions가
     수행해 Supabase(realestate_snapshots)에 채우고, 뷰어는 그 최신 행을 읽기만 한다.
-    이 함수는 스냅샷 캐시를 비워 '방금 07:00/수동 워크플로가 쓴 최신본'을 즉시 반영한다.
+    이 함수는 스냅샷 캐시를 비워 '방금 아침/수동 워크플로가 쓴 최신본'을 즉시 반영한다.
     (예외를 던지지 않는다 — 에러 배너 대신 항상 DB/샘플을 보여준다.)"""
     try:
         _load_re_snapshot.clear()      # 스냅샷 캐시 무효화 → 다음 읽기에서 DB 최신본 로드
@@ -3089,9 +3089,9 @@ def _render_collect_controls():
         snap = _load_re_snapshot()
         asof = (snap or {}).get("asof") if snap else None
     if asof:
-        st.caption(f"수도권·광역시 아파트 · 매매·전세=KB 월간 가격지수, 거래=주간 실거래 · 기준 {asof} KST · 매일 07:00 자동 갱신")
+        st.caption(f"수도권·광역시 아파트 · 매매·전세=KB 월간 가격지수, 거래=주간 실거래 · 기준 {asof} KST · 매일 아침 자동 갱신 · 최근·다음 시각은 하단 🕐 자동 갱신 현황")
     else:
-        st.caption("수도권 아파트 · 현재 샘플 — 매일 07:00 자동 수집(KB 가격지수·실거래) 후 "
+        st.caption("수도권 아파트 · 현재 샘플 — 매일 아침 자동 수집(KB 가격지수·실거래) 후 "
                    "실데이터로 채워집니다.")
 
     _re_render_lock_gate()
@@ -3100,7 +3100,7 @@ def _render_collect_controls():
     with col_a:
         do_collect = st.button(
             "🔄 최신 데이터 불러오기", disabled=not authed,
-            help="매일 07:00 GitHub Actions가 KB·국토부 데이터를 수집해 DB에 저장합니다. "
+            help="매일 아침 GitHub Actions가 KB·국토부 데이터를 수집해 DB에 저장합니다. "
                  "이 버튼은 그 최신본을 즉시 다시 불러옵니다(라이브 API 호출 없음).",
             use_container_width=True)
     with col_b:
@@ -3194,11 +3194,11 @@ def render_realestate():
     with t_sub:
         st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
         st.title("분양 단지")
-        st.caption("한국부동산원 청약홈 분양정보 · 청약 임박·진행 우선 · 매일 07:00 자동 갱신")
+        st.caption("한국부동산원 청약홈 분양정보 · 청약 임박·진행 우선 · 매일 아침 자동 갱신 · 최근·다음 시각은 하단 🕐 자동 갱신 현황")
         if _re_authed():
             if st.button(
                     "🔄 최신 분양정보 불러오기", key="re_sub_refresh",
-                    help="매일 07:00 GitHub Actions가 청약홈 분양정보를 수집해 DB에 저장합니다. "
+                    help="매일 아침 GitHub Actions가 청약홈 분양정보를 수집해 DB에 저장합니다. "
                          "이 버튼은 그 최신본을 즉시 다시 불러옵니다.",
                     use_container_width=True):
                 with st.spinner("DB에서 최신 분양정보 불러오는 중..."):
