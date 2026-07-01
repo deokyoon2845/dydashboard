@@ -4,7 +4,9 @@ name: 주도주 수집 (일일)
 #  전종목을 스캔해 주도 섹터·주도주를 점수화하고 Supabase(leaders)에 저장한다.
 #  뷰어(modules/leaders.py)는 이 최신 행만 읽는다. 모든 데이터는 Naver(프로브에서
 #  Actions 동작 확인) — 별도 API 키 불필요, SUPABASE 키만 있으면 된다.
-#  · 17:30 KST(평일) — KRX 장마감(15:30) 후 Naver 일별 종가가 확정된 뒤 수집.
+#  · 16:40 KST(평일) 우선 — KRX 장마감(15:30)·종가확정(16:00) 후 Naver 일별 종가로 수집.
+#    지연/드롭 대비 17:40·18:40 KST 백업 슬롯. 첫 성공 후 나머지는 멱등 가드로 스킵.
+#  · 증시 키워드(테마 탭)도 장마감 후 여기서 함께 생성한다(네이버 뉴스+Haiku).
 #  · 리포트(daily.yml)·부동산(realestate.yml)과 잡 이름·테이블·시간이 달라 충돌 없음.
 #  · 수동 실행도 가능: Actions → 이 워크플로 → Run workflow.
 #  ※ 최초 1회 Supabase에서 leaders 테이블 생성 필요(modules/db.py 상단 SQL).
@@ -12,7 +14,10 @@ name: 주도주 수집 (일일)
 
 on:
   schedule:
-    - cron: '30 8 * * 1-5'     # 08:30 UTC = 17:30 KST · 월~금
+    # 16:40·17:40·18:40 KST(평일) 3슬롯 — KRX 종가(16:00 KST)가 확정된 뒤 최이른 시각으로
+    # 당기고, GitHub cron 지연/드롭에 대비해 1시간 간격으로 3번 시도한다. 첫 성공이 leaders를
+    # 저장하면 엔진의 멱등 가드(collected_today)가 나머지 슬롯을 즉시 스킵한다.
+    - cron: '40 7,8,9 * * 1-5'   # 07:40·08:40·09:40 UTC = 16:40·17:40·18:40 KST
   workflow_dispatch:
 
 permissions:
@@ -57,6 +62,11 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          # ↓ 증시 키워드(테마 탭) 생성용 — 장마감 후 leaders_run에서 함께 만든다.
+          #   없으면 키워드만 조용히 건너뛰고 주도주 수집은 정상 진행.
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python -m engine.leaders_run
 
 
