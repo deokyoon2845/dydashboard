@@ -10,7 +10,9 @@ name: stock-master
 
 on:
   schedule:
-    - cron: '20 21 * * *'        # 21:20 UTC = 06:20 KST (KRX 데이터는 T+1)
+    # 06:20·07:20 KST 2슬롯 — KRX 데이터는 T+1이라 시각 제약이 없다. 지연/드롭 대비
+    # 백업 슬롯을 두고, 첫 성공 후 엔진 멱등 가드(collected_today)로 나머지를 스킵한다.
+    - cron: '20 21,22 * * *'     # 21:20·22:20 UTC = 06:20·07:20 KST
   workflow_dispatch:
 
 jobs:
