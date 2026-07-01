@@ -74,7 +74,7 @@
 import json
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from supabase import create_client, Client
 
@@ -127,6 +127,42 @@ def _client() -> Client:
         key = _cfg("SUPABASE_KEY").strip()
         _CLIENT = create_client(url, key)
     return _CLIENT
+
+
+# ── 멱등 가드(다중 cron 슬롯 중복 방지) ──────────────────────────────
+_KST = timezone(timedelta(hours=9))
+
+
+def collected_today(table: str, ts_col: str = "updated_at") -> bool:
+    """지정 테이블의 최신 updated_at(KST 기준)이 '오늘'이면 True.
+
+    다중 cron 슬롯(예: 06:07·07:07·08:07 KST)에서 '이미 오늘 수집을 마쳤는지'
+    판정해, 뒤 슬롯이 중복 수집·중복 API 과금(특히 Anthropic)을 하지 않게 막는다.
+    - GitHub 러너는 UTC라 updated_at은 대개 tz 없는 UTC 값 → UTC로 간주해 KST 변환.
+    - 미설정·행없음·파싱실패는 모두 False(=수집 진행)로 안전 폴백한다.
+    """
+    if not supabase_configured():
+        return False
+    try:
+        res = (_client().table(table)
+               .select(ts_col)
+               .order(ts_col, desc=True)
+               .limit(1).execute())
+        rows = res.data or []
+        if not rows:
+            return False
+        raw = rows[0].get(ts_col)
+        if not raw:
+            return False
+        dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        last_kst = dt.astimezone(_KST).date()
+        today_kst = datetime.now(_KST).date()
+        return last_kst == today_kst
+    except Exception as e:
+        print(f"[db.collected_today] 판정 실패({table}) → 수집 진행: {e}", flush=True)
+        return False
 
 
 # ── 엔진 공용 캐시(engine_cache) — 세대수 맵·작년말 baseline 등 ──────
