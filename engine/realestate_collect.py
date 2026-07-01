@@ -1650,6 +1650,174 @@ def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=
 
 
 # ════════════════════════════════════════════════════════════════
+#  주요 단지 유니버스 — 지역별 '세대수' TOP-N 을 안정적으로 고정한다.
+#
+#  왜 필요한가: 시총·주목단지·특이거래가 지금은 '최근 거래 흐름'에 유니버스를
+#  맡겨서, 거래가 튀는 소형 단지가 올라오고 조용한 대단지는 빠진다(집계 불안정,
+#  소형단지 거래량 급증 +8,200% 같은 노이즈). → 세대수 기준 '주요 단지' 집합을
+#  먼저 못박고, 시총·주목단지·특이거래 세 탭이 모두 그 위에서 계산한다.
+#
+#  스코프: 서울 25개구 전부 + 경기 핵심 9시(과천·성남·하남·광명·안양·용인·수원·화성·고양).
+#  방식: 최근 12개월 실거래에 '등장한' 단지가 후보(대단지는 세대 많아 거래도 잦으니
+#        조용해도 12개월 안엔 대부분 포착됨). 지역별 거래빈도 상위 후보만 세대수를
+#        조회(콜드빌드 비용 상한) → ≥MIN_UNITS 컷 → 세대수 TOP-N 확정.
+#  갱신: 세대수는 거의 불변 → engine_cache(re_universe) 30일 TTL. 월 1회만 실질 재빌드
+#        (그 외 날은 캐시 반환 → API 0콜). 스윕 전수 실패 시 기존 캐시 유지(빈값 미덮음).
+# ════════════════════════════════════════════════════════════════
+UNIVERSE_CACHE_KEY = "re_universe"
+UNIVERSE_TTL_DAYS = 30       # 재빌드 주기(세대수 정적 → 월 1회면 충분)
+UNIVERSE_MONTHS = 12         # 후보 발굴용 실거래 스윕 개월
+UNIVERSE_TOP_N = 15          # 지역별 세대수 상위 N
+UNIVERSE_MIN_UNITS = 500     # 최소 세대수 컷(소형 제외)
+UNIVERSE_CAND = 25           # 지역별 세대수 조회 후보 상한(거래빈도 상위) — 콜드빌드 비용 상한
+UNIVERSE_MIN_FREQ = 3        # 후보 최소 거래빈도(12개월) — 유령/오타 단지 컷
+
+# 경기 핵심 9시(확정). 서울은 SIGUNGU_CODES의 '구'로 끝나는 이름 전부(25개구).
+UNIVERSE_GG = ["과천시", "성남시", "하남시", "광명시", "안양시",
+               "용인시", "수원시", "화성시", "고양시"]
+
+
+def universe_scope():
+    """유니버스 대상 지역명 리스트(서울 25개구 + 경기 핵심 9시). SIGUNGU_CODES 교집합."""
+    seoul = [n for n in SIGUNGU_CODES if n.endswith("구")]
+    gg = [g for g in UNIVERSE_GG if g in SIGUNGU_CODES]
+    return seoul + gg
+
+
+def load_universe():
+    """engine_cache(re_universe)에서 유니버스 dict 반환(없거나 비면 None). 뷰어·엔진 공용 읽기."""
+    try:
+        from modules.db import cache_get
+        c = cache_get(UNIVERSE_CACHE_KEY)
+    except Exception:
+        return None
+    return c if isinstance(c, dict) and c.get("regions") else None
+
+
+def universe_membership(uni=None):
+    """유니버스 소속 판정용 set → {'지역|단지명norm'}. 미확보 시 빈 set."""
+    uni = uni if isinstance(uni, dict) else load_universe()
+    if not isinstance(uni, dict):
+        return set()
+    keys = uni.get("keys")
+    if keys:
+        return set(keys)
+    return {f"{d['gu']}|{_norm_apt(d['apt'])}" for d in uni.get("flat", [])}
+
+
+def _universe_fresh(cached):
+    return (isinstance(cached, dict) and cached.get("regions")
+            and _fresh(cached.get("_updated") or cached.get("asof"), UNIVERSE_TTL_DAYS))
+
+
+def collect_universe(asof=None, force=False):
+    """지역별 세대수 TOP-N '주요 단지 유니버스'를 만들어 engine_cache에 저장하고 반환.
+
+    반환 dict:
+      {'asof': ISO, 'scope': [지역...],
+       'regions': {지역: [{'apt','gu','sd','units','builder','dong','freq'}...]},  # 세대수 내림차순
+       'flat':    [위 dict...],                 # 전 지역 평탄화(세대수 내림차순)
+       'keys':    ['지역|단지명norm'...]}         # 소속판정 set 재료
+    신선한 캐시가 있으면(force=False) 재빌드 없이 그대로 반환(API 0콜).
+    스윕 전수 실패 시 기존 캐시가 있으면 유지(빈 유니버스로 덮지 않음)."""
+    asof = asof or date.today()
+    if not force:
+        cached = load_universe()
+        if _universe_fresh(cached):
+            return cached
+
+    _preflight(asof)
+    key = _get_key()
+    yms = _months_back(asof, UNIVERSE_MONTHS)
+    seoul_gu = set(_seoul_gu_names())
+    scope = universe_scope()
+    stats = {"ok": 0, "fail": 0, "rows": 0, "calls": 0, "empty200": 0,
+             "http": {}, "last_err": ""}
+
+    # 1) 지역별 후보 발굴 — 12개월 매매 스윕 → 단지별 거래빈도 + 대표 동(dong)
+    region_cands = {}          # 지역 → [(apt, freq, dong)]
+    for name in scope:
+        codes = SIGUNGU_CODES.get(name) or []
+        freq, dongs = {}, {}
+        for code in codes:
+            for ym in yms:
+                for r in _fetch(key, code, ym, "매매", stats):
+                    a = r["apt"]
+                    if not a:
+                        continue
+                    freq[a] = freq.get(a, 0) + 1
+                    if r.get("dong"):
+                        d = dongs.setdefault(a, {})
+                        d[r["dong"]] = d.get(r["dong"], 0) + 1
+        cands = sorted(((a, f) for a, f in freq.items() if f >= UNIVERSE_MIN_FREQ),
+                       key=lambda t: t[1], reverse=True)[:UNIVERSE_CAND]
+        picked = []
+        for a, f in cands:
+            dnm = max(dongs[a].items(), key=lambda kv: kv[1])[0] if dongs.get(a) else ""
+            picked.append((a, f, dnm))
+        if picked:
+            region_cands[name] = picked
+
+    if stats["rows"] == 0:
+        prev = load_universe()      # 전수 실패 → 기존 유니버스라도 유지
+        if prev:
+            print("[realestate] 유니버스 스윕 전수 0건 — 기존 캐시 유지.")
+            return prev
+        raise RuntimeError("유니버스 후보 실거래를 한 건도 받지 못했어요." + _zero_hint(stats))
+
+    # 2) 세대수 보강(후보 합집합 1회 조회) → ≥MIN_UNITS 컷 → 지역별 세대수 TOP-N
+    pairs = {(name, a) for name, lst in region_cands.items() for (a, _f, _d) in lst}
+    info = {}
+    try:
+        info = _apt_info_map(list(pairs))
+    except Exception as e:
+        print(f"[realestate] 유니버스 세대수 보강 실패: {e}")
+
+    regions, flat = {}, []
+    for name, lst in region_cands.items():
+        rows = []
+        for a, f, dnm in lst:
+            inf = info.get((name, a)) or {}
+            units = inf.get("units")
+            if not units or units < UNIVERSE_MIN_UNITS:
+                continue
+            rows.append({
+                "apt": a, "gu": name,
+                "sd": "seoul" if name in seoul_gu else "gg",
+                "units": int(units), "builder": inf.get("builder"),
+                "dong": dnm, "freq": f,
+            })
+        rows.sort(key=lambda d: d["units"], reverse=True)
+        rows = rows[:UNIVERSE_TOP_N]
+        if rows:
+            regions[name] = rows
+            flat.extend(rows)
+
+    flat.sort(key=lambda d: d["units"], reverse=True)
+    out = {
+        "asof": asof.isoformat(),
+        "scope": scope,
+        "regions": regions,
+        "flat": flat,
+        "keys": [f"{d['gu']}|{_norm_apt(d['apt'])}" for d in flat],
+    }
+    if not flat:
+        prev = load_universe()      # 세대수 전멸(보강 실패 등) → 기존 캐시 유지
+        if prev:
+            print("[realestate] 유니버스 세대수 확보 0단지 — 기존 캐시 유지.")
+            return prev
+    else:
+        try:
+            from modules.db import cache_set
+            cache_set(UNIVERSE_CACHE_KEY, out)
+        except Exception as e:
+            print(f"[realestate] 유니버스 캐시 저장 실패(무시): {e}")
+    print(f"[realestate] 유니버스 {len(flat)}단지 / {len(regions)}지역 "
+          f"(스윕 {stats.get('calls', 0)}콜, {stats.get('rows', 0)}건)")
+    return out
+
+
+# ════════════════════════════════════════════════════════════════
 #  주목 단지(거래 활발·상승) — A: 국토부 실거래 기반 / B: 네이버 데이터랩 검색관심도
 #  · 약관-clean: 호갱노노·아실·네이버부동산 '인기 리스트'는 공식 API 부재·차단·약관 이슈로 미사용.
 #  · A 랭킹: 최근(≈30일) 거래 활발 + 가격 상승 단지. 우리 RTMS 데이터만 사용(안정).
