@@ -65,9 +65,34 @@ html, body, [data-testid="stAppViewContainer"] { font-family: 'Hanken Grotesk','
 .stMainBlockContainer { padding-top: 3.5rem !important; }
 h1,h2,h3 { font-family: 'Fraunces','Noto Sans KR',serif !important; letter-spacing:-.01em; color:var(--ink); }
 h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 !important; margin:0 0 .4rem !important; }
-.stTabs [data-baseweb="tab-list"] { gap:4px; flex-wrap:wrap; }
-.stTabs [data-baseweb="tab"] { white-space:nowrap; padding:8px 14px; height:auto; min-width:max-content; }
-.stTabs [data-baseweb="tab"] p { font-size:15px; margin:0; white-space:nowrap; }
+/* ===== 세그먼트 필 탭 (옵션 B) — 상단=흰 카드 토글 / 하위(중첩)=세이지 필 ===== */
+.stTabs [data-baseweb="tab-highlight"],
+.stTabs [data-baseweb="tab-border"] { display:none !important; height:0 !important; background:transparent !important; }
+/* 상단(주식·부동산): 인셋 토글 컨테이너 */
+.stTabs [data-baseweb="tab-list"] {
+  gap:5px; flex-wrap:wrap; width:fit-content; max-width:100%;
+  background:#EEF3EF; border:1px solid #E1E8E2; border-radius:12px;
+  padding:4px; margin-bottom:8px;
+}
+.stTabs [data-baseweb="tab"] {
+  white-space:nowrap; height:auto; min-width:max-content;
+  padding:8px 18px; border-radius:9px; background:transparent;
+  color:#9a9b92; transition:background .18s,color .18s,box-shadow .18s;
+}
+.stTabs [data-baseweb="tab"] p { font-size:14px; font-weight:700; margin:0; white-space:nowrap; color:inherit; }
+.stTabs [data-baseweb="tab"]:hover p { color:#34352f; }
+.stTabs [data-baseweb="tab"][aria-selected="true"] { background:#FFFFFF; color:#34352f; box-shadow:0 1px 2px rgba(52,53,47,.09); }
+.stTabs [data-baseweb="tab"][aria-selected="true"] p { color:#34352f; }
+/* 하위(중첩) 탭: 세이지 필 세그먼트 바 — tab-panel 안쪽만 더 높은 우선순위로 오버라이드 */
+[data-baseweb="tab-panel"] [data-baseweb="tab-list"] {
+  gap:3px; background:#F4F6F1; border:1px solid #ECEDE7; border-radius:12px;
+  padding:4px; margin-bottom:12px;
+}
+[data-baseweb="tab-panel"] [data-baseweb="tab"] { padding:9px 16px; }
+[data-baseweb="tab-panel"] [data-baseweb="tab"] p { font-size:13.5px; }
+[data-baseweb="tab-panel"] [data-baseweb="tab"][aria-selected="true"] { background:#7E9A83; box-shadow:0 2px 6px -1px rgba(126,154,131,.45); }
+[data-baseweb="tab-panel"] [data-baseweb="tab"][aria-selected="true"] p { color:#FFFFFF; }
+[data-baseweb="tab-panel"] [data-baseweb="tab"][aria-selected="true"]:hover p { color:#FFFFFF; }
 .stButton > button { border-radius:9px; padding:6px 16px; font-weight:600; }
 .stButton { margin-bottom:4px; }
 [data-testid="stExpander"] { border-radius:10px; margin-bottom:8px; }
@@ -1012,7 +1037,7 @@ _inject_countup()
 top_stock, top_re = st.tabs(["주식", "부동산"])
 
 with top_stock:
-    tab_idx, tab_rep, tab_ldr, tab_ipo, tab_kw  = st.tabs(["지수", "시황", "주도주", "IPO", "키워드"])
+    tab_idx, tab_rep, tab_ldr, tab_ipo, tab_kw  = st.tabs(["시장", "브리핑", "주도주", "공모주", "테마"])
     with tab_idx:
         render_indices()
     with tab_rep:
