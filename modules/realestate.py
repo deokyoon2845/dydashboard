@@ -3148,7 +3148,7 @@ def render_realestate():
 
     with t_map:
         st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
-        st.title("수도권·광역시 아파트 가격지도")
+        st.title("가격지도")
         _render_collect_controls()
         _render_watchlist_band()
         _render_streak_section()
@@ -3156,7 +3156,7 @@ def render_realestate():
 
     with t_anom:
         st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
-        st.title("수도권·광역시 아파트")
+        st.title("아파트")
         st.caption("아파트 단지·실거래 종합 — 시장 방향·특이거래·시총·주목단지 · "
                    "국토부 실거래 기준 · 직거래 기본 제외")
         _render_market_band()
