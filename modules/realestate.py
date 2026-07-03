@@ -2410,12 +2410,16 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);f
 .yoy b.up{color:var(--up);background:var(--upT)} .yoy b.dn{color:var(--dn);background:var(--dnT)}
 .yoy small{display:block;font-size:10.5px;font-weight:600;color:var(--muted);margin-top:3px}
 .empty{font-size:12px;color:var(--muted);padding:18px 6px}
+.mapln{display:inline-block;margin-top:5px;font-size:10px;font-weight:700;color:var(--sage2);text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:1px 6px;background:#fff}
+.mapln:hover{background:#EEF3EF;border-color:#A7BBA9}
 </style></head><body><div class="box">
   <div class="flat" id="flat"></div>
   <div class="note">__NOTE__</div>
 </div>
 <script>
 const GAIN=__GAIN__;
+function mapLink(c){var q=encodeURIComponent(((c.dong||c.gu||"")+" "+c.apt).trim());
+ return '<a class="mapln" href="https://map.naver.com/p/search/'+q+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">지도 ↗</a>';}
 function flat(){
  if(!GAIN||!GAIN.length){document.getElementById("flat").innerHTML='<div class="empty">데이터가 아직 없어요. 매일 아침 자동 수집 후 표시됩니다.</div>';return;}
  document.getElementById("flat").innerHTML=GAIN.map(function(c,i){
@@ -2424,7 +2428,7 @@ function flat(){
   var pos=c.val>=0;
   return '<div class="fr'+(i===0?' top1':'')+'"><div class="rank">'+(i+1)+'</div>'
    +'<div class="nm"><span class="gu-badge">'+c.gu+'</span>'+c.apt+'<small>'+meta+'</small></div>'
-   +'<div class="yoy"><b class="'+(pos?'up':'dn')+'">'+(pos?'+':'')+c.val.toFixed(1)+'%</b><small>'+sub+'</small></div></div>';}).join("");}
+   +'<div class="yoy"><b class="'+(pos?'up':'dn')+'">'+(pos?'+':'')+c.val.toFixed(1)+'%</b><small>'+sub+'</small>'+mapLink(c)+'</div></div>';}).join("");}
 flat();
 (function(){function f(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;if(window.frameElement){window.frameElement.style.height=h+"px";window.frameElement.setAttribute("height",h);}}catch(e){}}window.addEventListener("load",f);setTimeout(f,150);setTimeout(f,600);setTimeout(f,1500);window.addEventListener("resize",f);try{new ResizeObserver(f).observe(document.body);}catch(e){}})();
 </script></body></html>'''
@@ -2466,7 +2470,7 @@ def _render_cap_gainers(metric="ytd", top=10):
                 'YTD가 누적 상승폭이라면 모멘텀은 <b>최근 가속/감속</b> 신호 · '
                 '3개월 전·현재 모두 거래가 있는 단지만 · 매일 아침 갱신.')
         cap = f"최근 3개월 모멘텀(3개월 전 대비 평단가) · 가속/감속 선행신호 · {src}"
-    height = 70 + len(rows) * 56 + 80
+    height = 70 + len(rows) * 74 + 80
     html = (_CAPGAIN_HTML
             .replace("__GAIN__", _json.dumps(rows, ensure_ascii=False))
             .replace("__NOTE__", note))
@@ -2514,6 +2518,8 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);f
 .jr-mini .gp{font-size:10.5px;font-weight:700;color:#6f7068;white-space:nowrap}
 .jr-mini .gp b{color:var(--ink);font-weight:800}
 .empty{font-size:12px;color:var(--muted);padding:18px 6px}
+.mapln{display:inline-block;margin-top:5px;font-size:10px;font-weight:700;color:var(--sage2);text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:1px 6px;background:#fff}
+.mapln:hover{background:#EEF3EF;border-color:#A7BBA9}
 </style></head><body><div class="box">
   <div class="sec">수도권 시가총액 TOP 10</div>
   <div class="flat" id="flat"></div>
@@ -2527,6 +2533,8 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);f
 const CAP=__CAP__;
 const GROUPS={"강남3구":["강남구","서초구","송파구"],"마용성":["마포구","용산구","성동구"],"노도강":["노원구","도봉구","강북구"]};
 function capFmt(e){return e>=10000?(e/10000).toFixed(1)+"조":Math.round(e).toLocaleString()+"억";}
+function mapLink(c){var q=encodeURIComponent(((c.dong||c.gu||"")+" "+c.apt).trim());
+ return '<a class="mapln" href="https://map.naver.com/p/search/'+q+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">지도 ↗</a>';}
 function jrHtml(c){if(c.jr==null)return"";var w=Math.min(Math.round(c.jr),100);
  var gp=(c.gap!=null)?'<span class="gp">갭 <b>'+c.gap+'억</b></span>':'';
  return '<div class="jr-mini"><div class="jg"><div class="jl"><span>전세가율</span><b>'+Math.round(c.jr)+'%</b></div><div class="jb"><i style="width:'+w+'%"></i></div></div>'+gp+'</div>';}
@@ -2538,7 +2546,7 @@ function rowsRK(list,limit){return list.slice(0,limit).map(function(c,i){
  var meta=c.units.toLocaleString()+'세대 · '+(c.b?c.b+' · ':'')+c.dong;
  return '<div class="rkrow'+(i===0?' top1':'')+'"><div class="rank">'+(i+1)+'</div>'
   +'<div class="nm">'+badge+c.apt+'<small>'+meta+'</small>'+jrHtml(c)+'</div>'
-  +'<div class="cap"><b>'+capFmt(c.cap)+'</b><small>최근 '+(c.peok||'—')+'</small></div></div>';}).join("");}
+  +'<div class="cap"><b>'+capFmt(c.cap)+'</b><small>최근 '+(c.peok||'—')+'</small>'+mapLink(c)+'</div></div>';}).join("");}
 function fill(){var v=document.getElementById("sel").value,list,limit,label;
  if(GROUPS[v]){list=[];GROUPS[v].forEach(function(g){(byGu[g]||[]).forEach(function(c){var x=Object.assign({},c);x._grp=1;list.push(x);});});
   list.sort(function(a,b){return b.cap-a.cap;});limit=10;
@@ -2551,7 +2559,7 @@ function flat(){var all=CAP.slice().sort(function(a,b){return b.cap-a.cap;}).sli
  document.getElementById("flat").innerHTML=all.length?all.map(function(c,i){
   return '<div class="fr'+(i===0?' top1':'')+'"><div class="rank">'+(i+1)+'</div>'
    +'<div class="nm"><span class="gu-badge">'+c.gu+'</span>'+c.apt+'<small style="font-weight:600;color:var(--muted)">'+c.units.toLocaleString()+'세대 · '+c.dong+'</small>'+jrHtml(c)+'</div>'
-   +'<div class="cap"><b>'+capFmt(c.cap)+'</b><small>최근 '+(c.peok||'—')+'</small></div></div>';}).join("")
+   +'<div class="cap"><b>'+capFmt(c.cap)+'</b><small>최근 '+(c.peok||'—')+'</small>'+mapLink(c)+'</div></div>';}).join("")
   :'<div class="empty">시총 데이터가 아직 없어요. 매일 아침 자동 수집 후 표시됩니다.</div>';}
 (function(){var sel=document.getElementById("sel");
  var h='<optgroup label="그룹">'+Object.keys(GROUPS).map(function(g){return '<option>'+g+'</option>';}).join("")+'</optgroup>';
@@ -2582,7 +2590,7 @@ def _render_cap_leaders():
         st.caption("시총 데이터가 아직 없어요. 매일 아침 자동 수집 후 표시됩니다.")
         return
     n_gu = len(set(r["gu"] for r in rows))
-    height = 110 + min(len(rows), 10) * 76 + 110 + 10 * 80 + 90
+    height = 110 + min(len(rows), 10) * 96 + 110 + 10 * 100 + 90
     html = _CAPLEAD_HTML.replace("__CAP__", _json.dumps(rows, ensure_ascii=False))
     components.html(html, height=height, scrolling=False)
     src = ("국토부 실거래 × 공동주택 세대수" if fetch_cap_leaders() is not _SAMPLE_CAPLEAD
@@ -2870,6 +2878,10 @@ def _market_summary():
     hi = sum(1 for r in pool if r[0] == "신고가")
     lo = sum(1 for r in pool if r[0] == "신저가")
 
+    # 표시용 '최신 실거래일' — 서버 UTC today가 아니라 pool 내 실제 최근 거래일.
+    _tx = [dt for dt in (_anom_date(r[10]) for r in pool) if dt]
+    latest = max(_tx) if _tx else None
+
     hot = [h for h in (fetch_hot_complexes() or []) if isinstance(h, dict)]
     act = len(hot)
     chgs = [h.get("chg") for h in hot if isinstance(h.get("chg"), (int, float))]
@@ -2877,7 +2889,8 @@ def _market_summary():
 
     if hi + lo == 0 and act == 0:
         return None
-    return {"hi": hi, "lo": lo, "act": act, "avg": avg, "today": today}
+    return {"hi": hi, "lo": lo, "act": act, "avg": avg,
+            "today": today, "latest": latest}
 
 
 def _render_market_band():
@@ -2899,7 +2912,9 @@ def _render_market_band():
     else:
         gcol = "#B65F5A" if avg >= 0 else "#5A7CA0"
         gain = f'{"+" if avg >= 0 else ""}{avg}<small>%</small>'
-    datestr = f'{s["today"].month}.{s["today"].day} 기준'
+    _ref = s.get("latest")
+    datestr = (f'{_ref.month}.{_ref.day} 최신거래 기준' if _ref
+               else f'{s["today"].month}.{s["today"].day} 기준')
     html = (_MARKET_BAND_HTML
             .replace("__DATE__", datestr)
             .replace("__DLABEL__", dlabel)
@@ -3085,13 +3100,19 @@ def _re_render_lock_gate():
                 st.error("비밀번호가 일치하지 않아요.")
 
 
+def _re_collect_asof():
+    """부동산 스냅샷 수집 기준시각(asof · KST 문자열). 세션 → 스냅샷. 없으면 None."""
+    a = st.session_state.get("re_asof")
+    if not a:
+        snap = _load_re_snapshot()
+        a = (snap or {}).get("asof") if snap else None
+    return a
+
+
 def _render_collect_controls():
     """지도 탭 상단 컨트롤 — 데이터 기준 캡션 + 갱신/진단 버튼 + 수집·진단 처리.
        (증시 '새로고침'과 같은 위치: 서브탭 제목 바로 아래.)"""
-    asof = st.session_state.get("re_asof")
-    if not asof:
-        snap = _load_re_snapshot()
-        asof = (snap or {}).get("asof") if snap else None
+    asof = _re_collect_asof()
     if asof:
         st.caption(f"수도권·광역시 아파트 · 매매·전세=KB 월간 가격지수, 거래=주간 실거래 · 기준 {asof} KST · 매일 아침 자동 갱신 · 최근·다음 시각은 하단 🕐 자동 갱신 현황")
     else:
@@ -3151,6 +3172,14 @@ def render_realestate():
         st.markdown(_RE_CSS + '<div class="accent-bar"></div>',
                     unsafe_allow_html=True)
         st.title("부동산 시장 지표")
+        _cyc_asof = _re_collect_asof()
+        if _cyc_asof:
+            st.caption("부동산 사이클·선행지표 — 매수우위·매매전망·선도50·전세수급"
+                       f"(KB 주간·월간) · 기준 {_cyc_asof} KST · "
+                       "항목별 갱신주기 상이 · 매일 아침 자동 갱신")
+        else:
+            st.caption("부동산 사이클·선행지표 — KB 주간·월간 지수 기반 · "
+                       "현재 샘플(아침 자동 수집 후 실데이터로 채워집니다)")
         _render_indicator_charts(_resolved_indicator_series())
 
     with t_map:
