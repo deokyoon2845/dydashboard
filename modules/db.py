@@ -361,6 +361,17 @@ def load_realestate() -> dict | None:
     return res.data[0] if res.data else None
 
 
+def load_recent_realestate(days: int = 7) -> list[dict]:
+    """최근 N일 부동산 스냅샷 행들(최신순). 주간 뷰가 날짜별 지표를 재집계할 때 사용.
+       각 행: {'asof_date','asof','metrics','anomalies'}."""
+    res = (_client().table(RE_TABLE)
+           .select("asof_date,asof,metrics,anomalies")
+           .order("asof_date", desc=True)
+           .limit(max(1, int(days)))
+           .execute())
+    return res.data or []
+
+
 # ── 오늘의 키워드: 읽기·쓰기 ──────────────────────────────────
 # keywords 테이블에 날짜(kw_date)별로 키워드 묶음을 upsert. 시황 보고서처럼 매일 누적.
 # items 는 뷰어가 그대로 그리는 형식의 dict 배열
