@@ -56,6 +56,18 @@ def _load_re_snapshot():
         return None
 
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def _load_recent_re_snapshots(days: int = 7):
+    """최근 N일 부동산 스냅샷 행들(최신순). 주간 뷰용. 실패/미설정 → None. (30분 캐시)"""
+    try:
+        from modules.db import supabase_configured, load_recent_realestate
+        if not supabase_configured():
+            return None
+        return load_recent_realestate(days)
+    except Exception:
+        return None
+
+
 def _resolved_metrics():
     """지역 지표: 세션(직전 갱신) → DB 스냅샷 → None(샘플)."""
     m = st.session_state.get("re_metrics")
@@ -837,6 +849,50 @@ _RE_CSS = """
   background:linear-gradient(90deg,#E6F1FB,#EFEEE9 50%,#FCEBEB);position:relative;}
 .re-press .bar i{display:block;height:100%;background:#B65F5A;opacity:.55;}
 .re-press .nums b{font-weight:800;}
+/* 신고가 카드(B안) — 헤더 + 지도 아이콘 + 평형별 1년 밴드 칩 */
+.re-hi{background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);border-radius:12px;
+  padding:11px 14px;margin-bottom:8px;
+  transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease;}
+.re-hi:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(52,53,47,.07);border-color:var(--sage,#A7BBA9);}
+.re-hi.excl{opacity:.5;}
+.re-hi-top{display:flex;align-items:flex-start;gap:11px;}
+.re-hi-nm{font-weight:700;color:var(--ink,#34352f);font-size:14px;}
+.re-hi-nm a{color:inherit;text-decoration:none;border-bottom:1px dashed #D6D8CF;}
+.re-hi-nm a:hover{border-bottom-color:var(--sage,#A7BBA9);}
+.re-hi-sub{font-size:11.5px;color:var(--muted,#9a9b92);margin-top:2px;}
+.re-hi-map{flex:none;align-self:center;font-size:11px;font-weight:700;color:var(--sage-deep,#7E9A83);
+  text-decoration:none;border:1px solid var(--line,#ECEDE7);border-radius:7px;padding:3px 9px;
+  background:#fff;white-space:nowrap;}
+.re-hi-map:hover{background:#EEF1EC;border-color:var(--sage,#A7BBA9);}
+.re-hi-price{margin-left:auto;text-align:right;flex:none;}
+.re-hi-price b{font-size:17px;font-weight:800;color:var(--ink,#34352f);letter-spacing:-.02em;}
+.re-hi-price .tag{display:block;font-size:11px;font-weight:800;color:var(--up,#B65F5A);margin-top:2px;}
+.re-hi-band{border-top:1px dashed #E4E5DE;margin-top:11px;padding-top:10px;}
+.re-hi-bh{font-size:10.5px;font-weight:800;color:var(--muted,#9a9b92);letter-spacing:.02em;margin-bottom:9px;}
+.re-hi-chips{display:flex;flex-wrap:wrap;gap:7px;}
+.re-hi-chip{border:1px solid var(--line,#ECEDE7);border-radius:9px;padding:6px 10px;font-size:12px;
+  font-weight:700;color:var(--ink,#34352f);background:var(--bg,#FCFCFA);}
+.re-hi-chip.hl{border-color:#E7B7B4;background:#FCEBEB;color:#A32D2D;}
+.re-hi-chip b{font-weight:800;}
+.re-hi-chip small{color:var(--muted,#9a9b92);font-weight:600;margin-left:4px;}
+.re-hi-chip.hl small{color:#B77;}
+.re-hi-band-empty{font-size:11.5px;color:var(--muted,#9a9b92);}
+@media(max-width:680px){.re-hi-top{flex-wrap:wrap;} .re-hi-map{order:3;margin-left:34px;}}
+/* 주간 뷰(A안) — 지표별 스파크라인 */
+.wk-wrap{background:var(--bg,#FCFCFA);border:1px solid var(--line,#ECEDE7);border-radius:12px;
+  padding:4px 16px 8px;margin-bottom:8px;}
+.wk-row{display:grid;grid-template-columns:78px 1fr 92px;align-items:center;gap:12px;
+  padding:9px 0;border-bottom:1px solid #F1F2EC;}
+.wk-row:last-child{border-bottom:none;}
+.wk-row .k{font-size:12px;font-weight:700;color:#5d6258;}
+.wk-row.hero .k{font-weight:800;color:var(--ink,#34352f);}
+.wk-row .r{text-align:right;}
+.wk-row .r b{font-size:15px;font-weight:800;letter-spacing:-.02em;}
+.wk-row .r .d{display:block;font-size:10.5px;font-weight:700;margin-top:1px;}
+.wk-spark{display:block;overflow:visible;}
+.wk-spark-na{color:#b9bab2;font-size:12px;}
+.wk-up{color:var(--up,#B65F5A);} .wk-dn{color:var(--down,#5A7CA0);}
+.wk-sg{color:var(--sage-deep,#7E9A83);} .wk-mut{color:var(--muted,#9a9b92);}
 /* 주목 단지 보드 */
 .re-hotwrap{display:flex;flex-direction:column;gap:7px;margin-bottom:6px;}
 .re-hot{display:flex;align-items:center;gap:11px;background:var(--card,#fff);
@@ -1456,7 +1512,8 @@ def _watchlist_signals():
         if reg is None:
             continue
         pool.append({"reg": reg, "nm": d.get("n") or d.get("sl") or "",
-                     "mm": d.get("mm"), "js": d.get("js"), "vc": d.get("vc")})
+                     "mm": d.get("mm"), "js": d.get("js"),
+                     "v": d.get("v"), "vavg": d.get("vavg")})
     _NM = {"incheon": "인천", "busan": "부산", "daegu": "대구"}
     local = _fetch_local() or {}
     for rk, rv in local.items():
@@ -1465,17 +1522,29 @@ def _watchlist_signals():
             if not isinstance(gv, dict):
                 continue
             pool.append({"reg": reg, "nm": gname,
-                         "mm": gv.get("mm"), "js": gv.get("js"), "vc": None})
+                         "mm": gv.get("mm"), "js": gv.get("js"),
+                         "v": None, "vavg": None})
 
     def _num(x, k):
         return isinstance(x.get(k), (int, float))
+
+    # 거래 활발도 = 평소比 = (현재주 거래수 v / 평소 주당평균 vavg − 1)×100.
+    # 지도 구별 테이블과 동일 지표. 전주比(vc)는 신고지연으로 최신주 표본이 늘
+    # 결손 → 대부분 ≤0이라 '급증'이 안 잡히던 문제를 평소比로 통일해 해소.
+    V_FLOOR = 2   # 단일 거래로 배수가 튀는 초박형 시군구 제외(노이즈 컷)
+    for x in pool:
+        v, va = x.get("v"), x.get("vavg")
+        x["vr"] = ((v / va - 1) * 100
+                   if isinstance(v, (int, float)) and isinstance(va, (int, float))
+                   and va > 0 and v >= V_FLOOR else None)
+
     mm = [x for x in pool if _num(x, "mm")]
-    vv = [x for x in pool if _num(x, "vc")]
+    vv = [x for x in pool if _num(x, "vr")]
     gp = [x for x in pool if _num(x, "mm") and _num(x, "js")]
     return {
         "surge": sorted(mm, key=lambda x: x["mm"], reverse=True)[:3],
         "weak": sorted(mm, key=lambda x: x["mm"])[:3],
-        "vsurge": sorted(vv, key=lambda x: x["vc"], reverse=True)[:3],
+        "vsurge": sorted(vv, key=lambda x: x["vr"], reverse=True)[:3],
         "gap": sorted(gp, key=lambda x: abs(x["mm"] - x["js"]), reverse=True)[:3],
     }
 
@@ -1504,17 +1573,34 @@ def _wb_mover_card(title, dot, items):
     return f'<div class="re-wb-c">{_wb_head(title, dot)}{rows}</div>'
 
 
+def _wb_vol_label(x):
+    """평소比(vr) → '평소 2.3×' / '평소 +40%' / '평소 수준' / '평소 −41%' (지도 volCtx와 동일)."""
+    p = x.get("vr")
+    if p is None:
+        return "평소 —"
+    va = x.get("vavg") or 0
+    m = (x.get("v") / va) if va else None
+    if abs(p) < 15:
+        return "평소 수준"
+    if m is not None and m >= 2:
+        return f"평소 {m:.1f}×"
+    if p > 0:
+        return f"평소 +{round(p)}%"
+    return f"평소 {round(p)}%"
+
+
 def _wb_vol_card(title, dot, items):
-    """거래 급증 카드 — 수도권 실거래 전주比%."""
+    """거래 활발도 카드 — 수도권 실거래 평소比(현재주 vs 최근2개월 주당평균)."""
+    sub = "수도권 · 평소比"
     if not items:
-        return (f'<div class="re-wb-c">{_wb_head(title, dot, "수도권 · 전주比")}'
+        return (f'<div class="re-wb-c">{_wb_head(title, dot, sub)}'
                 f'<div class="re-wb-r lead"><span class="rg">자료 없음</span></div></div>')
     rows = ""
     for i, x in enumerate(items):
         cls = "lead" if i == 0 else "sub2"
         rows += (f'<div class="re-wb-r {cls}">{_wb_rg(x)}'
-                 f'<span class="v sg">{_wb_pct(x["vc"], 0)}</span></div>')
-    return f'<div class="re-wb-c">{_wb_head(title, dot, "수도권 · 전주比")}{rows}</div>'
+                 f'<span class="v sg">{_wb_vol_label(x)}</span></div>')
+    return f'<div class="re-wb-c">{_wb_head(title, dot, sub)}{rows}</div>'
 
 
 def _wb_gap_card(title, dot, items):
@@ -1542,14 +1628,15 @@ def _render_watchlist_band():
     sig = _watchlist_signals()
     cards = (_wb_mover_card("매매 급등", "#B65F5A", sig["surge"])
              + _wb_mover_card("매매 약세", "#5A7CA0", sig["weak"])
-             + _wb_vol_card("거래 급증", "#7E9A83", sig["vsurge"])
+             + _wb_vol_card("거래 활발도", "#7E9A83", sig["vsurge"])
              + _wb_gap_card("매매·전세 괴리", "#C2A86A", sig["gap"]))
     st.markdown('<div class="re-wb-sec">주목 지역'
                 '<span>이번 달 · 전월대비 · 서울·경기·인천·대구·부산 구 단위</span></div>',
                 unsafe_allow_html=True)
     st.markdown(f'<div class="re-wb">{cards}</div>', unsafe_allow_html=True)
     st.markdown('<div class="re-wb-foot">매매·전세 = KB 월간 가격지수 전월대비 · '
-                '거래 급증 = 수도권 실거래 건수 전주比(지방은 실거래 미수집) · '
+                '거래 활발도 = 수도권 실거래 평소比(현재주 vs 최근2개월 주당 평균 · '
+                '지도 테이블과 동일 지표 · 신고지연으로 참고용 · 지방 미수집) · '
                 '같은 구명은 앞의 권역으로 구분</div>', unsafe_allow_html=True)
 
 
@@ -2350,9 +2437,9 @@ _WD_KR = ["월", "화", "수", "목", "금", "토", "일"]
 
 
 def _anom_norm(rec):
-    """특이거래 레코드를 14필드로 정규화(구 10/11/12필드 스냅샷 호환). 실패 시 None.
+    """특이거래 레코드를 15필드로 정규화(구 10~14필드 스냅샷 호환). 실패 시 None.
        (유형,배경,글자색,단지,지역,면적,가격,변동,거래유형,제외,거래일ISO|None,
-        세대수|None, 빈도|None, 신호강도%|None)"""
+        세대수|None, 빈도|None, 신호강도%|None, 평형별1년밴드|None)"""
     try:
         rec = list(rec)
     except TypeError:
@@ -2363,7 +2450,8 @@ def _anom_norm(rec):
             + (rec[10] if len(rec) >= 11 else None,)   # 거래일ISO
             + (rec[11] if len(rec) >= 12 else None,)    # 세대수
             + (rec[12] if len(rec) >= 13 else None,)    # 빈도(12개월 거래수)
-            + (rec[13] if len(rec) >= 14 else None,))   # 신호강도%(sigstr)
+            + (rec[13] if len(rec) >= 14 else None,)    # 신호강도%(sigstr)
+            + (rec[14] if len(rec) >= 15 else None,))   # 평형별 1년 밴드(신고가)
 
 
 def _anom_date(d):
@@ -2669,21 +2757,47 @@ def _render_hot_complexes():
                "‘네이버 지도 ↗’로 위치 확인")
 
 
+def _hi_band_html(band, hi_area):
+    """평형별 1년 밴드(list of {area,lo,hi,n}) → 칩 HTML(B안). 신고가 평형은 강조."""
+    empty = ('<div class="re-hi-band"><div class="re-hi-band-empty">'
+             '최근 1년 평형별 밴드 데이터 없음 (다음 수집 후 표시)</div></div>')
+    if not band or not isinstance(band, list):
+        return empty
+    try:
+        ha = int(float(str(hi_area).replace("㎡", "").strip()))
+    except Exception:
+        ha = None
+    chips = ""
+    for b in band:
+        if not isinstance(b, dict):
+            continue
+        ar, lo, hi, n = b.get("area"), b.get("lo"), b.get("hi"), b.get("n")
+        if ar is None or lo is None or hi is None:
+            continue
+        rng = f"{lo}억" if lo == hi else f"{lo}~{hi}억"
+        n_s = f"<small>{int(n)}건</small>" if isinstance(n, (int, float)) and n else ""
+        hl = " hl" if (ha is not None and int(ar) == ha) else ""
+        chips += f'<span class="re-hi-chip{hl}">{int(ar)}㎡ <b>{rng}</b>{n_s}</span>'
+    if not chips:
+        return empty
+    return ('<div class="re-hi-band">'
+            '<div class="re-hi-bh">최근 1년 · 평형별 실거래가 밴드</div>'
+            f'<div class="re-hi-chips">{chips}</div></div>')
+
+
 def _render_anomalies():
+    """특이거래 탭 — 신고가 전용. 각 신고가 단지의 평형별 최근 1년 실거래가 밴드 동반."""
     from datetime import date as _date
     today = _date.today()
-    typ_f = st.segmented_control(
-        "유형", ["전체", "신고가", "신저가", "거래량 급증", "급등", "급락"],
-        default="전체", key="re_anom_type")
     reg_f = st.segmented_control(
         "지역", ["수도권", "서울", "경기", "강남3구"],
         default="수도권", key="re_anom_region")
     sort_f = st.segmented_control(
-        "정렬", ["최신순", "변동순", "금액순", "유형순"],
-        default="최신순", key="re_anom_sort")
+        "정렬", ["최신순", "마진순", "금액순"],
+        default="최신순", key="re_hi_sort")
     sens_f = st.segmented_control(
         "민감도", ["느슨", "표준", "엄격"], default="표준", key="re_anom_sens",
-        help="소형단지(거래빈도) 컷·신호강도·표시기간을 한 번에 조절 — 너무 많/적으면 바꿔보세요")
+        help="소형단지(거래빈도) 컷·신고가 마진·표시기간을 한 번에 조절 — 너무 많/적으면 바꿔보세요")
     exclude_direct = st.checkbox("직거래(증여추정) 제외", value=True, key="re_excl_direct")
     P = _ANOM_PRESETS.get(sens_f or "표준", _ANOM_PRESETS["표준"])
 
@@ -2697,55 +2811,25 @@ def _render_anomalies():
         return True
 
     def _pass_preset(r):
-        typ, d, freq, sig = r[0], r[10], r[12], r[13]
+        d, freq, sig = r[10], r[12], r[13]
         if isinstance(freq, (int, float)) and freq < P["freq"]:   # 소형/저유동 컷
             return False
         dt = _anom_date(d)                                        # 표시 기간 컷
         if dt and (today - dt).days > P["days"]:
             return False
-        if isinstance(sig, (int, float)):                        # 유형별 신호강도 컷
-            if typ in ("급등", "급락") and sig < P["jump"]:
-                return False
-            if typ in ("신고가", "신저가") and sig < P["margin"]:
-                return False
-            if typ == "거래량 급증" and sig < P["surge"]:
-                return False
+        if isinstance(sig, (int, float)) and sig < P["margin"]:  # 신고가 마진 컷
+            return False
         return True
 
     anoms = [na for na in (_anom_norm(r) for r in fetch_anomalies()) if na]
-    # 지역·직거래 → 민감도 프리셋(빈도·기간·신호강도) 순으로 좁힌다(유형 필터는 밴드 뒤)
-    base_pool = [r for r in anoms
-                 if not (r[9] and exclude_direct) and _pass_region(r[4])]
-    pool = [r for r in base_pool if _pass_preset(r)]
+    rows = [r for r in anoms
+            if r[0] == "신고가"
+            and not (r[9] and exclude_direct)
+            and _pass_region(r[4]) and _pass_preset(r)]
 
-    # 유형별 건수 밴드
-    _order = ["신고가", "신저가", "거래량 급증", "급등", "급락"]
-    _col = {"신고가": "#B65F5A", "신저가": "#5A7CA0", "거래량 급증": "#854F0B",
-            "급등": "#B65F5A", "급락": "#5A7CA0"}
-    cnt = {t: 0 for t in _order}
-    for r in pool:
-        if r[0] in cnt:
-            cnt[r[0]] += 1
-    chips = f'<span class="re-stat"><b>{len(pool)}</b>전체</span>' + "".join(
-        f'<span class="re-stat"><b style="color:{_col[t]}">{cnt[t]}</b>{t}</span>'
-        for t in _order)
-    st.markdown(f'<div class="re-statband">{chips}</div>', unsafe_allow_html=True)
-
-    # 상승압력 게이지: 신고가 vs 신저가 비율 (시장 방향 한눈에)
-    up_n, dn_n = cnt["신고가"], cnt["신저가"]
-    if up_n + dn_n:
-        up_p = round(up_n / (up_n + dn_n) * 100)
-        label = ("상승 우세" if up_p >= 60 else "하락 우세" if up_p <= 40 else "혼조")
-        st.markdown(
-            f'<div class="re-press"><span class="lab">상승압력 <b>{label}</b></span>'
-            f'<span class="bar"><i style="width:{up_p}%"></i></span>'
-            f'<span class="nums"><b style="color:#B65F5A">신고가 {up_n}</b> · '
-            f'<b style="color:#5A7CA0">신저가 {dn_n}</b></span></div>',
-            unsafe_allow_html=True)
-
-    # 유형 필터 적용 → 표시 행
-    rows = [r for r in pool
-            if not (typ_f and typ_f != "전체" and r[0] != typ_f)]
+    if not rows:
+        st.caption("조건에 맞는 신고가가 없어요. 민감도·지역을 바꿔보세요.")
+        return
 
     def _price_won(p):
         try:
@@ -2754,54 +2838,58 @@ def _render_anomalies():
         except Exception:
             return -1.0
 
+    def _sig(r):
+        return r[13] if isinstance(r[13], (int, float)) else 0.0
+
     if sort_f == "금액순":
         rows.sort(key=lambda r: _price_won(r[6]), reverse=True)
-    elif sort_f == "유형순":
-        oi = {t: i for i, t in enumerate(_order)}
-        rows.sort(key=lambda r: (oi.get(r[0], 99), -_chg_abs(r[7])))
-    elif sort_f == "최신순":
-        rows.sort(key=lambda r: (r[10] is not None, r[10] or "", _chg_abs(r[7])),
+    elif sort_f == "마진순":
+        rows.sort(key=_sig, reverse=True)
+    else:   # 최신순
+        rows.sort(key=lambda r: (r[10] is not None, r[10] or "", _sig(r)),
                   reverse=True)
-    else:
-        rows.sort(key=lambda r: _chg_abs(r[7]), reverse=True)
 
-    if not rows:
-        st.caption("조건에 맞는 거래가 없어요. 필터를 바꿔보세요.")
-        return
+    st.caption(f"신고가 {len(rows)}건 · 최근 {P['days']}일 · {reg_f} · "
+               f"직거래 {'제외' if exclude_direct else '포함'}")
 
     grouped = (sort_f == "최신순")
     html = ""
     cur_day = None
-    for typ, bg, fg, apt, gu, area, price, chg, trade, excl, d, units, freq, sig in rows:
+    for (typ, bg, fg, apt, gu, area, price, chg, trade,
+         excl, d, units, freq, sig, band) in rows:
         if grouped:
             dl = _anom_daylabel(d)
             if dl != cur_day:
                 cur_day = dl
                 html += f'<div class="re-daygroup">{dl}</div>'
-        v = _chg_abs(chg)
-        chg_cls = "dn" if str(chg).startswith("-") else "up"
-        emph = "lv2" if v >= 7 else ("lv1" if v >= 3 else "")
         unit_s = (f" · {int(units):,}세대"
                   if isinstance(units, (int, float)) and units else "")
         freq_s = (f" · 1년 {int(freq)}건"
                   if isinstance(freq, (int, float)) and freq else "")
         trade_html = ('<span style="color:#A32D2D">직거래(증여추정·제외)</span>'
-                      if trade == "직거래" else f"거래유형 {trade}")
+                      if trade == "직거래" else trade)
         date_inline = ("" if grouped or not _anom_date(d)
                        else f"{_anom_daylabel(d)} · ")
+        margin_s = (f"신고 +{sig:.1f}%" if isinstance(sig, (int, float)) else "신고")
         apt_link = (f'<a href="{_naver_land_url(apt)}" target="_blank" '
                     f'rel="noopener">{apt}</a>')
-        html += (f'<div class="re-anom{" excl" if excl else ""}">'
-                 f'<span class="re-bdg" style="background:{bg};color:{fg}">{typ}</span>'
-                 f'<div style="flex:1"><div class="re-apt">{apt_link} '
-                 f'<span class="re-sub">· {gu} · {area}{unit_s}{freq_s}</span></div>'
-                 f'<div class="re-sub">{date_inline}{trade_html}</div></div>'
-                 f'<div><div class="re-price">{price}</div>'
-                 f'<div class="re-chg {chg_cls} {emph}">{chg}</div></div></div>')
+        nmap = _naver_map_url(f"{gu} {apt}".strip())
+        band_html = _hi_band_html(band, area)
+        html += (
+            f'<div class="re-hi{" excl" if excl else ""}">'
+            f'<div class="re-hi-top">'
+            f'<span class="re-bdg" style="background:{bg};color:{fg};margin-top:1px">{typ}</span>'
+            f'<div style="flex:1;min-width:0"><div class="re-hi-nm">{apt_link}</div>'
+            f'<div class="re-hi-sub">{gu} · {area}{unit_s}{freq_s} · '
+            f'{date_inline}{trade_html}</div></div>'
+            f'<a class="re-hi-map" href="{nmap}" target="_blank" rel="noopener">지도 ↗</a>'
+            f'<div class="re-hi-price"><b>{price}</b>'
+            f'<span class="tag">{margin_s}</span></div>'
+            f'</div>{band_html}</div>')
     st.markdown(html, unsafe_allow_html=True)
-    st.caption("주요 단지 유니버스 대상(소형 노이즈 제외) · 신고가=최근 6개월 최고 초과 · "
-               "급등락=직전 동일면적 거래 대비 · 거래량 급증=최근 1개월 vs 평소 월평균 배수(×) · "
-               "민감도로 양 조절 · 직거래(증여추정) 기본 제외 · 단지명 클릭 시 네이버부동산.")
+    st.caption("주요 단지 유니버스 대상(소형 노이즈 제외) · 신고가=최근 6개월 최고 초과"
+               "(마진≥민감도) · 밴드=해당 단지 각 평형의 최근 1년 실거래 최저~최고"
+               "(직거래 제외 반영) · 민감도로 양 조절 · 단지명=네이버부동산 · 지도 ↗=네이버 지도.")
 
 
 # ── 시장 요약 밴드(아파트 탭 상단 공통 1열) ─────────────────────────
@@ -2849,20 +2937,18 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);-
 </body></html>'''
 
 
-def _market_summary():
-    """요약 밴드 집계 — 특이거래 탭 기본(표준·수도권·직거래제외)과 일치하는
-    신고가/신저가 건수 + 주목단지 거래활발 단지수·평균 상승률.
-    반환 dict 또는 None(표본 0)."""
-    from datetime import date as _date
+def _summary_core(anoms_raw, hot_raw, asof_dt):
+    """스냅샷 원천(anomalies, metrics._hot)에서 5개 지표 집계 — 특이거래 표준 프리셋
+    (직거래제외)과 일치하는 신고가/신저가 건수 + 주목단지 거래활발 단지수·평균 상승률.
+    asof_dt=표시 기간(P['days']) 필터 기준일. 반환 {hi,lo,act,avg,latest} 또는 None(표본 0)."""
     P = _ANOM_PRESETS["표준"]
-    today = _date.today()
 
     def _pass(r):
         typ, d, freq, sig = r[0], r[10], r[12], r[13]
         if isinstance(freq, (int, float)) and freq < P["freq"]:
             return False
         dt = _anom_date(d)
-        if dt and (today - dt).days > P["days"]:
+        if dt and (asof_dt - dt).days > P["days"]:
             return False
         if isinstance(sig, (int, float)):
             if typ in ("급등", "급락") and sig < P["jump"]:
@@ -2873,24 +2959,30 @@ def _market_summary():
                 return False
         return True
 
-    anoms = [na for na in (_anom_norm(r) for r in fetch_anomalies()) if na]
-    pool = [r for r in anoms if not r[9] and _pass(r)]   # 직거래제외 + 표준 프리셋
+    normed = [na for na in (_anom_norm(r) for r in (anoms_raw or [])) if na]
+    pool = [r for r in normed if not r[9] and _pass(r)]
     hi = sum(1 for r in pool if r[0] == "신고가")
     lo = sum(1 for r in pool if r[0] == "신저가")
-
-    # 표시용 '최신 실거래일' — 서버 UTC today가 아니라 pool 내 실제 최근 거래일.
     _tx = [dt for dt in (_anom_date(r[10]) for r in pool) if dt]
     latest = max(_tx) if _tx else None
-
-    hot = [h for h in (fetch_hot_complexes() or []) if isinstance(h, dict)]
+    hot = [h for h in (hot_raw or []) if isinstance(h, dict)]
     act = len(hot)
     chgs = [h.get("chg") for h in hot if isinstance(h.get("chg"), (int, float))]
     avg = round(sum(chgs) / len(chgs), 1) if chgs else None
-
     if hi + lo == 0 and act == 0:
         return None
-    return {"hi": hi, "lo": lo, "act": act, "avg": avg,
-            "today": today, "latest": latest}
+    return {"hi": hi, "lo": lo, "act": act, "avg": avg, "latest": latest}
+
+
+def _market_summary():
+    """오늘의 요약 밴드 집계(최신 스냅샷 기준). 반환 dict 또는 None(표본 0)."""
+    from datetime import date as _date
+    today = _date.today()
+    s = _summary_core(fetch_anomalies(), fetch_hot_complexes(), today)
+    if not s:
+        return None
+    s["today"] = today
+    return s
 
 
 def _render_market_band():
@@ -2929,6 +3021,98 @@ def _render_market_band():
     components.html(html, height=210, scrolling=False)
     st.caption("상승압력=신고가÷(신고가+신저가) · 특이거래 탭 기본(표준 민감도·직거래 제외)과 "
                "동일 집계 · 거래활발=주목단지 랭킹 단지수 · 평균 상승률=주목단지 평균")
+
+
+def _wk_spark(vals, color, w=132, h=30, pad=3):
+    """주간 지표 시계열 → 폭 채움 스파크라인 SVG(A안). 점<2면 '–'."""
+    vv = [v for v in vals if isinstance(v, (int, float))]
+    if len(vv) < 2:
+        return '<span class="wk-spark-na">–</span>'
+    lo, hi = min(vv), max(vv)
+    rng = (hi - lo) or 1
+    n = len(vv)
+    pts = []
+    for i, v in enumerate(vv):
+        x = pad + i / (n - 1) * (w - 2 * pad)
+        y = h - pad - (v - lo) / rng * (h - 2 * pad)
+        pts.append(f"{x:.1f},{y:.1f}")
+    return (f'<svg class="wk-spark" viewBox="0 0 {w} {h}" preserveAspectRatio="none" '
+            f'width="100%" height="{h}"><polyline fill="none" stroke="{color}" '
+            f'stroke-width="1.6" vector-effect="non-scaling-stroke" '
+            f'stroke-linecap="round" stroke-linejoin="round" '
+            f'points="{" ".join(pts)}"/></svg>')
+
+
+def _render_market_week():
+    """주간(최근 7일) 아파트 시장 — 지표별 스파크라인(A안). 일별 스냅샷을 날짜별로 재집계.
+    이력이 7일 미만이면 있는 만큼만 표시. 스냅샷 미설정/부재면 안내."""
+    from datetime import date as _date
+    rows = _load_recent_re_snapshots(7)
+    if not rows:
+        st.caption("주간 데이터가 아직 없어요. 매일 아침 자동 수집분이 하루씩 쌓이면 채워집니다.")
+        return
+
+    series = []   # [(date, summary)] 오래된→최신
+    for row in reversed(rows):
+        ad = str(row.get("asof_date") or "")[:10]
+        try:
+            y, m, d = ad.split("-")
+            asof_dt = _date(int(y), int(m), int(d))
+        except Exception:
+            continue
+        hot = (row.get("metrics") or {}).get("_hot")
+        s = _summary_core(row.get("anomalies"), hot, asof_dt)
+        if s is None:
+            s = {"hi": 0, "lo": 0, "act": 0, "avg": None}
+        tot = s["hi"] + s["lo"]
+        s["up"] = round(s["hi"] / tot * 100) if tot else 50
+        series.append((asof_dt, s))
+    if len(series) < 1:
+        st.caption("주간 데이터가 아직 없어요. 매일 아침 수집분이 쌓이면 채워집니다.")
+        return
+
+    ups = [s["up"] for _, s in series]
+    his = [s["hi"] for _, s in series]
+    los = [s["lo"] for _, s in series]
+    acts = [s["act"] for _, s in series]
+    avgs = [(s["avg"] if s["avg"] is not None else 0.0) for _, s in series]
+    d0, d1 = series[0][0], series[-1][0]
+
+    def _delta(vals, dec=0):
+        d = vals[-1] - vals[0]
+        d = round(d, dec) if dec else int(round(d))
+        return d
+
+    def _row(name, vals, last_str, delta, color_cls, spark_col, hero=False):
+        if delta > 0:
+            dcls, dsym, dv = "wk-up", "▲", f"+{delta}"
+        elif delta < 0:
+            dcls, dsym, dv = "wk-dn", "▼", f"{delta}"
+        else:
+            dcls, dsym, dv = "wk-mut", "–", "0"
+        return (
+            f'<div class="wk-row{" hero" if hero else ""}"><span class="k">{name}</span>'
+            f'{_wk_spark(vals, spark_col)}'
+            f'<span class="r"><b class="{color_cls}">{last_str}</b>'
+            f'<span class="d {dcls}">{dsym} {dv}</span></span></div>')
+
+    up_last = ups[-1]
+    up_cls = "wk-up" if up_last >= 60 else ("wk-dn" if up_last <= 40 else "wk-sg")
+    up_col = "#B65F5A" if up_last >= 60 else ("#5A7CA0" if up_last <= 40 else "#7E9A83")
+    avg_last = avgs[-1]
+    avg_cls = "wk-up" if avg_last >= 0 else "wk-dn"
+    avg_str = f'{"+" if avg_last >= 0 else ""}{round(avg_last, 1)}%'
+
+    body = (
+        _row("상승 우세", ups, f"{up_last}%", _delta(ups), up_cls, up_col, hero=True)
+        + _row("신고가", his, f"{his[-1]}건", _delta(his), "wk-up", "#B65F5A")
+        + _row("신저가", los, f"{los[-1]}건", _delta(los), "wk-dn", "#5A7CA0")
+        + _row("거래활발", acts, f"{acts[-1]}단지", _delta(acts), "wk-sg", "#7E9A83")
+        + _row("평균 상승률", avgs, avg_str, _delta(avgs, 1), avg_cls, "#B65F5A"))
+    st.markdown(f'<div class="wk-wrap">{body}</div>', unsafe_allow_html=True)
+    st.caption(f"주간 아파트 시장 · {d0.month}.{d0.day} → {d1.month}.{d1.day} "
+               f"({len(series)}일) · 각 지표를 일별 스냅샷에서 재집계(표준 민감도·직거래 제외) · "
+               "주간Δ=마지막−처음 · 상승우세=신고가÷(신고가+신저가)")
 
 
 # ── 메인 ────────────────────────────────────────────────────────
@@ -3195,11 +3379,17 @@ def render_realestate():
         st.title("아파트 실거래")
         st.caption("아파트 단지·실거래 종합 — 시장 방향·특이거래·시총·주목단지 · "
                    "국토부 실거래 기준 · 직거래 기본 제외")
-        _render_market_band()
+        _band_view = st.segmented_control(
+            "기간", ["오늘", "주간"], default="오늘", key="re_band_view",
+            label_visibility="collapsed")
+        if _band_view == "주간":
+            _render_market_week()
+        else:
+            _render_market_band()
         st_anom, st_cap, st_hot = st.tabs(["특이거래", "시총", "주목 단지"])
         with st_anom:
             st.markdown('<div class="re-grp">특이거래'
-                        '<span class="sub">신고가·신저가·급등락·거래량 급증</span></div>',
+                        '<span class="sub">신고가 · 평형별 최근 1년 실거래가 밴드</span></div>',
                         unsafe_allow_html=True)
             _render_anomalies()
         with st_cap:
