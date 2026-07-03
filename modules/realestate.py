@@ -1013,6 +1013,10 @@ _RE_CSS = """
 .re-go-btn.map{color:#5d6258;}
 .re-go-btn.gold{border-color:#E2D3B0;color:#8A6D3B;background:rgba(255,255,255,.65);}
 .re-go-btn.gold:hover{background:#fff;border-color:#D8C49A;}
+.nv{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;flex:none;
+  border-radius:4px;background:#03C75A;color:#fff;font-size:10px;font-weight:900;
+  text-decoration:none;margin-left:5px;vertical-align:1px;line-height:1;}
+.nv:hover{filter:brightness(.92);}
 @media(max-width:680px){.re-hl{grid-template-columns:1fr;}}
 /* 주목 지역 밴드 (지도 위 · 5개 권역 구 통합 · 월간 전월대비) */
 .re-wb-sec{font-size:12px;font-weight:700;color:var(--ink,#34352f);margin:2px 2px 9px;letter-spacing:.02em;}
@@ -2404,6 +2408,13 @@ def _naver_land_url(query):
     return "https://search.naver.com/search.naver?query=" + quote((query or "").strip())
 
 
+def _naver_n(query):
+    """단지명(+동/구) 옆 네이버 'N' 아이콘 링크 — 주도주 탭과 동일 스타일(.nv) · 통합검색."""
+    import html as _html
+    return (f'<a class="nv" href="{_html.escape(_naver_land_url(query))}" target="_blank" '
+            f'rel="noopener" title="네이버 검색에서 보기">N</a>')
+
+
 def _hot_spark_svg(vals, w=68, h=22):
     """단지 가격 추이 미니 스파크라인(P2) — ㎡당가 시퀀스 → polyline SVG.
     추세 방향색(상승 red·하락 blue·보합 sage). 점<2면 빈 문자열."""
@@ -2494,7 +2505,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);f
 .yoy b.up{color:var(--up);background:var(--upT)} .yoy b.dn{color:var(--dn);background:var(--dnT)}
 .yoy small{display:block;font-size:10.5px;font-weight:600;color:var(--muted);margin-top:3px}
 .empty{font-size:12px;color:var(--muted);padding:18px 6px}
-.mapln{display:inline-block;margin-top:5px;font-size:10px;font-weight:700;color:var(--sage2);text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:1px 6px;background:#fff}
+.nv{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;flex:none;border-radius:4px;background:#03C75A;color:#fff;font-size:10px;font-weight:900;text-decoration:none;margin-left:5px;vertical-align:1px;line-height:1}.nv:hover{filter:brightness(.92)}
 .mapln:hover{background:#EEF3EF;border-color:#A7BBA9}
 </style></head><body><div class="box">
   <div class="flat" id="flat"></div>
@@ -2503,7 +2514,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);f
 <script>
 const GAIN=__GAIN__;
 function mapLink(c){var q=encodeURIComponent(((c.dong||c.gu||"")+" "+c.apt).trim());
- return '<a class="mapln" href="https://search.naver.com/search.naver?query='+q+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">부동산 ↗</a>';}
+ return '<a class="nv" href="https://search.naver.com/search.naver?query='+q+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="네이버 검색에서 보기">N</a>';}
 function flat(){
  if(!GAIN||!GAIN.length){document.getElementById("flat").innerHTML='<div class="empty">데이터가 아직 없어요. 매일 아침 자동 수집 후 표시됩니다.</div>';return;}
  document.getElementById("flat").innerHTML=GAIN.map(function(c,i){
@@ -2602,7 +2613,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);f
 .jr-mini .gp{font-size:10.5px;font-weight:700;color:#6f7068;white-space:nowrap}
 .jr-mini .gp b{color:var(--ink);font-weight:800}
 .empty{font-size:12px;color:var(--muted);padding:18px 6px}
-.mapln{display:inline-block;margin-top:5px;font-size:10px;font-weight:700;color:var(--sage2);text-decoration:none;border:1px solid var(--line);border-radius:6px;padding:1px 6px;background:#fff}
+.nv{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;flex:none;border-radius:4px;background:#03C75A;color:#fff;font-size:10px;font-weight:900;text-decoration:none;margin-left:5px;vertical-align:1px;line-height:1}.nv:hover{filter:brightness(.92)}
 .mapln:hover{background:#EEF3EF;border-color:#A7BBA9}
 </style></head><body><div class="box">
   <div class="sec">수도권 시가총액 TOP 10</div>
@@ -2618,7 +2629,7 @@ const CAP=__CAP__;
 const GROUPS={"강남3구":["강남구","서초구","송파구"],"마용성":["마포구","용산구","성동구"],"노도강":["노원구","도봉구","강북구"]};
 function capFmt(e){return e>=10000?(e/10000).toFixed(1)+"조":Math.round(e).toLocaleString()+"억";}
 function mapLink(c){var q=encodeURIComponent(((c.dong||c.gu||"")+" "+c.apt).trim());
- return '<a class="mapln" href="https://search.naver.com/search.naver?query='+q+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">부동산 ↗</a>';}
+ return '<a class="nv" href="https://search.naver.com/search.naver?query='+q+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="네이버 검색에서 보기">N</a>';}
 function jrHtml(c){if(c.jr==null)return"";var w=Math.min(Math.round(c.jr),100);
  var gp=(c.gap!=null)?'<span class="gp">갭 <b>'+c.gap+'억</b></span>':'';
  return '<div class="jr-mini"><div class="jg"><div class="jl"><span>전세가율</span><b>'+Math.round(c.jr)+'%</b></div><div class="jb"><i style="width:'+w+'%"></i></div></div>'+gp+'</div>';}
@@ -2742,15 +2753,14 @@ def _render_hot_complexes():
             f'<div class="re-hc-stat">최근 {h.get("recent", 0)}건 · {vol_s} · '
             f'3개월 {h.get("freq", 0)}건</div>'
             f'<div class="re-hc-prices">{prices}{spark}</div>{jbox}</div>'
-            f'<a class="re-hc-map" href="{_naver_land_url(mq)}" target="_blank" '
-            f'rel="noopener">네이버부동산 ↗</a></div>')
+            f'{_naver_n(mq)}</div>')
     st.markdown(f'<div class="re-hcwrap">{body}</div>', unsafe_allow_html=True)
     st.caption("주요 단지 유니버스 중 가격 모멘텀(3개월 등락)+거래 가속이 큰 대장주 순 "
                "(국토부 실거래 기준 · 직거래 제외) · "
                "‘평소 ×N’=최근 30일 거래밀도÷직전 60일 평균(기간 정규화) · "
                "59·84㎡는 각 면적대 최근 실거래가 · 전세가율=전세 ㎡당가÷매매 ㎡당가 · "
                "갭=(매매−전세)×대표면적 · 추이=대표면적대 ㎡당가 시퀀스 · "
-               "‘네이버부동산 ↗’으로 단지 확인")
+               "N 아이콘(초록)으로 네이버 검색")
 
 
 def _hi_band_html(band, hi_area):
@@ -2869,7 +2879,7 @@ def _render_anomalies():
         margin_s = (f"신고 +{sig:.1f}%" if isinstance(sig, (int, float)) else "신고")
         apt_link = (f'<a href="{_naver_land_url(apt)}" target="_blank" '
                     f'rel="noopener">{apt}</a>')
-        nmap = _naver_land_url(f"{gu} {apt}".strip())
+        nmap = _naver_n(f"{gu} {apt}".strip())
         band_html = _hi_band_html(band, area)
         html += (
             f'<div class="re-hi{" excl" if excl else ""}">'
@@ -2878,14 +2888,14 @@ def _render_anomalies():
             f'<div style="flex:1;min-width:0"><div class="re-hi-nm">{apt_link}</div>'
             f'<div class="re-hi-sub">{gu} · {area}{unit_s}{freq_s} · '
             f'{date_inline}{trade_html}</div></div>'
-            f'<a class="re-hi-map" href="{nmap}" target="_blank" rel="noopener">부동산 ↗</a>'
+            f'{nmap}'
             f'<div class="re-hi-price"><b>{price}</b>'
             f'<span class="tag">{margin_s}</span></div>'
             f'</div>{band_html}</div>')
     st.markdown(html, unsafe_allow_html=True)
     st.caption("주요 단지 유니버스 대상(소형 노이즈 제외) · 신고가=최근 6개월 최고 초과"
                "(마진≥민감도) · 밴드=해당 단지 각 평형의 최근 1년 실거래 최저~최고"
-               "(직거래 제외 반영) · 민감도로 양 조절 · 단지명=네이버부동산 · 부동산 ↗=네이버페이부동산 단지.")
+               "(직거래 제외 반영) · 민감도로 양 조절 · 단지명·N 아이콘=네이버 검색.")
 
 
 # ── 시장 요약 밴드(아파트 탭 상단 공통 1열) ─────────────────────────
@@ -3165,7 +3175,7 @@ def _render_subscriptions():
         cards = ""
         for it in hot[:3]:
             reg_kr = "서울" if it["sd"] == "seoul" else "경기"
-            nmap = _naver_land_url((it["addr"] + " " + it["nm"]).strip())
+            nmap = _naver_n((it["addr"] + " " + it["nm"]).strip())
             cards += (f'<div class="re-hl-card">'
                       f'<span class="re-hl-dday">{it["dday"]}</span>'
                       f'<div class="re-hl-nm">{it["nm"]}</div>'
@@ -3173,7 +3183,7 @@ def _render_subscriptions():
                       f'<div class="re-hl-when">청약 {it["s"]}~{it["e"]} · 입주 {it["mv"]}</div>'
                       f'<div class="re-hl-acts">'
                       f'<a class="re-go-btn gold" href="{it["url"]}" target="_blank" rel="noopener">공고 ↗</a>'
-                      f'<a class="re-go-btn gold map" href="{nmap}" target="_blank" rel="noopener">부동산 ↗</a>'
+                      f'{nmap}'
                       f'</div></div>')
         st.markdown('<div class="re-hl-sec">청약 임박 <span>진행 중 · 7일 내 시작</span></div>',
                     unsafe_allow_html=True)
@@ -3209,7 +3219,7 @@ def _render_subscriptions():
     for it in items:
         bg, fg = bdg[it["status"]]
         reg_kr = "서울" if it["sd"] == "seoul" else "경기"
-        nmap = _naver_land_url((it["addr"] + " " + it["nm"]).strip())
+        nmap = _naver_n((it["addr"] + " " + it["nm"]).strip())
         html += (f'<div class="re-sub-card">'
                  f'<span class="re-sub-bdg" style="background:{bg};color:{fg}">{it["dday"]}</span>'
                  f'<div style="flex:1;min-width:0"><div class="re-sub-nm">{it["nm"]}</div>'
@@ -3218,17 +3228,17 @@ def _render_subscriptions():
                  f'<div class="re-sub-when">청약 {it["s"]}~{it["e"]} · 입주 {it["mv"]}</div></div>'
                  f'<div class="re-sub-acts">'
                  f'<a class="re-go-btn" href="{it["url"]}" target="_blank" rel="noopener">공고 ↗</a>'
-                 f'<a class="re-go-btn map" href="{nmap}" target="_blank" rel="noopener">부동산 ↗</a>'
+                 f'{nmap}'
                  f'</div></div>')
     st.markdown(html, unsafe_allow_html=True)
     if live:
         st.caption("소스: 한국부동산원 청약홈 분양정보(data.go.kr) — 실데이터. "
-                   "‘공고 ↗’는 청약홈 해당 공고, ‘부동산 ↗’은 네이버페이부동산으로 이동해요. "
+                   "‘공고 ↗’는 청약홈 해당 공고, 초록 N은 네이버 검색으로 이동해요. "
                    "D-day는 청약 시작일(예정)·마감일(진행 중) 기준 자동 계산. 진행/임박 우선.")
     else:
         st.caption("소스: 한국부동산원 청약홈 분양정보(data.go.kr) — 현재 샘플. "
                    "‘갱신’ 누르면 실데이터(청약홈 분양정보 활용신청 필요). "
-                   "‘공고 ↗’는 청약홈(샘플은 공고 목록), ‘부동산 ↗’은 네이버페이부동산으로 이동. "
+                   "‘공고 ↗’는 청약홈(샘플은 공고 목록), 초록 N은 네이버 검색으로 이동. "
                    "D-day는 청약 시작·마감일 기준 자동 계산.")
 
 
