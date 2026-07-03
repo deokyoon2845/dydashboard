@@ -2398,9 +2398,10 @@ def _chg_abs(chg):
 
 
 def _naver_land_url(query):
-    """단지명(+동/구) → 네이버페이부동산 단지 검색(모바일). 대부분 해당 단지로 랜딩. 키 불필요."""
+    """단지명(+동/구) → 네이버 통합검색(부동산 시세 카드 상단 노출). 퍼지라 약식명도 도달.
+       (complexNo 딥링크 리졸브 전/실패 시의 폴백 · 키 불필요.)"""
     from urllib.parse import quote
-    return "https://m.land.naver.com/search/result/" + quote((query or "").strip())
+    return "https://search.naver.com/search.naver?query=" + quote((query or "").strip())
 
 
 def _hot_spark_svg(vals, w=68, h=22):
@@ -2502,7 +2503,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);f
 <script>
 const GAIN=__GAIN__;
 function mapLink(c){var q=encodeURIComponent(((c.dong||c.gu||"")+" "+c.apt).trim());
- return '<a class="mapln" href="https://m.land.naver.com/search/result/'+q+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">부동산 ↗</a>';}
+ return '<a class="mapln" href="https://search.naver.com/search.naver?query='+q+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">부동산 ↗</a>';}
 function flat(){
  if(!GAIN||!GAIN.length){document.getElementById("flat").innerHTML='<div class="empty">데이터가 아직 없어요. 매일 아침 자동 수집 후 표시됩니다.</div>';return;}
  document.getElementById("flat").innerHTML=GAIN.map(function(c,i){
@@ -2617,7 +2618,7 @@ const CAP=__CAP__;
 const GROUPS={"강남3구":["강남구","서초구","송파구"],"마용성":["마포구","용산구","성동구"],"노도강":["노원구","도봉구","강북구"]};
 function capFmt(e){return e>=10000?(e/10000).toFixed(1)+"조":Math.round(e).toLocaleString()+"억";}
 function mapLink(c){var q=encodeURIComponent(((c.dong||c.gu||"")+" "+c.apt).trim());
- return '<a class="mapln" href="https://m.land.naver.com/search/result/'+q+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">부동산 ↗</a>';}
+ return '<a class="mapln" href="https://search.naver.com/search.naver?query='+q+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">부동산 ↗</a>';}
 function jrHtml(c){if(c.jr==null)return"";var w=Math.min(Math.round(c.jr),100);
  var gp=(c.gap!=null)?'<span class="gp">갭 <b>'+c.gap+'억</b></span>':'';
  return '<div class="jr-mini"><div class="jg"><div class="jl"><span>전세가율</span><b>'+Math.round(c.jr)+'%</b></div><div class="jb"><i style="width:'+w+'%"></i></div></div>'+gp+'</div>';}
