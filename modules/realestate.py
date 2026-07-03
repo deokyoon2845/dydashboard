@@ -2397,9 +2397,10 @@ def _chg_abs(chg):
         return 0.0
 
 
-def _naver_land_url(apt):
+def _naver_land_url(query):
+    """단지명(+동/구) → 네이버페이부동산 단지 검색(모바일). 대부분 해당 단지로 랜딩. 키 불필요."""
     from urllib.parse import quote
-    return "https://m.land.naver.com/search/result/" + quote(apt)
+    return "https://m.land.naver.com/search/result/" + quote((query or "").strip())
 
 
 def _hot_spark_svg(vals, w=68, h=22):
@@ -2425,12 +2426,6 @@ def _hot_spark_svg(vals, w=68, h=22):
             f'stroke-linecap="round" stroke-linejoin="round" '
             f'points="{" ".join(pts)}"/>'
             f'<circle cx="{lx}" cy="{ly}" r="1.9" fill="{col}"/></svg></span>')
-
-
-def _naver_map_url(query):
-    """네이버 지도 검색 URL('네이버 지도에서 보기' 링크 · 키 불필요)."""
-    from urllib.parse import quote
-    return "https://map.naver.com/p/search/" + quote((query or "").strip())
 
 
 _WD_KR = ["월", "화", "수", "목", "금", "토", "일"]
@@ -2507,7 +2502,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);f
 <script>
 const GAIN=__GAIN__;
 function mapLink(c){var q=encodeURIComponent(((c.dong||c.gu||"")+" "+c.apt).trim());
- return '<a class="mapln" href="https://map.naver.com/p/search/'+q+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">지도 ↗</a>';}
+ return '<a class="mapln" href="https://m.land.naver.com/search/result/'+q+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">부동산 ↗</a>';}
 function flat(){
  if(!GAIN||!GAIN.length){document.getElementById("flat").innerHTML='<div class="empty">데이터가 아직 없어요. 매일 아침 자동 수집 후 표시됩니다.</div>';return;}
  document.getElementById("flat").innerHTML=GAIN.map(function(c,i){
@@ -2622,7 +2617,7 @@ const CAP=__CAP__;
 const GROUPS={"강남3구":["강남구","서초구","송파구"],"마용성":["마포구","용산구","성동구"],"노도강":["노원구","도봉구","강북구"]};
 function capFmt(e){return e>=10000?(e/10000).toFixed(1)+"조":Math.round(e).toLocaleString()+"억";}
 function mapLink(c){var q=encodeURIComponent(((c.dong||c.gu||"")+" "+c.apt).trim());
- return '<a class="mapln" href="https://map.naver.com/p/search/'+q+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">지도 ↗</a>';}
+ return '<a class="mapln" href="https://m.land.naver.com/search/result/'+q+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">부동산 ↗</a>';}
 function jrHtml(c){if(c.jr==null)return"";var w=Math.min(Math.round(c.jr),100);
  var gp=(c.gap!=null)?'<span class="gp">갭 <b>'+c.gap+'억</b></span>':'';
  return '<div class="jr-mini"><div class="jg"><div class="jl"><span>전세가율</span><b>'+Math.round(c.jr)+'%</b></div><div class="jb"><i style="width:'+w+'%"></i></div></div>'+gp+'</div>';}
@@ -2688,7 +2683,7 @@ def _render_cap_leaders():
 
 def _render_hot_complexes():
     """주목 단지 보드 — 최근 거래 활발·상승(국토부 실거래) + 단지정보(세대수·시공사·소재지)
-    + 면적별(59·84㎡) 최근 실거래가 + '네이버 지도에서 보기' 링크."""
+    + 면적별(59·84㎡) 최근 실거래가 + '네이버페이부동산' 링크."""
     hot = [h for h in (fetch_hot_complexes() or []) if isinstance(h, dict)]
     if not hot:
         return
@@ -2746,15 +2741,15 @@ def _render_hot_complexes():
             f'<div class="re-hc-stat">최근 {h.get("recent", 0)}건 · {vol_s} · '
             f'3개월 {h.get("freq", 0)}건</div>'
             f'<div class="re-hc-prices">{prices}{spark}</div>{jbox}</div>'
-            f'<a class="re-hc-map" href="{_naver_map_url(mq)}" target="_blank" '
-            f'rel="noopener">네이버 지도 ↗</a></div>')
+            f'<a class="re-hc-map" href="{_naver_land_url(mq)}" target="_blank" '
+            f'rel="noopener">네이버부동산 ↗</a></div>')
     st.markdown(f'<div class="re-hcwrap">{body}</div>', unsafe_allow_html=True)
     st.caption("주요 단지 유니버스 중 가격 모멘텀(3개월 등락)+거래 가속이 큰 대장주 순 "
                "(국토부 실거래 기준 · 직거래 제외) · "
                "‘평소 ×N’=최근 30일 거래밀도÷직전 60일 평균(기간 정규화) · "
                "59·84㎡는 각 면적대 최근 실거래가 · 전세가율=전세 ㎡당가÷매매 ㎡당가 · "
                "갭=(매매−전세)×대표면적 · 추이=대표면적대 ㎡당가 시퀀스 · "
-               "‘네이버 지도 ↗’로 위치 확인")
+               "‘네이버부동산 ↗’으로 단지 확인")
 
 
 def _hi_band_html(band, hi_area):
@@ -2873,7 +2868,7 @@ def _render_anomalies():
         margin_s = (f"신고 +{sig:.1f}%" if isinstance(sig, (int, float)) else "신고")
         apt_link = (f'<a href="{_naver_land_url(apt)}" target="_blank" '
                     f'rel="noopener">{apt}</a>')
-        nmap = _naver_map_url(f"{gu} {apt}".strip())
+        nmap = _naver_land_url(f"{gu} {apt}".strip())
         band_html = _hi_band_html(band, area)
         html += (
             f'<div class="re-hi{" excl" if excl else ""}">'
@@ -2882,14 +2877,14 @@ def _render_anomalies():
             f'<div style="flex:1;min-width:0"><div class="re-hi-nm">{apt_link}</div>'
             f'<div class="re-hi-sub">{gu} · {area}{unit_s}{freq_s} · '
             f'{date_inline}{trade_html}</div></div>'
-            f'<a class="re-hi-map" href="{nmap}" target="_blank" rel="noopener">지도 ↗</a>'
+            f'<a class="re-hi-map" href="{nmap}" target="_blank" rel="noopener">부동산 ↗</a>'
             f'<div class="re-hi-price"><b>{price}</b>'
             f'<span class="tag">{margin_s}</span></div>'
             f'</div>{band_html}</div>')
     st.markdown(html, unsafe_allow_html=True)
     st.caption("주요 단지 유니버스 대상(소형 노이즈 제외) · 신고가=최근 6개월 최고 초과"
                "(마진≥민감도) · 밴드=해당 단지 각 평형의 최근 1년 실거래 최저~최고"
-               "(직거래 제외 반영) · 민감도로 양 조절 · 단지명=네이버부동산 · 지도 ↗=네이버 지도.")
+               "(직거래 제외 반영) · 민감도로 양 조절 · 단지명=네이버부동산 · 부동산 ↗=네이버페이부동산 단지.")
 
 
 # ── 시장 요약 밴드(아파트 탭 상단 공통 1열) ─────────────────────────
@@ -3169,7 +3164,7 @@ def _render_subscriptions():
         cards = ""
         for it in hot[:3]:
             reg_kr = "서울" if it["sd"] == "seoul" else "경기"
-            nmap = _naver_map_url((it["addr"] + " " + it["nm"]).strip())
+            nmap = _naver_land_url((it["addr"] + " " + it["nm"]).strip())
             cards += (f'<div class="re-hl-card">'
                       f'<span class="re-hl-dday">{it["dday"]}</span>'
                       f'<div class="re-hl-nm">{it["nm"]}</div>'
@@ -3177,7 +3172,7 @@ def _render_subscriptions():
                       f'<div class="re-hl-when">청약 {it["s"]}~{it["e"]} · 입주 {it["mv"]}</div>'
                       f'<div class="re-hl-acts">'
                       f'<a class="re-go-btn gold" href="{it["url"]}" target="_blank" rel="noopener">공고 ↗</a>'
-                      f'<a class="re-go-btn gold map" href="{nmap}" target="_blank" rel="noopener">지도 ↗</a>'
+                      f'<a class="re-go-btn gold map" href="{nmap}" target="_blank" rel="noopener">부동산 ↗</a>'
                       f'</div></div>')
         st.markdown('<div class="re-hl-sec">청약 임박 <span>진행 중 · 7일 내 시작</span></div>',
                     unsafe_allow_html=True)
@@ -3213,7 +3208,7 @@ def _render_subscriptions():
     for it in items:
         bg, fg = bdg[it["status"]]
         reg_kr = "서울" if it["sd"] == "seoul" else "경기"
-        nmap = _naver_map_url((it["addr"] + " " + it["nm"]).strip())
+        nmap = _naver_land_url((it["addr"] + " " + it["nm"]).strip())
         html += (f'<div class="re-sub-card">'
                  f'<span class="re-sub-bdg" style="background:{bg};color:{fg}">{it["dday"]}</span>'
                  f'<div style="flex:1;min-width:0"><div class="re-sub-nm">{it["nm"]}</div>'
@@ -3222,17 +3217,17 @@ def _render_subscriptions():
                  f'<div class="re-sub-when">청약 {it["s"]}~{it["e"]} · 입주 {it["mv"]}</div></div>'
                  f'<div class="re-sub-acts">'
                  f'<a class="re-go-btn" href="{it["url"]}" target="_blank" rel="noopener">공고 ↗</a>'
-                 f'<a class="re-go-btn map" href="{nmap}" target="_blank" rel="noopener">지도 ↗</a>'
+                 f'<a class="re-go-btn map" href="{nmap}" target="_blank" rel="noopener">부동산 ↗</a>'
                  f'</div></div>')
     st.markdown(html, unsafe_allow_html=True)
     if live:
         st.caption("소스: 한국부동산원 청약홈 분양정보(data.go.kr) — 실데이터. "
-                   "‘공고 ↗’는 청약홈 해당 공고, ‘지도 ↗’는 네이버 지도로 이동해요. "
+                   "‘공고 ↗’는 청약홈 해당 공고, ‘부동산 ↗’은 네이버페이부동산으로 이동해요. "
                    "D-day는 청약 시작일(예정)·마감일(진행 중) 기준 자동 계산. 진행/임박 우선.")
     else:
         st.caption("소스: 한국부동산원 청약홈 분양정보(data.go.kr) — 현재 샘플. "
                    "‘갱신’ 누르면 실데이터(청약홈 분양정보 활용신청 필요). "
-                   "‘공고 ↗’는 청약홈(샘플은 공고 목록), ‘지도 ↗’는 네이버 지도로 이동. "
+                   "‘공고 ↗’는 청약홈(샘플은 공고 목록), ‘부동산 ↗’은 네이버페이부동산으로 이동. "
                    "D-day는 청약 시작·마감일 기준 자동 계산.")
 
 
