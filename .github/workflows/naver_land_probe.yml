@@ -1,0 +1,38 @@
+name: 네이버부동산 단지 API 프로브 (수동)
+
+# ──────────────────────────────────────────────────────────────────────────
+#  complexNo 딥링크 리졸버 본체를 짜기 전에, GitHub Actions(데이터센터 IP)에서
+#  네이버부동산 내부 API(new.land.naver.com/api/*)가 살아있는지 1회만 확인한다.
+#  수동 실행 전용(스케줄 없음). Actions → 이 워크플로 → Run workflow → 로그 확인.
+#
+#  로그 읽는 법:
+#    [1] regionList가 JSON으로 오면  → 무인증 OK, 드릴 경로로 리졸버 구현 가능.
+#    [1]이 HTML/401/403이면          → authorization 토큰 필요 or IP 차단
+#                                       → 토큰 취득 or 통합검색 폴백으로 방향 전환.
+#    [3]에서 complexNo가 매칭되면    → 약식명(주공5)→상계주공5단지 해석 가능 확인.
+#  ※ 키 불필요(헤더 기반 내부 API).
+# ──────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v5
+
+      - name: 파이썬 설정
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: 라이브러리 설치 (프로브 전용 — 가볍게)
+        run: pip install requests
+
+      - name: 네이버부동산 단지 API 프로브 실행
+        run: python -m engine.naver_land_probe
