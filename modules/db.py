@@ -217,6 +217,61 @@ def cache_set(key: str, payload: dict) -> bool:
         return False
 
 
+# ── 보존 정책(오래된 시계열 정리) — 용량 관리 ────────────────────
+# 날짜 컬럼 기준 보존 기간이 지난 행을 삭제한다. 엔진(GitHub Actions)이 하루 1회
+# 호출한다(engine.realestate_run — 매일 도는 유일한 일일 잡). 뷰어(Streamlit)에서는
+# 절대 호출하지 않는다.
+#
+# · 날짜 컬럼은 모두 'YYYY-MM-DD'(date 또는 text)라 ISO 사전식=시간순 → 문자열
+#   커트오프로 .lt() 비교하면 date/text 어느 쪽이든 안전하게 동작한다.
+# · keywords·realestate_keywords는 streak(연속 등장) 계산이 최근 35일을 읽으므로
+#   40일 보존한다. 그 외 시계열은 뷰어가 최근 며칠만 읽어 10일로 충분하다.
+# · engine_cache·watchlist·stock_master·ipo_about은 시계열이 아니라 제외한다.
+RETENTION: dict[str, tuple[str, int]] = {
+    "reports":              ("report_date", 10),
+    "realestate_snapshots": ("asof_date",   10),
+    "ipo_snapshots":        ("asof_date",   10),
+    "market_flow":          ("asof_date",   10),
+    "leaders":              ("asof_date",   10),
+    "keywords":             ("kw_date",     40),
+    "realestate_keywords":  ("kw_date",     40),
+}
+
+
+def _retention_cutoff(keep_days: int) -> str:
+    """오늘(KST)로부터 keep_days일 이전 날짜를 'YYYY-MM-DD'로 반환.
+    이 값보다 '작은'(=오래된) 행이 삭제 대상이다."""
+    return (datetime.now(_KST).date() - timedelta(days=int(keep_days))).isoformat()
+
+
+def purge_table(table: str, date_col: str, keep_days: int) -> int:
+    """date_col < (오늘-keep_days)인 행을 삭제하고 삭제 행 수를 반환.
+    미설정·실패는 0으로 안전 폴백해 수집 파이프라인을 막지 않는다.
+    반드시 .lt(date_col, cutoff) 필터가 걸리므로 전체 삭제 위험은 없다."""
+    if not supabase_configured():
+        return 0
+    cutoff = _retention_cutoff(keep_days)
+    try:
+        res = (_client().table(table)
+               .delete()
+               .lt(date_col, cutoff)
+               .execute())
+        return len(res.data or [])
+    except Exception as e:
+        print(f"[db.purge_table] 실패({table}): {e}", flush=True)
+        return 0
+
+
+def purge_old_data(policy: dict | None = None) -> dict:
+    """RETENTION 정책대로 각 테이블의 오래된 행을 삭제. {table: 삭제행수} 반환.
+    엔진 일일 실행에서 1회 호출한다(중복 호출도 멱등 — 두 번째부턴 0건 삭제)."""
+    policy = policy or RETENTION
+    out: dict[str, int] = {}
+    for table, (col, days) in policy.items():
+        out[table] = purge_table(table, col, days)
+    return out
+
+
 def _meta_from_data(data: dict):
     """보고서 dict에서 slug · 날짜 · 종류(pre/post)를 유도한다."""
     gen = str(data.get("generated_at", "")).strip()
