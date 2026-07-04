@@ -65,22 +65,24 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 /* ===== 세그먼트 필 탭 (옵션 B) — 상단=흰 카드 토글 / 하위(중첩)=세이지 필 ===== */
 .stTabs [data-baseweb="tab-highlight"],
 .stTabs [data-baseweb="tab-border"] { display:none !important; height:0 !important; background:transparent !important; }
-/* 상단(주식·부동산): 인셋 토글 컨테이너 */
+/* 콘텐츠 탭(모듈 내부 st.tabs — 부동산 사이클/지도/실거래/분양/테마 등): 세이지 필 세그먼트 바.
+   상단 주식·부동산 및 주식 하위탭은 이제 st.segmented_control(lazy)로 분리됨(아래 별도 규칙). */
 .stTabs [data-baseweb="tab-list"] {
-  gap:5px; flex-wrap:wrap; width:fit-content; max-width:100%;
-  background:#EEF3EF; border:1px solid #E1E8E2; border-radius:12px;
-  padding:4px; margin-bottom:8px;
+  gap:3px; flex-wrap:wrap; width:fit-content; max-width:100%;
+  background:#F4F6F1; border:1px solid #ECEDE7; border-radius:12px;
+  padding:4px; margin-bottom:12px;
 }
 .stTabs [data-baseweb="tab"] {
   white-space:nowrap; height:auto; min-width:max-content;
-  padding:8px 18px; border-radius:9px; background:transparent;
+  padding:9px 16px; border-radius:9px; background:transparent;
   color:#9a9b92; transition:background .18s,color .18s,box-shadow .18s;
 }
-.stTabs [data-baseweb="tab"] p { font-size:14px; font-weight:700; margin:0; white-space:nowrap; color:inherit; }
+.stTabs [data-baseweb="tab"] p { font-size:13.5px; font-weight:700; margin:0; white-space:nowrap; color:inherit; }
 .stTabs [data-baseweb="tab"]:hover p { color:#34352f; }
-.stTabs [data-baseweb="tab"][aria-selected="true"] { background:#FFFFFF; color:#34352f; box-shadow:0 1px 2px rgba(52,53,47,.09); }
-.stTabs [data-baseweb="tab"][aria-selected="true"] p { color:#34352f; }
-/* 하위(중첩) 탭: 세이지 필 세그먼트 바 — tab-panel 안쪽만 더 높은 우선순위로 오버라이드 */
+.stTabs [data-baseweb="tab"][aria-selected="true"] { background:#7E9A83; box-shadow:0 2px 6px -1px rgba(126,154,131,.45); }
+.stTabs [data-baseweb="tab"][aria-selected="true"] p { color:#FFFFFF; }
+.stTabs [data-baseweb="tab"][aria-selected="true"]:hover p { color:#FFFFFF; }
+/* 더 깊은 중첩 탭(예: 실거래 안 특이거래/시총/주목단지): 동일 세이지 필 유지 */
 [data-baseweb="tab-panel"] [data-baseweb="tab-list"] {
   gap:3px; background:#F4F6F1; border:1px solid #ECEDE7; border-radius:12px;
   padding:4px; margin-bottom:12px;
@@ -90,6 +92,49 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 [data-baseweb="tab-panel"] [data-baseweb="tab"][aria-selected="true"] { background:#7E9A83; box-shadow:0 2px 6px -1px rgba(126,154,131,.45); }
 [data-baseweb="tab-panel"] [data-baseweb="tab"][aria-selected="true"] p { color:#FFFFFF; }
 [data-baseweb="tab-panel"] [data-baseweb="tab"][aria-selected="true"]:hover p { color:#FFFFFF; }
+/* ===== lazy 탭 (st.segmented_control 리스타일 — 선택 탭만 렌더) ===== */
+/* 상단 섹션(주식/부동산) — 흰 카드 인셋 토글 */
+.st-key-top_section div[data-testid="stSegmentedControl"] [role="radiogroup"],
+.st-key-top_section div[data-testid="stSegmentedControl"] > div {
+  display:inline-flex; gap:5px; background:#EEF3EF; border:1px solid #E1E8E2;
+  border-radius:12px; padding:4px; flex-wrap:wrap;
+}
+.st-key-top_section div[data-testid="stSegmentedControl"] button {
+  border:0 !important; background:transparent !important; box-shadow:none !important;
+  color:#9a9b92 !important; font-weight:700 !important; padding:8px 18px !important;
+  border-radius:9px !important; min-height:0 !important; transition:all .18s ease;
+}
+.st-key-top_section div[data-testid="stSegmentedControl"] button p { font-weight:700 !important; font-size:14px !important; margin:0 !important; }
+.st-key-top_section div[data-testid="stSegmentedControl"] button:hover { color:#34352f !important; }
+.st-key-top_section div[data-testid="stSegmentedControl"] button[aria-checked="true"],
+.st-key-top_section div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
+.st-key-top_section div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] {
+  background:#FFFFFF !important; color:#34352f !important; box-shadow:0 1px 2px rgba(52,53,47,.09) !important;
+}
+.st-key-top_section div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
+.st-key-top_section div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
+.st-key-top_section div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:#34352f !important; }
+/* 주식 하위(시장/브리핑/주도주/공모주/테마) — 세이지 필 */
+.st-key-stock_subtab div[data-testid="stSegmentedControl"] [role="radiogroup"],
+.st-key-stock_subtab div[data-testid="stSegmentedControl"] > div {
+  display:inline-flex; gap:3px; background:#F4F6F1; border:1px solid #ECEDE7;
+  border-radius:12px; padding:4px; flex-wrap:wrap;
+}
+.st-key-stock_subtab div[data-testid="stSegmentedControl"] button {
+  border:0 !important; background:transparent !important; box-shadow:none !important;
+  color:#9a9b92 !important; font-weight:700 !important; padding:9px 16px !important;
+  border-radius:9px !important; min-height:0 !important; transition:all .18s ease;
+}
+.st-key-stock_subtab div[data-testid="stSegmentedControl"] button p { font-weight:700 !important; font-size:13.5px !important; margin:0 !important; }
+.st-key-stock_subtab div[data-testid="stSegmentedControl"] button:hover { color:#34352f !important; }
+.st-key-stock_subtab div[data-testid="stSegmentedControl"] button[aria-checked="true"],
+.st-key-stock_subtab div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
+.st-key-stock_subtab div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] {
+  background:#7E9A83 !important; color:#FFFFFF !important; box-shadow:0 2px 6px -1px rgba(126,154,131,.45) !important;
+}
+.st-key-stock_subtab div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
+.st-key-stock_subtab div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
+.st-key-stock_subtab div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:#FFFFFF !important; }
 .stButton > button { border-radius:9px; padding:6px 16px; font-weight:600; }
 .stButton { margin-bottom:4px; }
 [data-testid="stExpander"] { border-radius:10px; margin-bottom:8px; }
@@ -1083,29 +1128,37 @@ def _render_status_panel():
 
 
 
-# ── 탭 ──
+# ── 탭 (lazy render: 선택된 탭만 실제 실행 → 매 렌더마다 전 탭이 도는 부담 제거) ──
+# st.tabs는 탭 전환이 CSS 숨김이라 어느 탭을 보든 모든 탭 본문이 매번 실행된다.
+# st.segmented_control + 조건부 렌더로 바꿔, 보고 있는 탭의 render 함수만 호출한다.
+# 특히 부동산(render_realestate, 최대 규모)은 '부동산' 선택 시에만 로드된다.
 _inject_countup()
-top_stock, top_re = st.tabs(["주식", "부동산"])
 
-with top_stock:
-    tab_idx, tab_rep, tab_ldr, tab_ipo, tab_kw  = st.tabs(["시장", "브리핑", "주도주", "공모주", "테마"])
-    with tab_idx:
+_top = st.segmented_control(
+    "섹션", ["주식", "부동산"], default="주식",
+    key="top_section", label_visibility="collapsed",
+) or "주식"   # 선택 해제(None) 시 기본값으로 폴백
+
+if _top == "주식":
+    _sub = st.segmented_control(
+        "주식 탭", ["시장", "브리핑", "주도주", "공모주", "테마"], default="시장",
+        key="stock_subtab", label_visibility="collapsed",
+    ) or "시장"
+    if _sub == "시장":
         render_indices()
-    with tab_rep:
+    elif _sub == "브리핑":
         render_report_tab()
-    with tab_ldr:
+    elif _sub == "주도주":
         render_leaders()
-    with tab_ipo:
-        render_ipo_tab()    
-    with tab_kw:
+    elif _sub == "공모주":
+        render_ipo_tab()
+    elif _sub == "테마":
         render_keywords()
-
-
-with top_re:
+else:  # 부동산
     from modules.realestate import render_realestate
     render_realestate()
 
 
 # ── 수집 상태 패널: 페이지 최하단(모든 탭 콘텐츠 아래)에 배치 ──
-# 탭 with 블록 바깥 최상위에 두어, 어느 탭을 보든 본문 맨 아래에 접힌 채로 표시된다.
+# 탭 블록 바깥 최상위에 두어, 어느 탭을 보든 본문 맨 아래에 접힌 채로 표시된다.
 _render_status_panel()
