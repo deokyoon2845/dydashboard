@@ -19,11 +19,12 @@ from modules.calendar_view import render_calendar
 from modules.timeline_view import render_timeline
 from modules.indicators import render_indicators
 from modules.reports import render_reports, render_reports_manage
-from modules.keywords_view import render_keywords
+from modules.keywords_view import render_keywords, _KW_CSS
 from modules.leaders import render_leaders
 from modules.usage import total_cost_usd
 from modules.ticker_tape import render_ticker_tape
 from modules.ipo import render_ipo_tab
+from modules.ui import display_title
 
 load_dotenv()
 st.set_page_config(page_title="DY Monitoring", page_icon="🔭", layout="wide")
@@ -54,7 +55,7 @@ LIGHT_VARS = """
 
 CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Hanken+Grotesk:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Hanken+Grotesk:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;700&display=swap');
 __VARS__
 html, body, [data-testid="stAppViewContainer"] { font-family: 'Hanken Grotesk','Noto Sans KR',sans-serif; }
 .block-container { max-width: 1400px; padding-top: 3.5rem; }
@@ -92,54 +93,68 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 [data-baseweb="tab-panel"] [data-baseweb="tab"][aria-selected="true"] { background:#7E9A83; box-shadow:0 2px 6px -1px rgba(126,154,131,.45); }
 [data-baseweb="tab-panel"] [data-baseweb="tab"][aria-selected="true"] p { color:#FFFFFF; }
 [data-baseweb="tab-panel"] [data-baseweb="tab"][aria-selected="true"]:hover p { color:#FFFFFF; }
-/* ===== lazy 탭 (st.segmented_control 리스타일 — 선택 탭만 렌더) ===== */
-/* 상단 섹션(주식/부동산) — 흰 카드 인셋 토글 */
+/* ===== 에디토리얼 크롬 — 전역 헤더/네비 (st.segmented_control 리스타일) ===== */
+/* 상단 바: 주식/부동산 — 텍스트 + 밑줄(선택) */
+.st-key-top_section{ display:flex; justify-content:flex-end; }
 .st-key-top_section div[data-testid="stSegmentedControl"] [role="radiogroup"],
 .st-key-top_section div[data-testid="stSegmentedControl"] > div {
-  display:inline-flex; gap:5px; background:#EEF3EF; border:1px solid #E1E8E2;
-  border-radius:12px; padding:4px; flex-wrap:wrap;
+  display:inline-flex; gap:24px; background:transparent; border:0;
+  border-radius:0; padding:0; flex-wrap:wrap;
 }
 .st-key-top_section div[data-testid="stSegmentedControl"] button {
   border:0 !important; background:transparent !important; box-shadow:none !important;
-  color:#9a9b92 !important; font-weight:700 !important; padding:8px 18px !important;
-  border-radius:9px !important; min-height:0 !important; transition:all .18s ease;
+  color:#9a9b92 !important; font-weight:700 !important; padding:2px 0 4px !important;
+  border-radius:0 !important; border-bottom:2px solid transparent !important;
+  min-height:0 !important; transition:color .18s ease, border-color .18s ease;
 }
-.st-key-top_section div[data-testid="stSegmentedControl"] button p { font-weight:700 !important; font-size:14px !important; margin:0 !important; }
+.st-key-top_section div[data-testid="stSegmentedControl"] button p {
+  font-weight:700 !important; font-size:13.5px !important; margin:0 !important;
+  font-family:'Archivo','Noto Sans KR',sans-serif !important; }
 .st-key-top_section div[data-testid="stSegmentedControl"] button:hover { color:#34352f !important; }
 .st-key-top_section div[data-testid="stSegmentedControl"] button[aria-checked="true"],
 .st-key-top_section div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
 .st-key-top_section div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] {
-  background:#FFFFFF !important; color:#34352f !important; box-shadow:0 1px 2px rgba(52,53,47,.09) !important;
+  background:transparent !important; color:#34352f !important; box-shadow:none !important;
+  border-bottom:2px solid #34352f !important;
 }
 .st-key-top_section div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
 .st-key-top_section div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
-.st-key-top_section div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:#34352f !important; }
-/* 주식 하위(시장/브리핑/주도주/공모주/테마) — 세이지 필 */
+.st-key-top_section div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:#34352f !important; font-weight:800 !important; }
+/* 주식 하위(시장/브리핑/주도주/공모주/테마) — 외곽선 pill / 선택=잉크 채움 */
+.st-key-stock_subtab{ display:flex; justify-content:flex-end; }
 .st-key-stock_subtab div[data-testid="stSegmentedControl"] [role="radiogroup"],
 .st-key-stock_subtab div[data-testid="stSegmentedControl"] > div {
-  display:inline-flex; gap:3px; background:#F4F6F1; border:1px solid #ECEDE7;
-  border-radius:12px; padding:4px; flex-wrap:wrap;
+  display:inline-flex; gap:8px; background:transparent; border:0;
+  border-radius:0; padding:0; flex-wrap:wrap; justify-content:flex-end;
 }
 .st-key-stock_subtab div[data-testid="stSegmentedControl"] button {
-  border:0 !important; background:transparent !important; box-shadow:none !important;
-  color:#9a9b92 !important; font-weight:700 !important; padding:9px 16px !important;
-  border-radius:9px !important; min-height:0 !important; transition:all .18s ease;
+  border:1px solid #ECEDE7 !important; background:#fff !important; box-shadow:none !important;
+  color:#78766f !important; font-weight:700 !important; padding:9px 16px !important;
+  border-radius:999px !important; min-height:0 !important; transition:all .16s ease;
 }
-.st-key-stock_subtab div[data-testid="stSegmentedControl"] button p { font-weight:700 !important; font-size:13.5px !important; margin:0 !important; }
-.st-key-stock_subtab div[data-testid="stSegmentedControl"] button:hover { color:#34352f !important; }
+.st-key-stock_subtab div[data-testid="stSegmentedControl"] button p {
+  font-weight:700 !important; font-size:12px !important; margin:0 !important;
+  font-family:'Archivo','Noto Sans KR',sans-serif !important; }
+.st-key-stock_subtab div[data-testid="stSegmentedControl"] button:hover { border-color:#A7BBA9 !important; color:#34352f !important; }
 .st-key-stock_subtab div[data-testid="stSegmentedControl"] button[aria-checked="true"],
 .st-key-stock_subtab div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
 .st-key-stock_subtab div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] {
-  background:#7E9A83 !important; color:#FFFFFF !important; box-shadow:0 2px 6px -1px rgba(126,154,131,.45) !important;
+  background:#34352f !important; color:#fff !important; border-color:#34352f !important; box-shadow:none !important;
 }
 .st-key-stock_subtab div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
 .st-key-stock_subtab div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
-.st-key-stock_subtab div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:#FFFFFF !important; }
+.st-key-stock_subtab div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:#fff !important; font-weight:800 !important; }
+/* 영문 대제목(에디토리얼) + 타이틀 구분선 */
+.display-title{ font-family:'Archivo','Noto Sans KR',sans-serif !important; font-size:52px !important;
+  font-weight:800 !important; letter-spacing:-.03em !important; line-height:.96 !important;
+  margin:6px 0 0 !important; color:var(--ink) !important; }
+@media (max-width:760px){ .display-title{ font-size:38px !important; } }
+.title-rule{ height:1px; background:var(--line); margin:22px 0 20px; }
 .stButton > button { border-radius:9px; padding:6px 16px; font-weight:600; }
 .stButton { margin-bottom:4px; }
 [data-testid="stExpander"] { border-radius:10px; margin-bottom:8px; }
-.app-name { font-family:'Fraunces','Noto Sans KR',serif; font-size:18px; font-weight:600; color:var(--ink); }
-.app-upd { font-size:11.5px; color:var(--muted); }
+.app-name { font-family:'Fraunces','Noto Sans KR',serif; font-size:19px; font-weight:600; line-height:1; color:var(--ink); }
+.app-upd { font-size:11.5px; color:var(--muted); margin-top:2px; }
 .accent-bar { height:3px; width:30px; background:var(--sage); border-radius:3px; margin:0 0 12px; }
 .mkt-group { font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:16px 0 10px; }
 .grp-asof { font-weight:600; font-size:10.5px; letter-spacing:0; text-transform:none; color:var(--muted); opacity:.8; margin-left:8px; }
@@ -355,13 +370,20 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 """
 st.markdown(CSS.replace("__VARS__", LIGHT_VARS), unsafe_allow_html=True)
 
-# ── 상단 헤더 ──
+# ── 상단 헤더: 워드마크 | 주식/부동산 네비 ──
 now = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")
-st.markdown(
-    f'<div class="app-name">DY Monitoring</div>'
-    f'<div class="app-upd">조회 {now} KST · 데이터 기준일은 항목별 표기</div>',
-    unsafe_allow_html=True,
-)
+_hb, _hn = st.columns([1, 1], vertical_alignment="center")
+with _hb:
+    st.markdown(
+        f'<div class="app-name">DY Monitoring</div>'
+        f'<div class="app-upd">조회 {now} KST</div>',
+        unsafe_allow_html=True,
+    )
+with _hn:
+    _top = st.segmented_control(
+        "섹션", ["주식", "부동산"], default="주식",
+        key="top_section", label_visibility="collapsed",
+    ) or "주식"   # 선택 해제(None) 시 기본값으로 폴백
 st.markdown('<hr style="border:none;border-top:1px solid var(--line);margin:6px 0 14px;">',
             unsafe_allow_html=True)
 
@@ -1134,16 +1156,23 @@ def _render_status_panel():
 # 특히 부동산(render_realestate, 최대 규모)은 '부동산' 선택 시에만 로드된다.
 _inject_countup()
 
-_top = st.segmented_control(
-    "섹션", ["주식", "부동산"], default="주식",
-    key="top_section", label_visibility="collapsed",
-) or "주식"   # 선택 해제(None) 시 기본값으로 폴백
+# 전체 크롬으로 이관된 탭 → app.py가 [영문 대제목 | 하위 pill] 한 줄과 구분선을 소유.
+# 미이관 탭은 각 모듈의 기존 헤더(tab_header)를 그대로 사용한다(순차 이관).
+STOCK_TITLE_EN = {"테마": "Today's Keywords"}
+STOCK_TITLE_CSS = {"테마": _KW_CSS}
 
 if _top == "주식":
-    _sub = st.segmented_control(
-        "주식 탭", ["시장", "브리핑", "주도주", "공모주", "테마"], default="시장",
-        key="stock_subtab", label_visibility="collapsed",
-    ) or "시장"
+    _t_col, _p_col = st.columns([1.5, 1], vertical_alignment="bottom")
+    with _p_col:
+        _sub = st.segmented_control(
+            "주식 탭", ["시장", "브리핑", "주도주", "공모주", "테마"], default="시장",
+            key="stock_subtab", label_visibility="collapsed",
+        ) or "시장"
+    _en = STOCK_TITLE_EN.get(_sub)
+    if _en:
+        with _t_col:
+            display_title(_en, css=STOCK_TITLE_CSS.get(_sub, ""))
+        st.markdown('<div class="title-rule"></div>', unsafe_allow_html=True)
     if _sub == "시장":
         render_indices()
     elif _sub == "브리핑":
