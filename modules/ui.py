@@ -41,3 +41,19 @@ def tab_header(title: str, caption: str = "", eyebrow: str = "", css: str = ""):
 
     if caption:
         st.caption(caption)
+
+
+def display_title(title_en: str, css: str = ""):
+    """에디토리얼 크롬용 영문 대제목(Archivo)을 그린다.
+
+    전체 크롬으로 이관된 탭은 app.py가 [영문 대제목 | 하위 pill] 한 줄 레이아웃에서
+    이 헬퍼로 제목을 그린다. 탭 전용 CSS(css)는 제목과 같은 markdown 블록에 합쳐
+    빈 스타일 블록으로 인한 여백 어긋남을 없앤다.
+
+    title_en : 영문 대제목(예: "Today's Keywords")
+    css      : 탭 전용 '<style>…</style>' 문자열(선택)
+    """
+    st.markdown(
+        css + f'<h1 class="display-title">{title_en}</h1>',
+        unsafe_allow_html=True,
+    )
