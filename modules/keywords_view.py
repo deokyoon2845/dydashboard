@@ -13,7 +13,6 @@ from pathlib import Path
 import streamlit as st
 
 from modules.stocks import naver_stock_search_url
-from modules.ui import tab_header
 
 KW_PATH = Path("data/keywords_today.json")
 KW_ARCHIVE_DIR = Path("data/keywords_archive")
@@ -26,8 +25,8 @@ _KW_CSS = """
 .kw-list{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:8px;}
 @media(max-width:760px){.kw-list{grid-template-columns:1fr;}}
 .kw-row{display:grid;grid-template-columns:44px 1fr;gap:13px;
-  height:160px;overflow:hidden;
-  background:#fff;border:.5px solid var(--line,#ECEDE7);border-radius:12px;
+  height:168px;overflow:hidden;
+  background:#fff;border:1px solid var(--line,#ECEDE7);border-radius:12px;
   padding:14px 16px;transition:border-color .18s ease,box-shadow .18s ease;}
 @media(max-width:760px){.kw-row{height:auto;min-height:120px;}}
 .kw-row:hover{border-color:var(--sage,#A7BBA9);box-shadow:0 2px 8px rgba(52,53,47,.06);}
@@ -44,8 +43,8 @@ _KW_CSS = """
 .kw-impbar i.f{background:var(--sage,#A7BBA9);}
 
 .kw-main{min-width:0;}
-.kw-head{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin-bottom:7px;}
-.kw-kw{font-size:18px;font-weight:700;color:var(--ink,#34352f);letter-spacing:-.01em;
+.kw-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:7px;}
+.kw-kw{font-size:17px;font-weight:700;color:var(--ink,#34352f);letter-spacing:-.01em;
   line-height:1.3;word-break:keep-all;}
 .kw-tags{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap;}
 .kw-cat{font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;letter-spacing:.02em;white-space:nowrap;}
@@ -66,9 +65,9 @@ _KW_CSS = """
 .nv:hover{filter:brightness(.92);}
 .kw-stk{font-size:11px;font-weight:600;text-decoration:none;background:var(--pill-bg,#F1F2EC);
   color:var(--pill-ink,#5d6258);border:1px solid var(--line,#ECEDE7);padding:2px 8px;border-radius:7px;}
-.kw-stk.kw-stk-watch{border-color:#D9A93C;}
+.kw-stk.kw-stk-watch{background:#FBF6EA;color:#7C5F2C;border-color:#D9A93C;}
 
-.kw-news a{display:block;font-size:12.5px;line-height:1.6;color:var(--sage-deep,#7E9A83);
+.kw-news a{display:block;font-size:12.5px;line-height:1.65;color:var(--sage-deep,#7E9A83);
   text-decoration:none;padding-left:13px;position:relative;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
 .kw-news a:before{content:"›";position:absolute;left:0;color:var(--muted,#9a9b92);}
@@ -275,8 +274,7 @@ def _render_items(items, watch_set):
 
 
 def render_keywords():
-    tab_header("오늘의 키워드", css=_KW_CSS)
-
+    # 전체 크롬: 영문 대제목과 탭 CSS는 app.py가 [영문 대제목 | 하위 pill] 행에서 함께 주입한다.
     if st.button("🔄 키워드 갱신"):
         with st.spinner("네이버 뉴스 수집 → 키워드 추출 중..."):
             try:
