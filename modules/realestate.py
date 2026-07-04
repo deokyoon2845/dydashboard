@@ -3351,14 +3351,17 @@ def render_realestate():
     (.accent-bar·h1 스타일은 app.py 전역 CSS를 그대로 사용해 증시와 픽셀 일치.)
     갱신/진단은 주 화면인 '지도' 탭 안에 위치하고, 나머지 탭은 같은 세션/스냅샷을 읽는다.
     """
-    # 증시와 동일하게 '메인탭 → 서브탭' 사이에 빈 블록이 끼지 않도록
-    # st.tabs를 가장 먼저 만든다. 부동산 전용 CSS(_RE_CSS)는 별도 markdown
-    # 블록으로 두면 그 블록이 세로 간격을 한 칸 더 먹어 증시보다 벌어지므로,
-    # 첫 패널(지도)의 accent-bar와 한 블록으로 합쳐 주입한다(간격 일치).
-    t_ind, t_map, t_anom, t_sub, t_kw = st.tabs(
-        ["사이클", "지도", "실거래", "분양", "테마"])
+    # ── lazy 서브탭: 선택된 탭만 실제 실행(매 렌더마다 5개 탭이 다 도는 부담 제거) ──
+    #   부동산은 최대 규모 모듈이라 효과가 크다. 증시 상단탭과 동일한 st.segmented_control.
+    #   단, _RE_CSS(부동산 전용 스타일)는 예전엔 항상 실행되던 '사이클' 탭에서만 주입됐으므로,
+    #   어느 탭으로 바로 진입해도 스타일이 붙도록 각 분기에서 주입한다(한 렌더에 한 분기만
+    #   실행 → 중복 없음, accent-bar와 한 블록으로 합쳐 세로 간격도 유지).
+    _re_maintab = st.segmented_control(
+        "부동산 탭", ["사이클", "지도", "실거래", "분양", "테마"], default="사이클",
+        key="re_maintab", label_visibility="collapsed",
+    ) or "사이클"   # 선택 해제(None) 시 기본값으로 폴백
 
-    with t_ind:
+    if _re_maintab == "사이클":
         st.markdown(_RE_CSS + '<div class="accent-bar"></div>',
                     unsafe_allow_html=True)
         st.title("부동산 시장 지표")
@@ -3372,16 +3375,16 @@ def render_realestate():
                        "현재 샘플(아침 자동 수집 후 실데이터로 채워집니다)")
         _render_indicator_charts(_resolved_indicator_series())
 
-    with t_map:
-        st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
+    elif _re_maintab == "지도":
+        st.markdown(_RE_CSS + '<div class="accent-bar"></div>', unsafe_allow_html=True)
         st.title("가격지도")
         _render_collect_controls()
         _render_watchlist_band()
         _render_streak_section()
         _render_map()
 
-    with t_anom:
-        st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
+    elif _re_maintab == "실거래":
+        st.markdown(_RE_CSS + '<div class="accent-bar"></div>', unsafe_allow_html=True)
         st.title("아파트 실거래")
         st.caption("아파트 단지·실거래 종합 — 시장 방향·특이거래·시총·주목단지 · "
                    "국토부 실거래 기준 · 직거래 기본 제외")
@@ -3420,8 +3423,8 @@ def render_realestate():
         with st_hot:
             _render_hot_complexes()
 
-    with t_sub:
-        st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
+    elif _re_maintab == "분양":
+        st.markdown(_RE_CSS + '<div class="accent-bar"></div>', unsafe_allow_html=True)
         st.title("분양 단지")
         st.caption("한국부동산원 청약홈 분양정보 · 청약 임박·진행 우선 · 매일 아침 자동 갱신 · 최근·다음 시각은 하단 🕐 자동 갱신 현황")
         if _re_authed():
@@ -3436,7 +3439,9 @@ def render_realestate():
                 st.rerun()
         _render_subscriptions()
 
-    with t_kw:
+    else:  # 테마
+        # _RE_CSS를 먼저 주입(이 탭으로 바로 진입해도 부동산 스타일 유지).
         # 키워드 뷰어가 자체적으로 accent-bar + 제목을 그린다(증시 키워드 탭과 동일).
+        st.markdown(_RE_CSS, unsafe_allow_html=True)
         from modules.realestate_keywords_view import render_realestate_keywords
         render_realestate_keywords()
