@@ -5,7 +5,6 @@ import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-import altair as alt
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
@@ -22,10 +21,8 @@ from modules.indicators import render_indicators
 from modules.reports import render_reports, render_reports_manage
 from modules.keywords_view import render_keywords
 from modules.leaders import render_leaders
-from modules.watchlist_brief import render_watchlist_tab
 from modules.usage import total_cost_usd
 from modules.ticker_tape import render_ticker_tape
-from modules.watchlist_brief import render_watchlist_tab
 from modules.ipo import render_ipo_tab
 
 load_dotenv()
@@ -408,20 +405,6 @@ def _heat_html(datas, histories=None):
 
 # ── 국내 지수 대형 차트 ──
 _KRX_PERIODS = {"1일": 1, "1개월": 31, "3개월": 92, "6개월": 183, "1년": 366}
-
-
-def _area_gradient(hex_c: str, top: float = 0.20, bottom: float = 0.0):
-    """라인 아래 영역용 수직 그라데이션 — 위(라인 쪽)는 진하고 아래로 갈수록 투명.
-
-    hex_c(#RRGGBB) → rgba 스톱으로 변환. 단색 area보다 차분하고 입체감 있는 채우기.
-    """
-    h = hex_c.lstrip("#")
-    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-    return alt.Gradient(
-        gradient="linear", x1=1, x2=1, y1=0, y2=1,    # 수직(위→아래)
-        stops=[alt.GradientStop(color=f"rgba({r},{g},{b},{top})", offset=0),
-               alt.GradientStop(color=f"rgba({r},{g},{b},{bottom})", offset=1)],
-    )
 
 
 # 지수 메인 차트(코스피·코스닥) 등장 정책 — C안: 통일된 소프트 페이드 1회 + 호버 반응.
@@ -1116,8 +1099,6 @@ with top_stock:
         render_ipo_tab()    
     with tab_kw:
         render_keywords()
-        st.divider()
-        render_watchlist_tab()
 
 
 with top_re:
