@@ -9,10 +9,22 @@ GitHub Actions(.github/workflows/realestate.yml)의 일일 스케줄, 또는 수
 
 from engine.realestate_collect import (collect_region_metrics, collect_anomalies,
                                         collect_indicators)
-from modules.db import save_realestate, collected_today
+from modules.db import save_realestate, collected_today, purge_old_data
 
 
 def main():
+    # ── 보존 정책: 오래된 시계열 정리(용량 관리) ──
+    #   부동산 크론은 매일(주말 포함) 도는 유일한 일일 잡이라, 전역 데이터 정리를 여기에
+    #   얹는다. reports·keywords·leaders·ipo 등 다른 테이블도 db.RETENTION에 따라 함께
+    #   정리한다. 멱등이라 3슬롯 중복 실행돼도 두 번째부턴 0건이라 안전하다.
+    #   실패해도 격리되어 실거래 수집엔 영향 없다.
+    try:
+        purged = purge_old_data()
+        hit = ", ".join(f"{k} {v}건" for k, v in purged.items() if v)
+        print(f"[retention] 오래된 행 정리: {hit or '삭제 대상 없음'}", flush=True)
+    except Exception as e:
+        print(f"[retention] 정리 실패(무시): {e}", flush=True)
+
     # ── 멱등 가드: 오늘(KST) 이미 수집을 마쳤으면 다음 슬롯은 즉시 스킵 ──
     #   realestate.yml은 06:07·07:07·08:07 KST 세 슬롯. 첫 성공이 잡으면 여기서
     #   빠져 중복 수집·중복 부동산 키워드(Anthropic) 과금을 막는다.
