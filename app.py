@@ -1,15 +1,15 @@
 """시장 현황 대시보드 - Streamlit 메인 앱 (라이트 단일 테마, 통일 헤더)."""
-
+ 
 import json
 import os
 from datetime import datetime
 from zoneinfo import ZoneInfo
-
+ 
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
-
+ 
 from modules.indices import (
     INDEX_GROUPS, fetch_index, sparkline_points, sparkline_axis_html,
     fetch_history, fetch_intraday,
@@ -19,16 +19,15 @@ from modules.calendar_view import render_calendar
 from modules.timeline_view import render_timeline
 from modules.indicators import render_indicators
 from modules.reports import render_reports, render_reports_manage
-from modules.keywords_view import render_keywords, _KW_CSS
+from modules.keywords_view import render_keywords
 from modules.leaders import render_leaders
 from modules.usage import total_cost_usd
 from modules.ticker_tape import render_ticker_tape
 from modules.ipo import render_ipo_tab
-from modules.ui import display_title
-
+ 
 load_dotenv()
 st.set_page_config(page_title="DY Monitoring", page_icon="🔭", layout="wide")
-
+ 
 # ── 타임라인 카드 클릭(?rpt=파일명) → 해당 보고서 선택 ──
 try:
     _rpt_param = st.query_params.get("rpt")
@@ -42,7 +41,7 @@ if _rpt_param:
         del st.query_params["rpt"]
     except Exception:
         pass
-
+ 
 # ── 색 변수 (라이트 단일 테마) ──
 LIGHT_VARS = """
 :root{
@@ -52,10 +51,10 @@ LIGHT_VARS = """
   --tint-up:#FBF2F2; --tint-down:#F1F5F9; --pill-hover:#E6EBE2;
 }
 """
-
+ 
 CSS = """
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Hanken+Grotesk:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Hanken+Grotesk:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;700&display=swap');
 __VARS__
 html, body, [data-testid="stAppViewContainer"] { font-family: 'Hanken Grotesk','Noto Sans KR',sans-serif; }
 .block-container { max-width: 1400px; padding-top: 3.5rem; }
@@ -93,68 +92,54 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 [data-baseweb="tab-panel"] [data-baseweb="tab"][aria-selected="true"] { background:#7E9A83; box-shadow:0 2px 6px -1px rgba(126,154,131,.45); }
 [data-baseweb="tab-panel"] [data-baseweb="tab"][aria-selected="true"] p { color:#FFFFFF; }
 [data-baseweb="tab-panel"] [data-baseweb="tab"][aria-selected="true"]:hover p { color:#FFFFFF; }
-/* ===== 에디토리얼 크롬 — 전역 헤더/네비 (st.segmented_control 리스타일) ===== */
-/* 상단 바: 주식/부동산 — 텍스트 + 밑줄(선택) */
-.st-key-top_section{ display:flex; justify-content:flex-end; }
+/* ===== lazy 탭 (st.segmented_control 리스타일 — 선택 탭만 렌더) ===== */
+/* 상단 섹션(주식/부동산) — 흰 카드 인셋 토글 */
 .st-key-top_section div[data-testid="stSegmentedControl"] [role="radiogroup"],
 .st-key-top_section div[data-testid="stSegmentedControl"] > div {
-  display:inline-flex; gap:24px; background:transparent; border:0;
-  border-radius:0; padding:0; flex-wrap:wrap;
+  display:inline-flex; gap:5px; background:#EEF3EF; border:1px solid #E1E8E2;
+  border-radius:12px; padding:4px; flex-wrap:wrap;
 }
 .st-key-top_section div[data-testid="stSegmentedControl"] button {
   border:0 !important; background:transparent !important; box-shadow:none !important;
-  color:#9a9b92 !important; font-weight:700 !important; padding:2px 0 4px !important;
-  border-radius:0 !important; border-bottom:2px solid transparent !important;
-  min-height:0 !important; transition:color .18s ease, border-color .18s ease;
+  color:#9a9b92 !important; font-weight:700 !important; padding:8px 18px !important;
+  border-radius:9px !important; min-height:0 !important; transition:all .18s ease;
 }
-.st-key-top_section div[data-testid="stSegmentedControl"] button p {
-  font-weight:700 !important; font-size:13.5px !important; margin:0 !important;
-  font-family:'Archivo','Noto Sans KR',sans-serif !important; }
+.st-key-top_section div[data-testid="stSegmentedControl"] button p { font-weight:700 !important; font-size:14px !important; margin:0 !important; }
 .st-key-top_section div[data-testid="stSegmentedControl"] button:hover { color:#34352f !important; }
 .st-key-top_section div[data-testid="stSegmentedControl"] button[aria-checked="true"],
 .st-key-top_section div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
 .st-key-top_section div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] {
-  background:transparent !important; color:#34352f !important; box-shadow:none !important;
-  border-bottom:2px solid #34352f !important;
+  background:#FFFFFF !important; color:#34352f !important; box-shadow:0 1px 2px rgba(52,53,47,.09) !important;
 }
 .st-key-top_section div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
 .st-key-top_section div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
-.st-key-top_section div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:#34352f !important; font-weight:800 !important; }
-/* 주식 하위(시장/브리핑/주도주/공모주/테마) — 외곽선 pill / 선택=잉크 채움 */
-.st-key-stock_subtab{ display:flex; justify-content:flex-end; }
+.st-key-top_section div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:#34352f !important; }
+/* 주식 하위(시장/브리핑/주도주/공모주/테마) — 세이지 필 */
 .st-key-stock_subtab div[data-testid="stSegmentedControl"] [role="radiogroup"],
 .st-key-stock_subtab div[data-testid="stSegmentedControl"] > div {
-  display:inline-flex; gap:8px; background:transparent; border:0;
-  border-radius:0; padding:0; flex-wrap:wrap; justify-content:flex-end;
+  display:inline-flex; gap:3px; background:#F4F6F1; border:1px solid #ECEDE7;
+  border-radius:12px; padding:4px; flex-wrap:wrap;
 }
 .st-key-stock_subtab div[data-testid="stSegmentedControl"] button {
-  border:1px solid #ECEDE7 !important; background:#fff !important; box-shadow:none !important;
-  color:#78766f !important; font-weight:700 !important; padding:9px 16px !important;
-  border-radius:999px !important; min-height:0 !important; transition:all .16s ease;
+  border:0 !important; background:transparent !important; box-shadow:none !important;
+  color:#9a9b92 !important; font-weight:700 !important; padding:9px 16px !important;
+  border-radius:9px !important; min-height:0 !important; transition:all .18s ease;
 }
-.st-key-stock_subtab div[data-testid="stSegmentedControl"] button p {
-  font-weight:700 !important; font-size:12px !important; margin:0 !important;
-  font-family:'Archivo','Noto Sans KR',sans-serif !important; }
-.st-key-stock_subtab div[data-testid="stSegmentedControl"] button:hover { border-color:#A7BBA9 !important; color:#34352f !important; }
+.st-key-stock_subtab div[data-testid="stSegmentedControl"] button p { font-weight:700 !important; font-size:13.5px !important; margin:0 !important; }
+.st-key-stock_subtab div[data-testid="stSegmentedControl"] button:hover { color:#34352f !important; }
 .st-key-stock_subtab div[data-testid="stSegmentedControl"] button[aria-checked="true"],
 .st-key-stock_subtab div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
 .st-key-stock_subtab div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] {
-  background:#34352f !important; color:#fff !important; border-color:#34352f !important; box-shadow:none !important;
+  background:#7E9A83 !important; color:#FFFFFF !important; box-shadow:0 2px 6px -1px rgba(126,154,131,.45) !important;
 }
 .st-key-stock_subtab div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
 .st-key-stock_subtab div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
-.st-key-stock_subtab div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:#fff !important; font-weight:800 !important; }
-/* 영문 대제목(에디토리얼) + 타이틀 구분선 */
-.display-title{ font-family:'Archivo','Noto Sans KR',sans-serif !important; font-size:52px !important;
-  font-weight:800 !important; letter-spacing:-.03em !important; line-height:.96 !important;
-  margin:6px 0 0 !important; color:var(--ink) !important; }
-@media (max-width:760px){ .display-title{ font-size:38px !important; } }
-.title-rule{ height:1px; background:var(--line); margin:22px 0 20px; }
+.st-key-stock_subtab div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:#FFFFFF !important; }
 .stButton > button { border-radius:9px; padding:6px 16px; font-weight:600; }
 .stButton { margin-bottom:4px; }
 [data-testid="stExpander"] { border-radius:10px; margin-bottom:8px; }
-.app-name { font-family:'Fraunces','Noto Sans KR',serif; font-size:19px; font-weight:600; line-height:1; color:var(--ink); }
-.app-upd { font-size:11.5px; color:var(--muted); margin-top:2px; }
+.app-name { font-family:'Fraunces','Noto Sans KR',serif; font-size:18px; font-weight:600; color:var(--ink); }
+.app-upd { font-size:11.5px; color:var(--muted); }
 .accent-bar { height:3px; width:30px; background:var(--sage); border-radius:3px; margin:0 0 12px; }
 .mkt-group { font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:16px 0 10px; }
 .grp-asof { font-weight:600; font-size:10.5px; letter-spacing:0; text-transform:none; color:var(--muted); opacity:.8; margin-left:8px; }
@@ -182,14 +167,14 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 .rsi-gauge .t30 { left:30%; } .rsi-gauge .t70 { left:70%; }
 .rsi-gauge i { position:absolute; top:-3px; width:8px; height:12px; border-radius:3px; transform:translateX(-50%); background:var(--muted); }
 .rsi-gauge i.up { background:var(--up); } .rsi-gauge i.down { background:var(--down); }
-
+ 
 /* ── 히트맵 타일 (미니차트 포함 버전) ── */
 .heat-tile { border:1px solid rgba(52,53,47,.06); border-radius:16px; padding:14px 14px 12px; }
 .heat-name { font-size:12.5px; font-weight:600; }
 .heat-val { font-size:18px; font-weight:700; margin-top:3px; letter-spacing:-.02em; }
 .heat-pct { font-size:12.5px; font-weight:700; margin-top:2px; }
 .heat-spark { width:100%; height:28px; display:block; margin-top:8px; }
-
+ 
 /* ── 미니차트 보름축 (3개월 · 하단 눈금 + 월 라벨) ── */
 .spark-wrap { position:relative; margin-top:8px; }
 .spark-wrap .heat-spark, .spark-wrap .mkt-spark { margin-top:0; }
@@ -197,7 +182,7 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 .spark-axis span { position:absolute; top:0; font-size:9px; line-height:1; opacity:.6; white-space:nowrap; transform:translateX(-50%); }
 .spark-axis span.first { transform:none; left:0 !important; }
 .spark-axis span.last { transform:none; left:auto !important; right:0; }
-
+ 
 .supply-wrap { background:var(--summary-bg); border:1px solid var(--line); border-radius:14px; padding:14px 16px; margin-bottom:10px; }
 .supply-mkt { font-size:12px; font-weight:700; letter-spacing:.05em; color:var(--muted); margin-bottom:10px; }
 .supply-row { display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px solid var(--line); }
@@ -283,7 +268,7 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 .empty .ico { font-size:32px; }
 .empty .msg { font-size:14px; margin-top:10px; color:var(--ink); }
 .empty .hint { font-size:12px; margin-top:5px; color:var(--muted); }
-
+ 
 /* ═══ 마이크로 인터랙션 ═══ */
 @keyframes mm-fade-up {
   from { opacity:0; transform:translateY(10px); }
@@ -369,27 +354,20 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 </style>
 """
 st.markdown(CSS.replace("__VARS__", LIGHT_VARS), unsafe_allow_html=True)
-
-# ── 상단 헤더: 워드마크 | 주식/부동산 네비 ──
+ 
+# ── 상단 헤더 ──
 now = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")
-_hb, _hn = st.columns([1, 1], vertical_alignment="center")
-with _hb:
-    st.markdown(
-        f'<div class="app-name">DY Monitoring</div>'
-        f'<div class="app-upd">조회 {now} KST</div>',
-        unsafe_allow_html=True,
-    )
-with _hn:
-    _top = st.segmented_control(
-        "섹션", ["주식", "부동산"], default="주식",
-        key="top_section", label_visibility="collapsed",
-    ) or "주식"   # 선택 해제(None) 시 기본값으로 폴백
+st.markdown(
+    f'<div class="app-name">DY Monitoring</div>'
+    f'<div class="app-upd">조회 {now} KST · 데이터 기준일은 항목별 표기</div>',
+    unsafe_allow_html=True,
+)
 st.markdown('<hr style="border:none;border-top:1px solid var(--line);margin:6px 0 14px;">',
             unsafe_allow_html=True)
-
+ 
 render_ticker_tape()
-
-
+ 
+ 
 # ── 지수 카드 HTML ──
 def _card_html(name, data):
     if data is None:
@@ -412,8 +390,8 @@ def _card_html(name, data):
             f'{data["current"]:,.2f}</div>'
             f'<div class="mkt-chg {cls}">{arrow} {data["change"]:+,.2f} ({data["pct"]:+.2f}%)</div>'
             f'{spark}</div>')
-
-
+ 
+ 
 # ── 히트맵 타일 색 ──
 def _heat_color(pct):
     if pct is None:
@@ -429,12 +407,12 @@ def _heat_color(pct):
     b = round(base[2] + (tgt[2] - base[2]) * k)
     txt = "#ffffff" if k > 0.55 else "#34352f"
     return f"rgb({r},{g},{b})", txt
-
-
+ 
+ 
 # ── 히트맵 타일 HTML (3개월 미니차트 + 보름축 포함) ──
 def _heat_html(datas, histories=None):
     """히트맵 타일 그리드.
-
+ 
     histories: {표시이름: pd.Series(날짜→종가)}
     있으면 타일 하단에 3개월 미니차트(하단 보름 눈금 + 월 라벨)를 그려 추이를 보여준다.
     없으면 숫자만 표시.
@@ -447,18 +425,18 @@ def _heat_html(datas, histories=None):
                       f'<div class="heat-name">{name}</div>'
                       f'<div class="heat-val" style="font-size:14px;">데이터 없음</div></div>')
             continue
-
+ 
         pct = d.get("pct", 0.0)
         bg, txt = _heat_color(pct)
         arrow = "▲" if d["change"] > 0 else ("▼" if d["change"] < 0 else "▬")
-
+ 
         # 3개월 미니차트 (하단 보름 눈금 + 월 라벨)
         spark = ""
         series = histories.get(name)
         if series is not None and len(series) >= 2:
             spark = sparkline_axis_html(series, txt, height=38, n_days=92,
                                         label_color=txt)
-
+ 
         tiles += (
             f'<div class="heat-tile" style="background:{bg};">'
             f'<div class="heat-name" style="color:{txt};opacity:.92;">{name}</div>'
@@ -468,12 +446,12 @@ def _heat_html(datas, histories=None):
             f'</div>'
         )
     return f'<div class="mkt-grid">{tiles}</div>'
-
-
+ 
+ 
 # ── 국내 지수 대형 차트 ──
 _KRX_PERIODS = {"1일": 1, "1개월": 31, "3개월": 92, "6개월": 183, "1년": 366}
-
-
+ 
+ 
 # 지수 메인 차트(코스피·코스닥) 등장 정책 — C안: 통일된 소프트 페이드 1회 + 호버 반응.
 # 개별 stagger·카운트업·차트 그리기 애니메이션 없이 컨테이너가 한 번 부드럽게 떠오른다.
 # .st-key-idx_domestic_charts 로 지수 차트에만 스코프(다른 탭 차트엔 영향 없음).
@@ -499,11 +477,11 @@ _IDX_CHART_CSS = """
 }
 </style>
 """
-
-
+ 
+ 
 def _svg_index_chart(labels, ys, line_color, prev_close=None, height=260):
     """코스피/코스닥 차트를 SVG로 직접 렌더.
-
+ 
     라인이 좌→우로 그려지고 area가 함께 차오르는 단일 등장 애니메이션(0.85s)을
     SVG clip-reveal로 구현해 Altair/Vega의 렌더 지연으로 생기던 '딱딱 끊김'을 없앴다.
     crosshair hover(세로선·점·값 툴팁)와 반응형(폭 변화 시 재계산)을 자체 제공한다.
@@ -577,33 +555,33 @@ draw(); var rt; window.addEventListener('resize',function(){clearTimeout(rt);rt=
             .replace("__H__", str(int(height)))
             .replace("__COLOR__", line_color)
             .replace("__RGB__", "%d,%d,%d" % (r, g, b)))
-
-
+ 
+ 
 def _big_index_chart_intraday(name: str, ticker: str):
     d = fetch_intraday(ticker, "5m")
     if not d or d.get("series") is None or len(d["series"]) < 2:
         st.caption(f"{name} 분봉 데이터를 불러오지 못했어요. "
                    f"(한국 지수 분봉은 지연·누락될 수 있어요. 다른 기간을 선택해 보세요.)")
         return
-
+ 
     s = d["series"]
     df = pd.DataFrame({"시각": pd.to_datetime(s.index),
                        "종가": pd.to_numeric(s.values, errors="coerce")}).dropna()
     if len(df) < 2:
         st.caption(f"{name} 분봉 데이터가 부족해요.")
         return
-
+ 
     cur = d["current"]
     change = d["change"]
     pct = d["pct"]
     day_up = change >= 0
     prev_close = d.get("prev_close")
     base_is_prev = d.get("base_is_prev", False)
-
+ 
     up_c, down_c = "#B65F5A", "#5A7CA0"
     line_c = up_c if day_up else down_c
     axis_c, grid_c = "#9a9b92", "#ECEDE7"
-
+ 
     base_label = "전일 종가 대비" if base_is_prev else "시가 대비"
     arrow = "▲" if change > 0 else ("▼" if change < 0 else "▬")
     chg_cls = "up" if day_up else "down"
@@ -613,48 +591,48 @@ def _big_index_chart_intraday(name: str, ticker: str):
         f'<span class="mkt-val" style="font-size:24px;">{cur:,.2f}</span> '
         f'<span class="mkt-chg {chg_cls}">{arrow} {change:+,.2f} ({pct:+.2f}%)</span>'
         f'</div>', unsafe_allow_html=True)
-
+ 
     lo_v, hi_v = float(df["종가"].min()), float(df["종가"].max())
     span = (hi_v - lo_v) or (hi_v * 0.01) or 1.0
     pv = None
     if base_is_prev and prev_close is not None and prev_close > 0:
         if (lo_v - 1.5 * span) <= prev_close <= (hi_v + 1.5 * span):
             pv = float(prev_close)
-
+ 
     labels = [t.strftime("%H:%M") for t in df["시각"]]
     ys = [float(v) for v in df["종가"]]
     components.html(
         _svg_index_chart(labels, ys, line_c, prev_close=pv, height=260),
         height=272)
-
-
+ 
+ 
 def _big_index_chart(name: str, ticker: str, days: int):
     close = fetch_history(ticker, "1y")
     if close is None or len(close) < 2:
         st.caption(f"{name} 데이터를 불러오지 못했어요. (잠시 후 새로고침)")
         return
-
+ 
     df = pd.DataFrame({"날짜": pd.to_datetime(close.index),
                        "종가": pd.to_numeric(close.values, errors="coerce")}).dropna()
     if len(df) < 2:
         st.caption(f"{name} 데이터가 부족해요.")
         return
-
+ 
     cutoff = df["날짜"].max() - pd.Timedelta(days=days)
     seg = df[df["날짜"] >= cutoff]
     if len(seg) < 2:
         seg = df
-
+ 
     cur, prev = float(seg["종가"].iloc[-1]), float(seg["종가"].iloc[-2])
     change = cur - prev
     pct = (change / prev) * 100 if prev else 0.0
     day_up = change >= 0
     period_up = cur >= float(seg["종가"].iloc[0])
-
+ 
     up_c, down_c = "#B65F5A", "#5A7CA0"
     line_c = up_c if period_up else down_c
     axis_c, grid_c = "#9a9b92", "#ECEDE7"
-
+ 
     arrow = "▲" if change > 0 else ("▼" if change < 0 else "▬")
     chg_cls = "up" if day_up else "down"
     st.markdown(
@@ -663,23 +641,23 @@ def _big_index_chart(name: str, ticker: str, days: int):
         f'<span class="mkt-val" style="font-size:24px;">{cur:,.2f}</span> '
         f'<span class="mkt-chg {chg_cls}">{arrow} {change:+,.2f} ({pct:+.2f}%)</span>'
         f'</div>', unsafe_allow_html=True)
-
+ 
     labels = [d.strftime("%m/%d") for d in seg["날짜"]]
     ys = [float(v) for v in seg["종가"]]
     components.html(
         _svg_index_chart(labels, ys, line_c, prev_close=None, height=260),
         height=272)
-
-
+ 
+ 
 def _render_domestic_charts():
     st.markdown(_IDX_CHART_CSS, unsafe_allow_html=True)
     period_label = st.radio(
         "조회 기간", list(_KRX_PERIODS.keys()), index=3, horizontal=True,
         key="krx_chart_period", label_visibility="collapsed")
-
+ 
     is_intraday = (period_label == "1일")
     days = _KRX_PERIODS[period_label]
-
+ 
     try:
         chart_box = st.container(key="idx_domestic_charts")
     except TypeError:                 # 구버전 Streamlit 폴백(스코프만 생략, 동작은 정상)
@@ -696,15 +674,15 @@ def _render_domestic_charts():
                 _big_index_chart_intraday("코스닥", "^KQ11")
             else:
                 _big_index_chart("코스닥", "^KQ11", days)
-
+ 
     if is_intraday:
         st.caption("당일(휴장 시 직전 거래일) 5분봉 · 전일 종가 대비 등락(회색 점선=전일 종가) · "
                    "정규장(09:00~15:30)만 표시 · yfinance 기준 약 15분 지연이며 일부 누락될 수 있어요.")
     else:
         st.caption("차트 위에 마우스를 올리면 해당 시점·값(세로축)이 십자선으로 표시되고, "
                    "가로 스크롤·드래그로 기간을 확대할 수 있어요.")
-
-
+ 
+ 
 # ── 지수 현황 본문 ──
 def _render_indices_body():
     group_data, group_asof = {}, {}
@@ -713,14 +691,14 @@ def _render_indices_body():
         group_data[group_name] = datas
         asofs = [d["asof"] for d in datas.values() if d and d.get("asof")]
         group_asof[group_name] = max(asofs) if asofs else None
-
+ 
     distinct = {a for a in group_asof.values() if a}
     unified = len(distinct) == 1
     if unified:
         st.markdown(
             f'<div class="data-asof">데이터 기준 {next(iter(distinct))} · '
             f'해외 지수·환율은 직전 거래일 종가</div>', unsafe_allow_html=True)
-
+ 
     # 3개월 히스토리 수집 (히트맵 미니차트용 · fetch_history 3600s 캐시 → 추가 비용 없음)
     def _histories(group):
         out = {}
@@ -732,7 +710,7 @@ def _render_indices_body():
             except Exception:
                 pass
         return out
-
+ 
     def _heat_group(group):
         st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
         head = f'<div class="mkt-group">{group}'
@@ -742,7 +720,7 @@ def _render_indices_body():
         st.markdown(head, unsafe_allow_html=True)
         st.markdown(_heat_html(group_data[group], _histories(group)),
                     unsafe_allow_html=True)
-
+ 
     # ══════════════════ 1. 국내 증시 ══════════════════
     st.markdown('<div class="sect-banner">국내 증시</div>', unsafe_allow_html=True)
     krx_head = '<div class="mkt-group">코스피 · 코스닥'
@@ -751,23 +729,23 @@ def _render_indices_body():
     krx_head += "</div>"
     st.markdown(krx_head, unsafe_allow_html=True)
     _render_domestic_charts()
-
+ 
     from modules.supply_trend import render_supply_trend
     render_supply_trend()
-
+ 
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     from modules.market_breadth import render_market_breadth
     render_market_breadth()
-
+ 
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     from modules.sectors import render_sectors
     render_sectors()
-
+ 
     # ══════════════════ 2. 시장 심리 ══════════════════
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     st.markdown('<div class="sect-banner">시장 심리</div>', unsafe_allow_html=True)
     render_indicators()
-
+ 
     # ══════════════════ 3. 글로벌 지수 ══════════════════
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     st.markdown('<div class="sect-banner">글로벌 지수</div>', unsafe_allow_html=True)
@@ -776,85 +754,85 @@ def _render_indices_body():
     for g in ("미국", "변동성·원자재", "암호화폐"):
         if g in INDEX_GROUPS:
             _heat_group(g)
-
+ 
     # ══════════════════ 4. 외환 · 금리 ══════════════════
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     st.markdown('<div class="sect-banner">외환 · 금리</div>', unsafe_allow_html=True)
     if "환율" in INDEX_GROUPS:
         _heat_group("환율")
-
+ 
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     from modules.rates import render_rates
     render_rates()
-
+ 
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     from modules.rate_gap import render_rate_gap
     render_rate_gap()
-
+ 
     # ══════════════════ 5. 일정 ══════════════════
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     st.markdown('<div class="sect-banner">일정</div>', unsafe_allow_html=True)
     render_calendar()
-
-
+ 
+ 
 # ── 지수 현황 탭 ──
 def render_indices():
     st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
     st.title("주요 지수 현황")
     st.caption("데이터: Yahoo Finance · 일별 종가 기준 · 약 15분 지연")
-
+ 
     if st.button("🔄 새로고침"):
         st.cache_data.clear()
         st.rerun()
-
+ 
     has_frag = hasattr(st, "fragment")
     market_open = is_kr_market_open()
     every = 600 if (has_frag and market_open) else None
-
+ 
     if market_open:
         st.caption("🟢 장중 자동 새로고침 켜짐 · 약 10분 주기 (데이터는 약 15분 지연)")
     else:
         st.caption("⏸ 장외 시간 · 다음 개장(평일 09:00 KST)부터 자동 새로고침이 작동해요.")
-
+ 
     if every:
         st.fragment(_render_indices_body, run_every=every)()
     else:
         _render_indices_body()
-
-
+ 
+ 
 # ── 사용량 · 비용 ──
 def render_usage_section():
     last = st.session_state.get("last_gen")
     if not (last and last.get("ok")):
         return
-
+ 
     st.markdown('<div class="mkt-group">사용량 · 비용</div>', unsafe_allow_html=True)
     rate_data = fetch_index("KRW=X")
     rate = rate_data["current"] if rate_data else None
-
+ 
     def to_krw(usd):
         return f" ≈ {usd * rate:,.0f}원" if rate else ""
-
+ 
     u, c = last["usage"], last["cost_usd"]
     c1, c2, c3 = st.columns(3)
     c1.metric("입력 토큰", f"{u['input_tokens']:,}")
     c2.metric("출력 토큰", f"{u['output_tokens']:,}")
     c3.metric("본 리포트 생성 비용", f"${c:.4f}", help=to_krw(c).strip())
     st.caption("※ 토큰 단가 기반 추정치입니다. 실제 청구액은 Anthropic 콘솔(Billing)에서 확인하세요.")
-
-
+ 
+ 
 # ── 생성 권한 확인 ──
 def _can_generate():
     try:
         pw_required = st.secrets.get("APP_PASSWORD", "")
     except Exception:
         pw_required = ""
-
+ 
     if not pw_required:
         return True
     if st.session_state.get("gen_authed"):
         return True
-
+ 
     with st.expander("🔒 리포트 생성은 잠겨 있어요 (소유자 전용)", expanded=False):
         st.caption("이 대시보드는 자유롭게 둘러볼 수 있어요. 리포트 생성만 소유자 비밀번호가 필요합니다.")
         pw = st.text_input("비밀번호", type="password", key="gen_pw")
@@ -866,27 +844,27 @@ def _can_generate():
             else:
                 st.error("비밀번호가 일치하지 않아요.")
     return False
-
-
+ 
+ 
 # ── 전략·시황 보고서 탭 ──
 def render_report_tab():
     jumped = st.session_state.pop("rpt_jump_notice", None)
     if jumped:
         st.info("📍 추세 타임라인에서 선택한 날짜의 보고서를 보고 있어요. "
                 "오늘로 돌아가려면 아래 '지난 보고서 보기'에서 '↩ 오늘로'를 누르세요.")
-
+ 
     render_reports()
-
+ 
     # ── 타임라인 (최근 5거래일 보고서 흐름) ──
     # 'DB에 저장돼요…' 안내 문구(=render_reports의 마지막 캡션) 바로 아래에 표시.
     render_timeline()
-
+ 
     st.divider()
-
+ 
     flash = st.session_state.pop("gen_flash", None)
     if flash:
         st.success(flash)
-
+ 
     authed = _can_generate()
     st.markdown('<div class="mkt-group">📝 리포트 관리</div>', unsafe_allow_html=True)
     gc1, gc2 = st.columns(2)
@@ -898,7 +876,7 @@ def render_report_tab():
         post_clicked = st.button(
             "🌆 장마감 후 보고서 생성", disabled=not authed, use_container_width=True,
             help="당일 07:50 ~ 지금 메시지 분석")
-
+ 
     if (pre_clicked or post_clicked) and authed:
         kind = "pre" if pre_clicked else "post"
         kind_ko = "장전" if kind == "pre" else "장마감 후"
@@ -917,12 +895,12 @@ def render_report_tab():
             st.rerun()
         else:
             st.warning(f"{kind_ko} 생성 실패 · {res.get('reason')}")
-
+ 
     render_reports_manage()
     st.divider()
     render_usage_section()
-
-
+ 
+ 
 # ── 카운트업 스크립트 ──
 def _inject_countup():
     components.html(
@@ -967,17 +945,17 @@ def _inject_countup():
         """,
         height=0,
     )
-
-
+ 
+ 
 # ── 자동 갱신 현황 패널 (실제 DB 갱신 시각 + cron 다음 예정) ───────────
 #  각 소스의 '최근 갱신'은 Supabase updated_at(KST)에서, '다음 예정'은 워크플로
 #  cron의 첫 슬롯에서 계산한다. GitHub cron 지연으로 실제 실행은 최대 1시간(주도주는
 #  더) 늦을 수 있어, '예정'은 목표 시각이다.
 from datetime import datetime as _dt, timezone as _tz, timedelta as _td
-
+ 
 _KST_TZ = _tz(_td(hours=9))
 _WD = ["월", "화", "수", "목", "금", "토", "일"]
-
+ 
 # 소스별 '다음 예정' 첫 슬롯(KST). weekday=평일만. None=수동(예정 없음).
 #  · 부동산/부동산 키워드 → realestate.yml 첫 슬롯 06:07
 #  · 종목마스터 → stock_master.yml 첫 슬롯 06:20
@@ -993,8 +971,8 @@ _SCHED = {
     "부동산":       {"h": 6,  "m": 7,  "weekday": False},
     "부동산 키워드": {"h": 6,  "m": 7,  "weekday": False},
 }
-
-
+ 
+ 
 @st.cache_data(ttl=600, show_spinner=False)
 def _collect_status():
     """소스별 최근 갱신(updated_at, KST iso)·카운트 수집(10분 캐시). 미설정이면 None."""
@@ -1003,11 +981,11 @@ def _collect_status():
                             load_leaders, load_ipo, load_realestate_keywords_latest)
     if not supabase_configured():
         return None
-
+ 
     def lu(table):
         dt = last_updated_kst(table)
         return dt.isoformat() if dt else None
-
+ 
     out = []
     # ── 증시 ──
     try:
@@ -1064,8 +1042,8 @@ def _collect_status():
     except Exception as e:
         out.append({"src": "부동산 키워드", "error": str(e)[:80]})
     return out
-
-
+ 
+ 
 def _fmt_last(iso, now):
     """최근 갱신 iso(KST) → '오늘 16:45' / '어제 07:03' / '6/29 16:45' / '없음'."""
     if not iso:
@@ -1081,8 +1059,8 @@ def _fmt_last(iso, now):
     if age == 1:
         return f"어제 {hm}", age
     return f"{dt.month}/{dt.day} {hm}", age
-
-
+ 
+ 
 def _fmt_next(src, now):
     """cron 첫 슬롯에서 다음 예정 시각 계산 → '오늘 16:40' / '내일 06:07' / '월 16:40' / '수동'."""
     cfg = _SCHED.get(src)
@@ -1101,8 +1079,8 @@ def _fmt_next(src, now):
     if d == 1:
         return f"내일 {hm}"
     return f"{_WD[cand.weekday()]} {hm}"
-
-
+ 
+ 
 def _render_status_panel():
     """🕐 자동 갱신 현황 — 소스별 최근 갱신 시각 + 다음 예정 시각(KST)."""
     try:
@@ -1147,32 +1125,25 @@ def _render_status_panel():
                    "(GitHub 지연으로 실제 실행은 최대 1시간 늦을 수 있어요) · "
                    "🟢신선 🟡지연·일부 0건(샘플) 🔴없음·실패 · 시황 보고서는 수동 생성 · "
                    "10분 캐시")
-
-
-
+ 
+ 
+ 
 # ── 탭 (lazy render: 선택된 탭만 실제 실행 → 매 렌더마다 전 탭이 도는 부담 제거) ──
 # st.tabs는 탭 전환이 CSS 숨김이라 어느 탭을 보든 모든 탭 본문이 매번 실행된다.
 # st.segmented_control + 조건부 렌더로 바꿔, 보고 있는 탭의 render 함수만 호출한다.
 # 특히 부동산(render_realestate, 최대 규모)은 '부동산' 선택 시에만 로드된다.
 _inject_countup()
-
-# 전체 크롬으로 이관된 탭 → app.py가 [영문 대제목 | 하위 pill] 한 줄과 구분선을 소유.
-# 미이관 탭은 각 모듈의 기존 헤더(tab_header)를 그대로 사용한다(순차 이관).
-STOCK_TITLE_EN = {"테마": "Today's Keywords"}
-STOCK_TITLE_CSS = {"테마": _KW_CSS}
-
+ 
+_top = st.segmented_control(
+    "섹션", ["주식", "부동산"], default="주식",
+    key="top_section", label_visibility="collapsed",
+) or "주식"   # 선택 해제(None) 시 기본값으로 폴백
+ 
 if _top == "주식":
-    _t_col, _p_col = st.columns([1.5, 1], vertical_alignment="bottom")
-    with _p_col:
-        _sub = st.segmented_control(
-            "주식 탭", ["시장", "브리핑", "주도주", "공모주", "테마"], default="시장",
-            key="stock_subtab", label_visibility="collapsed",
-        ) or "시장"
-    _en = STOCK_TITLE_EN.get(_sub)
-    if _en:
-        with _t_col:
-            display_title(_en, css=STOCK_TITLE_CSS.get(_sub, ""))
-        st.markdown('<div class="title-rule"></div>', unsafe_allow_html=True)
+    _sub = st.segmented_control(
+        "주식 탭", ["시장", "브리핑", "주도주", "공모주", "테마"], default="시장",
+        key="stock_subtab", label_visibility="collapsed",
+    ) or "시장"
     if _sub == "시장":
         render_indices()
     elif _sub == "브리핑":
@@ -1186,8 +1157,8 @@ if _top == "주식":
 else:  # 부동산
     from modules.realestate import render_realestate
     render_realestate()
-
-
+ 
+ 
 # ── 수집 상태 패널: 페이지 최하단(모든 탭 콘텐츠 아래)에 배치 ──
 # 탭 블록 바깥 최상위에 두어, 어느 탭을 보든 본문 맨 아래에 접힌 채로 표시된다.
 _render_status_panel()
