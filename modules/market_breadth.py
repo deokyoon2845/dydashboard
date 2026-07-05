@@ -252,12 +252,16 @@ def render_market_breadth():
                     st.caption(line)
         return
 
-    st.markdown('<div class="mkt-group">📊 거래대금 · 등락 종목 수</div>',
-                unsafe_allow_html=True)
+    from modules.ui import foot_badge
+    st.markdown(
+        '<div class="mkt-group ui-fx">📊 거래대금 · 등락 종목 수'
+        + foot_badge(
+            "네이버·다음 금융 · 15~20분 지연",
+            "장중 약 15~20분 지연 · 상승/보합/하락 막대는 전 종목 비율")
+        + '</div>', unsafe_allow_html=True)
     cards = _market_card("코스피", kospi) + _market_card("코스닥", kosdaq)
     st.markdown(f'<div class="breadth-grid">{cards}</div>', unsafe_allow_html=True)
-    st.caption("거래대금·등락 종목 수 · 데이터: 네이버/다음 금융 · 장중 약 15~20분 지연 · "
-               "상승/보합/하락 막대는 전 종목 비율")
+    # 출처·범례는 헤더 ⓘ 배지로 이동(A안) — 하단 각주 제거.
 
     if DEBUG and _diag:
         with st.expander("ℹ️ 일부 소스 폴백 발생 (DEBUG)"):
