@@ -12,6 +12,8 @@ finance.naver.com/sise/investorDealTrendDay.naver 한 페이지에 최근 ~20거
 2026-06 인터랙티브: 마우스 hover 크로스헤어, 가로 스크롤·드래그로 x축 확대(줌).
 2026-06 범례: Altair 내장 범례 대신 '차트 위 가운데 정렬' 커스텀 HTML 범례로 교체
   (카드와 약간의 여백). 커스텀 범례라 클릭 토글 기능은 제외됨.
+2026-07 x축: 눈금 수 제한(tickCount=6) + labelOverlap=greedy — 좁은 컬럼에서
+  날짜 라벨이 겹쳐 판독 불가해지는 문제 수정.
 """
 
 import re
@@ -116,7 +118,11 @@ def _legend_html() -> str:
 def _supply_chart(long: pd.DataFrame):
     """누적 순매수 라인 차트. 내장 범례 없음(커스텀 HTML 범례 사용).
     인터랙티브(hover 크로스헤어·x줌), 셀렉션 구성 실패 시 정적 차트로 폴백."""
-    x_enc = alt.X("날짜:T", axis=alt.Axis(title=None, format="%m/%d", labelColor="#9a9b92"))
+    # x축 라벨: 절반 폭 컬럼(코스피/코스닥 2단)에서 15개 날짜 라벨이 충돌하므로
+    # 눈금 수를 제한하고(greedy) 겹치는 라벨은 건너뛴다. labelFlush=양끝 라벨 정렬.
+    x_enc = alt.X("날짜:T", axis=alt.Axis(title=None, format="%m/%d", labelColor="#9a9b92",
+                                          tickCount=6, labelOverlap="greedy",
+                                          labelFlush=True))
     y_enc = alt.Y("누적:Q", axis=alt.Axis(title=None, labelColor="#9a9b92", gridColor="#ECEDE7"))
     color_enc = alt.Color("구분:N",
                           scale=alt.Scale(domain=["외국인 누적", "기관 누적"],
