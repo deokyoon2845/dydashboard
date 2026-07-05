@@ -32,6 +32,8 @@ import json
 import streamlit as st
 import streamlit.components.v1 as components
 
+from modules.ui import foot_row   # 각주 배지(A안) — 정적 범례를 ⓘ 접힘 각주로 승격
+
 _VIEWBOX = "0 0 1100 1087"
 
 # ── 수도권 행정경계(실제 비율) + 내장 샘플 수치 ──────────────────
@@ -1760,8 +1762,10 @@ def _render_trend_charts(data):
         return
     asof = date.today().strftime("%Y-%m-%d")
     components.html(_trend_component(inds, asof), height=508, scrolling=False)
-    st.caption("매매·전세가격지수(KB 주간) · 전세가율(KB 월간) — 카드를 누르면 위에서 크게 · "
-               "기간 토글 동기화 · 코스피·코스닥 차트와 동일 양식")
+    st.markdown(foot_row(
+        "KB 주간·월간",
+        "매매·전세가격지수(KB 주간) · 전세가율(KB 월간) · 카드를 누르면 위에서 크게 · "
+        "기간 토글 동기화 · 코스피·코스닥 차트와 동일 양식"), unsafe_allow_html=True)
 
 
 _TREND_HTML = r'''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
@@ -2344,10 +2348,10 @@ def _render_indicator_charts(data):
               + 80)                     # 푸터 여유
     components.html(_indicator_chart_component(ind, pend, price, asof),
                     height=height, scrolling=False)
-    src = ("KB 실데이터" if live
-           else "샘플(엔진 수집 전 — 아침 자동 수집 후 실데이터로 교체)")
-    st.caption("핵심(매수우위·매매전망) + 선행/동행/수급·심리 그룹 · "
-               f"미니차트 최근 1년(월 단위 축) · {src}")
+    src = "KB 실데이터" if live else "샘플 · 아침 수집 후 실데이터로 교체"
+    st.markdown(foot_row(
+        src, "핵심(매수우위·매매전망) + 선행/동행/수급·심리 그룹 · "
+             "미니차트 최근 1년(월 단위 축)"), unsafe_allow_html=True)
 
 
 def _render_indicators(cards=None):
@@ -2553,24 +2557,24 @@ def _render_cap_gainers(metric="ytd", top=10):
     rows = rows[:top]
     is_sample = fetch_cap_gainers() is _SAMPLE_CAPGAIN
     src = ("국토부 실거래 평단가" if not is_sample
-           else "샘플(엔진 수집 전 — 아침 자동 수집 후 실데이터로 교체)")
+           else "샘플 · 아침 수집 후 실데이터로 교체")
     if metric == "ytd":
         base = f"{date.today().year - 1}.12"
         note = (f'※ <b>작년말({base}) 대비</b> 면적정규화 평단가(㎡당가) 상승률. '
                 f'세대수 불변이라 시총 상승률과 동일. 작년말·현재 모두 거래가 있는 단지만'
                 f'(표본 부족·하락 단지 제외) · 매일 아침 갱신.')
-        cap = f"작년말 대비 평단가 상승률 · 시총 상승률과 동일(세대수 불변) · {src}"
+        cap = "작년말 대비 평단가 상승률 · 시총 상승률과 동일(세대수 불변)"
     else:
         note = ('※ <b>3개월 전 대비</b> 평단가 모멘텀(최근 vs 3개월 전 ㎡당가). '
                 'YTD가 누적 상승폭이라면 모멘텀은 <b>최근 가속/감속</b> 신호 · '
                 '3개월 전·현재 모두 거래가 있는 단지만 · 매일 아침 갱신.')
-        cap = f"최근 3개월 모멘텀(3개월 전 대비 평단가) · 가속/감속 선행신호 · {src}"
+        cap = "최근 3개월 모멘텀(3개월 전 대비 평단가) · 가속/감속 선행신호"
     height = 70 + len(rows) * 74 + 80
     html = (_CAPGAIN_HTML
             .replace("__GAIN__", _json.dumps(rows, ensure_ascii=False))
             .replace("__NOTE__", note))
     components.html(html, height=height, scrolling=False)
-    st.caption(cap)
+    st.markdown(foot_row(src, cap), unsafe_allow_html=True)
 
 
 _CAPLEAD_HTML = r'''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
@@ -2688,9 +2692,11 @@ def _render_cap_leaders():
     height = 110 + min(len(rows), 10) * 96 + 110 + 10 * 100 + 90
     html = _CAPLEAD_HTML.replace("__CAP__", _json.dumps(rows, ensure_ascii=False))
     components.html(html, height=height, scrolling=False)
-    src = ("국토부 실거래 × 공동주택 세대수" if fetch_cap_leaders() is not _SAMPLE_CAPLEAD
-           else "샘플(엔진 수집 전 — 아침 자동 수집 후 실데이터로 교체)")
-    st.caption(f"시총=최근 실거래가(없으면 대표가)×세대수 · 주요 단지 유니버스 {n_gu}개 지역 · {src}")
+    src = ("국토부 실거래 × 세대수" if fetch_cap_leaders() is not _SAMPLE_CAPLEAD
+           else "샘플 · 아침 수집 후 실데이터로 교체")
+    st.markdown(foot_row(
+        src, f"시총=최근 실거래가(없으면 대표가)×세대수 · "
+             f"주요 단지 유니버스 {n_gu}개 지역"), unsafe_allow_html=True)
 
 
 def _render_hot_complexes():
@@ -2755,12 +2761,13 @@ def _render_hot_complexes():
             f'<div class="re-hc-prices">{prices}{spark}</div>{jbox}</div>'
             f'{_naver_n(mq)}</div>')
     st.markdown(f'<div class="re-hcwrap">{body}</div>', unsafe_allow_html=True)
-    st.caption("주요 단지 유니버스 중 가격 모멘텀(3개월 등락)+거래 가속이 큰 대장주 순 "
-               "(국토부 실거래 기준 · 직거래 제외) · "
-               "‘평소 ×N’=최근 30일 거래밀도÷직전 60일 평균(기간 정규화) · "
-               "59·84㎡는 각 면적대 최근 실거래가 · 전세가율=전세 ㎡당가÷매매 ㎡당가 · "
-               "갭=(매매−전세)×대표면적 · 추이=대표면적대 ㎡당가 시퀀스 · "
-               "N 아이콘(초록)으로 네이버 검색")
+    st.markdown(foot_row(
+        "국토부 실거래 · 직거래 제외",
+        "주요 단지 유니버스 중 가격 모멘텀(3개월 등락)+거래 가속이 큰 대장주 순 · "
+        "'평소 ×N'=최근 30일 거래밀도÷직전 60일 평균(기간 정규화) · "
+        "59·84㎡는 각 면적대 최근 실거래가 · 전세가율=전세 ㎡당가÷매매 ㎡당가 · "
+        "갭=(매매−전세)×대표면적 · 추이=대표면적대 ㎡당가 시퀀스 · "
+        "N 아이콘(초록)으로 네이버 검색"), unsafe_allow_html=True)
 
 
 def _hi_band_html(band, hi_area):
@@ -2893,9 +2900,11 @@ def _render_anomalies():
             f'<span class="tag">{margin_s}</span></div>'
             f'</div>{band_html}</div>')
     st.markdown(html, unsafe_allow_html=True)
-    st.caption("주요 단지 유니버스 대상(소형 노이즈 제외) · 신고가=최근 6개월 최고 초과"
-               "(마진≥민감도) · 밴드=해당 단지 각 평형의 최근 1년 실거래 최저~최고"
-               "(직거래 제외 반영) · 민감도로 양 조절 · 단지명·N 아이콘=네이버 검색.")
+    st.markdown(foot_row(
+        "주요 단지 유니버스 · 국토부 실거래",
+        "소형 노이즈 제외 · 신고가=최근 6개월 최고 초과(마진≥민감도) · "
+        "밴드=해당 단지 각 평형의 최근 1년 실거래 최저~최고(직거래 제외 반영) · "
+        "민감도로 양 조절 · 단지명·N 아이콘=네이버 검색"), unsafe_allow_html=True)
 
 
 # ── 시장 요약 밴드(아파트 탭 상단 공통 1열) ─────────────────────────
@@ -3025,8 +3034,10 @@ def _render_market_band():
             .replace("__GCOL__", gcol)
             .replace("__GAIN__", gain))
     components.html(html, height=210, scrolling=False)
-    st.caption("상승압력=신고가÷(신고가+신저가) · 특이거래 탭 기본(표준 민감도·직거래 제외)과 "
-               "동일 집계 · 거래활발=주목단지 랭킹 단지수 · 평균 상승률=주목단지 평균")
+    st.markdown(foot_row(
+        "특이거래 탭과 동일 집계",
+        "상승압력=신고가÷(신고가+신저가) · 표준 민감도·직거래 제외 · "
+        "거래활발=주목단지 랭킹 단지수 · 평균 상승률=주목단지 평균"), unsafe_allow_html=True)
 
 
 def _wk_spark(vals, color, w=132, h=30, pad=3):
@@ -3116,9 +3127,10 @@ def _render_market_week():
         + _row("거래활발", acts, f"{acts[-1]}단지", _delta(acts), "wk-sg", "#7E9A83")
         + _row("평균 상승률", avgs, avg_str, _delta(avgs, 1), avg_cls, "#B65F5A"))
     st.markdown(f'<div class="wk-wrap">{body}</div>', unsafe_allow_html=True)
-    st.caption(f"주간 아파트 시장 · {d0.month}.{d0.day} → {d1.month}.{d1.day} "
-               f"({len(series)}일) · 각 지표를 일별 스냅샷에서 재집계(표준 민감도·직거래 제외) · "
-               "주간Δ=마지막−처음 · 상승우세=신고가÷(신고가+신저가)")
+    st.markdown(foot_row(
+        f"주간 {d0.month}.{d0.day}→{d1.month}.{d1.day} · {len(series)}일",
+        "각 지표를 일별 스냅샷에서 재집계(표준 민감도·직거래 제외) · "
+        "주간Δ=마지막−처음 · 상승우세=신고가÷(신고가+신저가)"), unsafe_allow_html=True)
 
 
 # ── 메인 ────────────────────────────────────────────────────────
@@ -3232,14 +3244,17 @@ def _render_subscriptions():
                  f'</div></div>')
     st.markdown(html, unsafe_allow_html=True)
     if live:
-        st.caption("소스: 한국부동산원 청약홈 분양정보(data.go.kr) — 실데이터. "
-                   "‘공고 ↗’는 청약홈 해당 공고, 초록 N은 네이버 검색으로 이동해요. "
-                   "D-day는 청약 시작일(예정)·마감일(진행 중) 기준 자동 계산. 진행/임박 우선.")
+        st.markdown(foot_row(
+            "청약홈 · data.go.kr",
+            "'공고 ↗'는 청약홈 해당 공고, 초록 N은 네이버 검색으로 이동 · "
+            "D-day는 청약 시작일(예정)·마감일(진행 중) 기준 자동 계산 · "
+            "진행/임박 우선"), unsafe_allow_html=True)
     else:
-        st.caption("소스: 한국부동산원 청약홈 분양정보(data.go.kr) — 현재 샘플. "
-                   "‘갱신’ 누르면 실데이터(청약홈 분양정보 활용신청 필요). "
-                   "‘공고 ↗’는 청약홈(샘플은 공고 목록), 초록 N은 네이버 검색으로 이동. "
-                   "D-day는 청약 시작·마감일 기준 자동 계산.")
+        st.markdown(foot_row(
+            "청약홈 · 샘플",
+            "'갱신'을 누르면 실데이터(청약홈 분양정보 활용신청 필요) · "
+            "'공고 ↗'는 청약홈(샘플은 공고 목록), 초록 N은 네이버 검색으로 이동 · "
+            "D-day는 청약 시작·마감일 기준 자동 계산"), unsafe_allow_html=True)
 
 
 def _run_collection():
