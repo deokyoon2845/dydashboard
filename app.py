@@ -392,21 +392,30 @@ def _card_html(name, data):
             f'{spark}</div>')
  
  
-# ── 히트맵 타일 색 ──
+# ── 히트맵 타일 색 (A안: 틴트 상한) ──
+_HEAT_TINT_CAP = 0.38   # 배경 틴트 최대 비율 — 미니멀 미스트 톤 유지(고채도 배경 금지)
+
+
 def _heat_color(pct):
+    """타일 색 3요소: (배경, 본문색, 등락색).
+
+    배경 = 등락률(±3%에서 최대)에 비례한 up/down 틴트를 _HEAT_TINT_CAP까지만 블렌드.
+    본문(이름·값) = 항상 잉크(#34352f) — 흰 글자 반전 없음.
+    등락색 = %(pct) 텍스트에만 적용해 강조를 한 겹으로 유지(보합·None은 뮤트)."""
+    ink, muted = "#34352f", "#9a9b92"
     if pct is None:
-        return "#F6F7F2", "#34352f"
+        return "#F6F7F2", ink, muted
     t = max(-1.0, min(1.0, pct / 3.0))
     base = (246, 247, 242)
     up = (182, 95, 90)
     down = (90, 124, 160)
     tgt = up if t >= 0 else down
-    k = abs(t)
+    k = abs(t) * _HEAT_TINT_CAP
     r = round(base[0] + (tgt[0] - base[0]) * k)
     g = round(base[1] + (tgt[1] - base[1]) * k)
     b = round(base[2] + (tgt[2] - base[2]) * k)
-    txt = "#ffffff" if k > 0.55 else "#34352f"
-    return f"rgb({r},{g},{b})", txt
+    pct_col = "#B65F5A" if pct > 0 else ("#5A7CA0" if pct < 0 else muted)
+    return f"rgb({r},{g},{b})", ink, pct_col
  
  
 # ── 히트맵 타일 HTML (3개월 미니차트 + 보름축 포함) ──
@@ -427,21 +436,21 @@ def _heat_html(datas, histories=None):
             continue
  
         pct = d.get("pct", 0.0)
-        bg, txt = _heat_color(pct)
+        bg, txt, pct_col = _heat_color(pct)
         arrow = "▲" if d["change"] > 0 else ("▼" if d["change"] < 0 else "▬")
  
-        # 3개월 미니차트 (하단 보름 눈금 + 월 라벨)
+        # 3개월 미니차트 (하단 보름 눈금 + 월 라벨) — 뮤트 톤(장식 레이어, 등락색과 분리)
         spark = ""
         series = histories.get(name)
         if series is not None and len(series) >= 2:
-            spark = sparkline_axis_html(series, txt, height=38, n_days=92,
-                                        label_color=txt)
+            spark = sparkline_axis_html(series, "#9a9b92", height=38, n_days=92,
+                                        label_color="#9a9b92")
  
         tiles += (
             f'<div class="heat-tile" style="background:{bg};">'
             f'<div class="heat-name" style="color:{txt};opacity:.92;">{name}</div>'
             f'<div class="heat-val" style="color:{txt};">{d["current"]:,.2f}</div>'
-            f'<div class="heat-pct" style="color:{txt};">{arrow} {pct:+.2f}%</div>'
+            f'<div class="heat-pct" style="color:{pct_col};">{arrow} {pct:+.2f}%</div>'
             f'{spark}'
             f'</div>'
         )
@@ -749,7 +758,7 @@ def _render_indices_body():
     # ══════════════════ 3. 글로벌 지수 ══════════════════
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     st.markdown('<div class="sect-banner">글로벌 지수</div>', unsafe_allow_html=True)
-    st.caption("🌡️ 히트맵 · 타일 색 = 등락률 (빨강 상승 / 파랑 하락, ±3%에서 최대 채도) · "
+    st.caption("🌡️ 히트맵 · 타일 색 = 등락률의 은은한 틴트 (빨강 상승 / 파랑 하락, ±3%에서 최대) · "
                "미니차트 = 3개월 추이 (하단 눈금 = 보름)")
     for g in ("미국", "변동성·원자재", "암호화폐"):
         if g in INDEX_GROUPS:
