@@ -52,8 +52,14 @@ def _sector_change(ticker: str):
 
 
 def render_sectors():
-    st.markdown('<div class="mkt-group">🔄 업종 등락 (섹터 ETF · 전일 대비)</div>',
-                unsafe_allow_html=True)
+    from modules.ui import foot_badge
+    st.markdown(
+        '<div class="mkt-group ui-fx">🔄 업종 등락'
+        + foot_badge(
+            "yfinance 섹터 ETF · 전일 대비",
+            "전일 종가 대비 등락률 · 막대 폭 = 최대 등락률 기준 정규화 · "
+            "ETF 시세 기반이라 실제 KRX 업종지수와는 차이가 있을 수 있어요")
+        + '</div>', unsafe_allow_html=True)
 
     rows = []
     for name, tk in SECTOR_ETFS.items():
@@ -90,5 +96,4 @@ def render_sectors():
         )
 
     st.markdown(f'<div class="supply-wrap">{bars}</div>', unsafe_allow_html=True)
-    st.caption("데이터: yfinance 섹터 ETF · 전일 종가 대비 · "
-               "ETF 시세 기반이라 실제 KRX 업종지수와는 차이가 있을 수 있어요")
+    # 출처·범례는 헤더 ⓘ 배지로 이동(A안) — 하단 각주 제거.
