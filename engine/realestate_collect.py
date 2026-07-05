@@ -642,23 +642,6 @@ def _collect_price_levels(points=18):
     return out
  
  
- 
-    """한은 ECOS 주담대 가중평균금리(월, 최근 points개). 실패 시 []."""
-    key = _env_key("ECOS_API_KEY")
-    if not key:
-        return []
-    end = date.today().strftime("%Y%m")
-    # points만큼 거슬러 갈 수 있도록 시작월을 충분히(최대 points+12개월 ≒ years) 잡는다.
-    back_years = max(2, (points + 12) // 12)
-    start = f"{int(end[:4]) - back_years}{end[4:]}"
-    url = (f"https://ecos.bok.or.kr/api/StatisticSearch/{key}/json/kr/1/200/"
-           f"722Y001/M/{start}/{end}/BECABA03")
-    r = requests.get(url, timeout=10)
-    rows = (r.json().get("StatisticSearch", {}) or {}).get("row", []) or []
-    vals = [round(float(x["DATA_VALUE"]), 2) for x in rows if x.get("DATA_VALUE")]
-    return vals[-points:]
- 
- 
 def _collect_kosis_unsold(points=18):
     """KOSIS 전국 미분양(월, 최근 points개) → 만호 단위. 실패 시 []."""
     key = _env_key("KOSIS_API_KEY")
@@ -1541,11 +1524,16 @@ def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=
     """특이거래 리스트(느슨 슈퍼셋 — 뷰어가 프리셋으로 좁힘).
     대상은 '주요 단지 유니버스'로 제한(소형 노이즈 차단, 세대수 API 비의존). 유니버스
     미확보 시 전체 지역 폴백. 신고가/신저가는 최근 6개월 창, 거래량 급증은 월 단위 배수.
-    반환 14-튜플:
+    반환 15-튜플:
       (유형, 배경, 글자색, 단지, 지역, 면적, 가격, 변동, 거래유형, 제외, 거래일ISO,
        세대수|None, 빈도(12개월 거래수),
-       신호강도(신고가/신저가=마진%, 급등/급락=변동%, 거래량 급증=평소 대비 배수))
-    [호환] 과거 11/12-튜플 스냅샷도 뷰어 _anom_norm이 그대로 정규화한다."""
+       신호강도(신고가/신저가=마진%, 급등/급락=변동%, 거래량 급증=평소 대비 배수),
+       평형별 1년 밴드|None)
+    평형별 1년 밴드(신고가/신저가에만 탑재, 그 외 유형은 None):
+      이미 손에 쥔 12개월 스윕(rows)에서 계산 — 추가 API 콜 0.
+      [{'area':㎡(int), 'lo':최저(억), 'hi':최고(억), 'n':거래수}] 면적 오름차순.
+      직거래 제외 반영(exclude_direct와 동일 기준) · 뷰어 _hi_band_html이 칩으로 렌더.
+    [호환] 과거 11/12/14-튜플 스냅샷도 뷰어 _anom_norm이 그대로 정규화한다."""
     asof = asof or date.today()
     _preflight(asof)
     key = _get_key()
@@ -1588,6 +1576,34 @@ def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=
             if not _in_uni(name, r["apt"]):        # 유니버스 단지만 탐지
                 continue
             groups.setdefault((r["apt"], round(r["area"])), []).append(r)
+
+        # 단지별 평형×가격 풀(신고가/신저가 카드의 '평형별 1년 밴드' 재료) —
+        # groups와 같은 12개월 rows 재사용(추가 콜 0). 직거래 제외 기준 동일.
+        band_pool = {}
+        for r in rows:
+            if not _in_uni(name, r["apt"]):
+                continue
+            if exclude_direct and r["direct"]:
+                continue
+            band_pool.setdefault(r["apt"], {}).setdefault(
+                round(r["area"]), []).append(r["price"])
+        band_memo = {}
+
+        def _band_of(apt):
+            """단지의 평형별 1년 실거래가 밴드 → [{'area','lo','hi','n'}] | None."""
+            if apt in band_memo:
+                return band_memo[apt]
+            d = band_pool.get(apt) or {}
+            out = []
+            for ar in sorted(d):
+                ps = d[ar]
+                out.append({"area": int(ar),
+                            "lo": round(min(ps) / 1e4, 1),
+                            "hi": round(max(ps) / 1e4, 1),
+                            "n": len(ps)})
+            band_memo[apt] = out or None
+            return band_memo[apt]
+
         for (apt, area), grp in groups.items():
             f = freq.get(apt, 0)
             if f < gen["freq"]:
@@ -1609,13 +1625,15 @@ def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=
                         if mg >= gen["margin"]:
                             items.append(("신고가", *_BG["신고가"], *base, "신고",
                                           r["trade"] or "-", r["direct"],
-                                          r["date"].isoformat(), None, f, round(mg, 2)))
+                                          r["date"].isoformat(), None, f,
+                                          round(mg, 2), _band_of(apt)))
                     elif r["price"] < p_lo:
                         mg = (1 - r["price"] / p_lo) * 100
                         if mg >= gen["margin"]:
                             items.append(("신저가", *_BG["신저가"], *base, "신저",
                                           r["trade"] or "-", r["direct"],
-                                          r["date"].isoformat(), None, f, round(mg, 2)))
+                                          r["date"].isoformat(), None, f,
+                                          round(mg, 2), _band_of(apt)))
                 # 급등/급락: 동일면적 '직전 거래' 대비, 비교거래가 6개월 이내일 때만
                 idx = grp.index(r)
                 if idx > 0:
