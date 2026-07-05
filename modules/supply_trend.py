@@ -14,6 +14,8 @@ finance.naver.com/sise/investorDealTrendDay.naver 한 페이지에 최근 ~20거
   (카드와 약간의 여백). 커스텀 범례라 클릭 토글 기능은 제외됨.
 2026-07 x축: 눈금 수 제한(tickCount=6) + labelOverlap=greedy — 좁은 컬럼에서
   날짜 라벨이 겹쳐 판독 불가해지는 문제 수정.
+2026-07 각주: 하단 공통 캡션을 헤더 우측 '메타 배지 + ⓘ 접힘 각주'(ui.foot_badge)로
+  승격 — 본문 각주 소음 제거(A안 파일럿).
 """
 
 import re
@@ -188,8 +190,14 @@ def _render_market_block(label: str, sosok: str):
 
 
 def render_supply_trend():
-    st.markdown('<div class="mkt-group">💰 외국인·기관 수급 추세</div>',
-                unsafe_allow_html=True)
+    from modules.ui import foot_badge
+    st.markdown(
+        '<div class="mkt-group ui-fx">💰 외국인·기관 수급 추세'
+        + foot_badge(
+            "네이버 금융 · 15거래일",
+            "최근 15거래일 외국인·기관 누적 순매수(억원, 우상향=순매수 지속) · "
+            "단위는 추정치 · 차트 위 마우스 hover=값 표시 / 스크롤·드래그=가로 확대")
+        + '</div>', unsafe_allow_html=True)
 
     # 좌 코스피 / 우 코스닥 — 모바일에서는 Streamlit이 자동으로 세로 적층.
     left, right = st.columns(2, gap="large")
@@ -197,8 +205,3 @@ def render_supply_trend():
         _render_market_block("코스피", "01")
     with right:
         _render_market_block("코스닥", "02")
-
-    # 양쪽 공통 캡션 (한 번만)
-    st.caption("최근 15거래일 외국인·기관 누적 순매수(억원, 우상향=순매수 지속) · "
-               "데이터: 네이버 금융 · 단위는 추정치 · "
-               "차트 위 마우스 hover=값 표시 / 스크롤·드래그=가로 확대")
