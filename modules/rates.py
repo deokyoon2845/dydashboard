@@ -6,7 +6,7 @@
       ECOS 호출 로직은 rate_gap.py의 헬퍼를 재사용한다(중복 방지).
 
 2026-06: 수익률 카드를 히트맵 타일로 표시 — 전일 대비 변화 '방향'으로 색칠
-  (상승=빨강 / 하락=파랑, ±10bp에서 최대 채도).
+  (상승=빨강 / 하락=파랑 은은한 틴트, ±10bp에서 최대 — 지수 히트맵 A안과 동일).
 2026-06 추가: 각 타일에 3개월 추이 미니차트(하단 보름 눈금 + 월 라벨) 표시.
   지수 히트맵과 동일한 sparkline_axis_html 헬퍼 사용.
 """
@@ -37,20 +37,24 @@ _KR_TENORS = [
 
 
 def _rate_heat_color(bp):
-    """전일 대비 변화(bp) 방향 색. 상승=빨강(--up)/하락=파랑(--down). ±10bp에서 최대 채도."""
+    """타일 색 3요소: (배경, 본문색, 등락색) — 지수 히트맵 A안과 동일 문법.
+
+    배경 = 전일 대비 변화(±10bp에서 최대)에 비례한 up/down 틴트를 38%까지만 블렌드.
+    본문 = 항상 잉크(#34352f). 등락색 = bp 텍스트에만(보합·None은 뮤트)."""
+    ink, muted = "#34352f", "#9a9b92"
     if bp is None:
-        return "#F6F7F2", "#34352f"
+        return "#F6F7F2", ink, muted
     t = max(-1.0, min(1.0, bp / 10.0))
     base = (246, 247, 242)            # --summary-bg
     up = (182, 95, 90)                # --up #B65F5A
     down = (90, 124, 160)             # --down #5A7CA0
     tgt = up if t >= 0 else down
-    k = abs(t)
+    k = abs(t) * 0.38                 # 틴트 상한 — 미니멀 미스트 톤 유지
     r = round(base[0] + (tgt[0] - base[0]) * k)
     g = round(base[1] + (tgt[1] - base[1]) * k)
     b = round(base[2] + (tgt[2] - base[2]) * k)
-    txt = "#ffffff" if k > 0.55 else "#34352f"
-    return f"rgb({r},{g},{b})", txt
+    bp_col = "#B65F5A" if bp > 0 else ("#5A7CA0" if bp < 0 else muted)
+    return f"rgb({r},{g},{b})", ink, bp_col
 
 
 def _rate_tile(name, cur, bp, series=None):
@@ -60,12 +64,14 @@ def _rate_tile(name, cur, bp, series=None):
         return (f'<div class="heat-tile" style="background:#F6F7F2;color:#9a9b92;">'
                 f'<div class="heat-name">{name}</div>'
                 f'<div class="heat-val" style="font-size:14px;">데이터 없음</div></div>')
-    bg, txt = _rate_heat_color(bp)
+    bg, txt, bp_col = _rate_heat_color(bp)
     chg = bp or 0
     arrow = "▲" if chg > 0 else ("▼" if chg < 0 else "▬")
-    bp_html = (f'<div class="heat-pct" style="color:{txt};">{arrow} {bp:+.0f}bp</div>'
+    bp_html = (f'<div class="heat-pct" style="color:{bp_col};">{arrow} {bp:+.0f}bp</div>'
                if bp is not None else "")
-    spark = sparkline_axis_html(series, txt, height=38, n_days=92, label_color=txt)
+    # 미니차트는 뮤트 톤(장식 레이어) — 등락색은 bp 텍스트 한 곳에만
+    spark = sparkline_axis_html(series, "#9a9b92", height=38, n_days=92,
+                                label_color="#9a9b92")
     return (f'<div class="heat-tile" style="background:{bg};">'
             f'<div class="heat-name" style="color:{txt};opacity:.92;">{name}</div>'
             f'<div class="heat-val" style="color:{txt};">{cur:.2f}%</div>'
