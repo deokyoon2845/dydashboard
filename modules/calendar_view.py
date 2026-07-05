@@ -175,7 +175,14 @@ def render_calendar(days: int = 90):
         return
 
     st.markdown(_CAL_CSS, unsafe_allow_html=True)
-    st.markdown('<div class="mkt-group">📅 다가오는 주요 일정</div>', unsafe_allow_html=True)
+    from modules.ui import foot_badge
+    st.markdown(
+        '<div class="mkt-group ui-fx">📅 다가오는 주요 일정'
+        + foot_badge(
+            "공식 일정 + yfinance 추정",
+            "FOMC·금통위·CPI·고용·PPI·GDP·소매판매는 공식 발표 일정(연 1회 수동 갱신) · "
+            "실적일은 yfinance 추정으로 변동 가능 · 지난 일정도 흐리게 표시")
+        + '</div>', unsafe_allow_html=True)
 
     # 가장 임박한 '다가오는' 일정 한 줄 (과거 제외)
     upcoming = [e for e in events if e["dday"] >= 0]
@@ -212,11 +219,7 @@ def render_calendar(days: int = 90):
     ev_by_date = _events_by_date(events)
     grid = _month_grid_html(y, m, ev_by_date, today)
     st.markdown(grid, unsafe_allow_html=True)
-
-    st.markdown(
-        '<div class="data-asof">FOMC·금통위·CPI·고용·PPI·GDP·소매판매는 공식 발표 일정 (연 1회 수동 갱신) · '
-        '실적일은 yfinance 추정으로 변동 가능 · 지난 일정도 흐리게 표시</div>',
-        unsafe_allow_html=True)
+    # 범례는 헤더 ⓘ 배지로 이동(A안) — 하단 각주 제거.
 
     _render_event_editor()
 
