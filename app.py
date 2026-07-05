@@ -731,7 +731,7 @@ def _render_indices_body():
                     unsafe_allow_html=True)
  
     # ══════════════════ 1. 국내 증시 ══════════════════
-    st.markdown('<div class="sect-banner">국내 증시</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sect-banner" id="sec-krx">국내 증시</div>', unsafe_allow_html=True)
     krx_head = '<div class="mkt-group">코스피 · 코스닥'
     if not unified and group_asof.get("국내"):
         krx_head += f'<span class="grp-asof">기준 {group_asof["국내"]}</span>'
@@ -752,12 +752,12 @@ def _render_indices_body():
  
     # ══════════════════ 2. 시장 심리 ══════════════════
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
-    st.markdown('<div class="sect-banner">시장 심리</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sect-banner" id="sec-mood">시장 심리</div>', unsafe_allow_html=True)
     render_indicators()
  
     # ══════════════════ 3. 글로벌 지수 ══════════════════
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
-    st.markdown('<div class="sect-banner">글로벌 지수</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sect-banner" id="sec-global">글로벌 지수</div>', unsafe_allow_html=True)
     st.caption("🌡️ 히트맵 · 타일 색 = 등락률의 은은한 틴트 (빨강 상승 / 파랑 하락, ±3%에서 최대) · "
                "미니차트 = 3개월 추이 (하단 눈금 = 보름)")
     for g in ("미국", "변동성·원자재", "암호화폐"):
@@ -766,7 +766,7 @@ def _render_indices_body():
  
     # ══════════════════ 4. 외환 · 금리 ══════════════════
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
-    st.markdown('<div class="sect-banner">외환 · 금리</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sect-banner" id="sec-fx">외환 · 금리</div>', unsafe_allow_html=True)
     if "환율" in INDEX_GROUPS:
         _heat_group("환율")
  
@@ -780,15 +780,141 @@ def _render_indices_body():
  
     # ══════════════════ 5. 일정 ══════════════════
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
-    st.markdown('<div class="sect-banner">일정</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sect-banner" id="sec-cal">일정</div>', unsafe_allow_html=True)
     render_calendar()
  
  
+# ── 시장 탭 편집 헤드: 브리핑 브리지 카드 + 섹션 점프 내비 ──
+# B+C안 — 최신 보고서의 무드·헤드라인·핵심지표를 시장 탭 첫 화면에 재사용하고(추가
+# AI 호출 0), 6페이지 세로 스크롤을 섹션 점프 칩으로 해결한다. 브리핑 rpt-tldr와
+# 동일한 시각 문법(좌측 세이지 액센트·Fraunces 헤드라인·무드 배지)을 공유한다.
+_MKT_SECTIONS = [("국내 증시", "sec-krx"), ("시장 심리", "sec-mood"),
+                 ("글로벌 지수", "sec-global"), ("외환·금리", "sec-fx"),
+                 ("일정", "sec-cal")]
+
+_MKT_HEAD_CSS = """
+<style>
+.mkt-head{background:#fff;border:1px solid var(--line,#ECEDE7);border-left:4px solid var(--sage,#A7BBA9);
+  border-radius:0 16px 16px 0;padding:14px 18px 13px;margin:2px 0 8px;}
+.mkt-head .top{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:7px;}
+.mkt-head .meta{font-size:11px;font-weight:600;color:var(--muted,#9a9b92);}
+.mkt-head .hl{font-family:'Fraunces','Noto Sans KR',serif;font-size:17px;font-weight:600;line-height:1.45;
+  letter-spacing:-.01em;color:var(--ink,#34352f);}
+.mkt-head .chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px;}
+.mkt-head .chip{display:inline-flex;align-items:baseline;gap:5px;background:var(--summary-bg,#F6F7F2);
+  border:1px solid var(--line,#ECEDE7);border-radius:9px;padding:4px 10px;font-size:11px;
+  font-weight:600;color:var(--pill-ink,#5d6258);white-space:nowrap;}
+.mkt-head .chip b{font-size:11.5px;font-weight:700;}
+.mkt-head .chip b.u{color:var(--up,#B65F5A);}
+.mkt-head .chip b.d{color:var(--down,#5A7CA0);}
+.mkt-head .chip b.n{color:var(--ink,#34352f);}
+.mkh-badge{font-size:10px;font-weight:700;letter-spacing:.06em;padding:3px 10px;border-radius:20px;display:inline-block;}
+__MKH_MOOD__
+.mkt-nav{display:flex;gap:7px;flex-wrap:wrap;margin:0 0 4px;}
+.mkt-nav a{font-size:12px;font-weight:700;color:var(--pill-ink,#5d6258);text-decoration:none;
+  background:var(--summary-bg,#F6F7F2);border:1px solid var(--line,#ECEDE7);border-radius:9px;padding:6px 12px;
+  transition:color .15s ease,border-color .15s ease;}
+.mkt-nav a:hover{color:var(--sage-deep,#7E9A83);border-color:var(--sage,#A7BBA9);}
+/* 앵커 점프 시 섹션 배너가 화면 최상단에 붙지 않도록 여유 + 부드러운 스크롤 */
+.sect-banner{scroll-margin-top:4.2rem;}
+html{scroll-behavior:smooth;}
+/* '브리핑에서 자세히' 버튼 — 링크 톤으로 축소 */
+.st-key-mkt_to_brief button{background:transparent !important;border:none !important;box-shadow:none !important;
+  color:var(--sage-deep,#7E9A83) !important;font-size:12px !important;font-weight:700 !important;
+  padding:0 2px !important;min-height:0 !important;}
+.st-key-mkt_to_brief button:hover{color:var(--ink,#34352f) !important;text-decoration:underline;}
+.st-key-mkt_to_brief button p{font-size:12px !important;font-weight:700 !important;margin:0 !important;}
+</style>"""
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _latest_report_brief():
+    """최신 보고서 1건의 헤드 요약(브리지 카드용) — 10분 캐시.
+    반환: {headline, mood, kind, date, snap} · DB 미설정/보고서 없음/실패 시 None
+    (카드를 조용히 생략 — 결측 안내를 노출하지 않는다)."""
+    try:
+        from modules.db import supabase_configured, list_recent
+        if not supabase_configured():
+            return None
+        rows = list_recent(2) or []
+        if not rows:
+            return None
+        r = rows[0]   # report_date desc → slug desc: 같은 날짜면 장마감 후 우선
+        data = r.get("data") or {}
+        headline = str(data.get("headline", "")).strip()
+        if not headline:
+            return None
+        kind = data.get("report_kind") or r.get("report_kind") or "post"
+        return {"headline": headline,
+                "mood": data.get("mood", "neutral"),
+                "kind": "pre" if kind == "pre" else "post",
+                "date": str(r.get("report_date") or r.get("slug", ""))[:10],
+                "snap": str(data.get("snapshot_line", "")).strip()}
+    except Exception:
+        return None
+
+
+def _fmt_brief_date(iso: str) -> str:
+    """'YYYY-MM-DD' → 'MM.DD(요일)'. 파싱 실패 시 원문 그대로."""
+    try:
+        from datetime import date as _d
+        y, m, d = (int(x) for x in iso.split("-"))
+        return f"{m:02d}.{d:02d}({'월화수목금토일'[_d(y, m, d).weekday()]})"
+    except Exception:
+        return iso
+
+
+def _snap_chips_html(snap: str) -> str:
+    """snapshot_line('코스피 8,088.34(+5.76%) · …') → 방향색 칩. 최대 5개."""
+    import html as _html
+    chips = ""
+    for item in [s.strip() for s in snap.split("·") if s.strip()][:5]:
+        lab, _, val = item.rpartition(" ")
+        if not lab:                       # 공백 없는 항목은 통째로 라벨 취급
+            lab, val = val, ""
+        cls = "u" if "+" in val else ("d" if "-" in val else "n")
+        val_html = f' <b class="{cls}">{_html.escape(val)}</b>' if val else ""
+        chips += f'<span class="chip">{_html.escape(lab)}{val_html}</span>'
+    return f'<div class="chips">{chips}</div>' if chips else ""
+
+
+def _render_market_head():
+    """시장 탭 편집 헤드 — ① 최신 보고서 브리지 카드(있을 때만) ② 섹션 점프 내비.
+    보고서가 없으면 카드 없이 내비만 그린다."""
+    from modules.mood import MOOD_KO, mood_css
+    st.markdown(_MKT_HEAD_CSS.replace("__MKH_MOOD__", mood_css("mkh")),
+                unsafe_allow_html=True)
+
+    brief = _latest_report_brief()
+    if brief:
+        import html as _html
+        cls = {"positive": "pos", "neutral": "neu",
+               "cautious": "cau"}.get(brief["mood"], "neu")
+        mood_ko = MOOD_KO.get(brief["mood"], "중립")
+        kind_ko = "장전 보고서" if brief["kind"] == "pre" else "장마감 후 보고서"
+        st.markdown(
+            f'<div class="mkt-head">'
+            f'<div class="top"><span class="mkh-badge mkh-{cls}">{mood_ko.upper()}</span>'
+            f'<span class="meta">{_fmt_brief_date(brief["date"])} · {kind_ko}</span></div>'
+            f'<div class="hl">{_html.escape(brief["headline"])}</div>'
+            f'{_snap_chips_html(brief["snap"])}'
+            f'</div>', unsafe_allow_html=True)
+        if st.button("브리핑에서 자세히 →", key="mkt_to_brief"):
+            st.session_state["_stock_subtab_jump"] = "브리핑"
+            st.rerun()
+
+    nav = "".join(f'<a href="#{aid}">{lab}</a>' for lab, aid in _MKT_SECTIONS)
+    st.markdown(f'<div class="mkt-nav">{nav}</div>', unsafe_allow_html=True)
+
+
 # ── 지수 현황 탭 ──
 def render_indices():
     st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
     st.title("주요 지수 현황")
     st.caption("데이터: Yahoo Finance · 일별 종가 기준 · 약 15분 지연")
+ 
+    # 편집 헤드 — 최신 보고서 브리지 + 섹션 점프 내비 (본문·새로고침보다 먼저)
+    _render_market_head()
  
     if st.button("🔄 새로고침"):
         st.cache_data.clear()
@@ -1149,8 +1275,15 @@ _top = st.segmented_control(
 ) or "주식"   # 선택 해제(None) 시 기본값으로 폴백
  
 if _top == "주식":
+    # '브리핑에서 자세히' 점프 — 위젯 생성 '전'에 세션값을 바꿔야 한다.
+    # default= 대신 세션 사전 시드를 쓰면 위젯 생성 후 값 변경 경고 없이 전환된다.
+    _jump = st.session_state.pop("_stock_subtab_jump", None)
+    if "stock_subtab" not in st.session_state:
+        st.session_state["stock_subtab"] = "시장"
+    if _jump:
+        st.session_state["stock_subtab"] = _jump
     _sub = st.segmented_control(
-        "주식 탭", ["시장", "브리핑", "주도주", "공모주", "테마"], default="시장",
+        "주식 탭", ["시장", "브리핑", "주도주", "공모주", "테마"],
         key="stock_subtab", label_visibility="collapsed",
     ) or "시장"
     if _sub == "시장":
