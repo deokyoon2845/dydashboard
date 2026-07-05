@@ -210,6 +210,10 @@ def render_rate_gap():
     cards += _gap_card("장기 (미10년−한10년)", us10, kr_l, "미 10년", "한 10년", long_series)
     st.markdown(f'<div class="mkt-grid">{cards}</div>', unsafe_allow_html=True)
 
-    st.caption("금리차 = 미국 − 한국 · 양수(미국 우위)일수록 외국인 자금 유출·"
-               "원화 약세 압력으로 읽히는 구간 · 미니차트 = 3개월 추이(눈금=보름) · "
-               "미국: FRED · 한국: 한국은행 ECOS")
+    # 헤더 우측엔 이미 '금리차 보는 법' 팝오버가 있어 배지 중복을 피해 카드 아래 단독 행으로.
+    from modules.ui import foot_row
+    st.markdown(foot_row(
+        "미국 FRED · 한국은행 ECOS",
+        "금리차 = 미국 − 한국 · 양수(미국 우위)일수록 외국인 자금 유출·"
+        "원화 약세 압력으로 읽히는 구간 · 미니차트 = 3개월 추이(눈금=보름)"),
+        unsafe_allow_html=True)
