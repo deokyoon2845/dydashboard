@@ -353,8 +353,9 @@ def _extract_stocks(text: str) -> list:
 # ── 보고서 보는 법 팝오버 ────────────────────────────────────
 
 def _render_report_help_popover():
-    """제목 옆 ⓘ 보고서 보는 법 팝오버 — 체온계·금리차 팝오버와 동일한 방식."""
-    with st.popover("ⓘ 보고서 보는 법", use_container_width=True):
+    """제목 옆 ⓘ 보고서 보는 법 팝오버 — 체온계·금리차 팝오버와 동일한 컴팩트 칩.
+    (예전엔 use_container_width=True로 전폭 바처럼 렌더돼 본문 흐름을 끊었다.)"""
+    with st.popover("ⓘ 보고서 보는 법"):
         st.markdown(
             '<div class="rpt-help-h">🕒 생성 시점</div>'
             '<div class="rpt-help-li"><b>장전 보고서</b>는 평일 아침(KST 07:50경) '
