@@ -305,4 +305,9 @@ def render_indicators():
             f'<div class="rsi-gauge"><span class="t30"></span><span class="t70"></span>'
             f'<i class="{tone}" style="left:{pos}%"></i></div></div>')
     st.markdown(f'<div class="mkt-grid">{"".join(rcards)}</div>', unsafe_allow_html=True)
-    st.caption(f"RSI ≥70 과매수 · ≤30 과매도 (종가 14일 · 기준 {_rsi_asof()}). 데이터: yfinance · CNN.")
+    # 헤더 우측엔 이미 '지표 보는 법' 팝오버가 있어 배지 중복을 피해 카드 아래 단독 행으로.
+    from modules.ui import foot_row
+    st.markdown(foot_row(
+        "yfinance · CNN",
+        f"RSI ≥70 과매수 · ≤30 과매도 (종가 14일 · 기준 {_rsi_asof()})"),
+        unsafe_allow_html=True)
