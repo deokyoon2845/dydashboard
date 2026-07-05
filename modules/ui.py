@@ -41,4 +41,56 @@ def tab_header(title: str, caption: str = "", eyebrow: str = "", css: str = ""):
  
     if caption:
         st.caption(caption)
- 
+
+
+# ── 각주 배지(A안) — 섹션 각주를 '메타 배지 + ⓘ 접힘 각주'로 승격 ──────────
+# 배경: 거의 모든 섹션 하단에 2~3줄 회색 각주(출처·범례·조작법)가 붙어 본문 흐름을
+# 끊었다. 핵심 메타(출처·주기)는 헤더 우측 배지로 상시 노출해 신뢰 신호로 승격하고,
+# 상세 설명은 순수 HTML <details>로 접는다 — JS·위젯 상태 없이 동작하므로
+# st.fragment 자동 갱신 안에서도 안전하고 모바일에서는 탭으로 열린다.
+#
+# 사용 예 (헤더 행에 합류 — 헤더 div에 ui-fx 클래스 추가):
+#     st.markdown('<div class="mkt-group ui-fx">💰 수급 추세'
+#                 + foot_badge("네이버 금융 · 15거래일", "긴 설명…") + '</div>',
+#                 unsafe_allow_html=True)
+# FOOT_CSS는 앱 전역 CSS와 함께 1회 주입한다(app.py).
+
+FOOT_CSS = """
+<style>
+.ui-fx{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.ui-foot{margin-left:auto;min-width:0;}
+.ui-foot[open]{flex-basis:100%;}   /* 펼치면 본문이 행 전체 폭을 쓴다(결정적 레이아웃) */
+.ui-foot summary{list-style:none;cursor:pointer;display:flex;justify-content:flex-end;align-items:center;gap:6px;
+  font-family:'Hanken Grotesk','Noto Sans KR',sans-serif;font-size:10.5px;font-weight:700;letter-spacing:0;
+  color:var(--pill-ink,#5d6258);user-select:none;}
+.ui-foot summary::-webkit-details-marker{display:none;}
+.ui-foot summary .pill{display:inline-flex;align-items:center;gap:6px;background:var(--summary-bg,#F6F7F2);
+  border:1px solid var(--line,#ECEDE7);border-radius:9px;padding:4px 10px;white-space:nowrap;
+  transition:color .15s ease,border-color .15s ease;}
+.ui-foot summary:hover .pill{color:var(--ink,#34352f);border-color:var(--sage,#A7BBA9);}
+.ui-foot[open] summary .pill{color:var(--ink,#34352f);border-color:var(--sage,#A7BBA9);}
+.ui-foot .ic{display:inline-flex;align-items:center;justify-content:center;width:13px;height:13px;border-radius:50%;
+  border:1px solid var(--muted,#9a9b92);color:var(--muted,#9a9b92);font-size:9px;font-style:italic;
+  font-family:Georgia,serif;flex:none;}
+.ui-foot .b{margin-top:8px;font-family:'Hanken Grotesk','Noto Sans KR',sans-serif;font-size:11.5px;font-weight:400;
+  color:var(--muted,#9a9b92);line-height:1.62;letter-spacing:0;background:var(--summary-bg,#F6F7F2);
+  border-radius:9px;padding:9px 13px;text-align:left;}
+.ui-foot-row{display:flex;justify-content:flex-end;margin:2px 0 6px;}
+</style>"""
+
+
+def foot_badge(meta: str, detail: str) -> str:
+    """각주 배지 HTML 조각 — .ui-fx 플렉스 헤더 행의 마지막 자식으로 삽입.
+
+    meta   : 배지에 상시 노출할 핵심 메타(출처·주기 — 예: "네이버 금융 · 15거래일")
+    detail : ⓘ 클릭 시 펼쳐질 상세 설명(범례·계산식·조작법 — 기존 각주 본문)
+    둘 다 평문(HTML 이스케이프됨)."""
+    import html as _h
+    return (f'<details class="ui-foot"><summary><span class="pill">{_h.escape(meta)}'
+            f'<span class="ic" aria-hidden="true">i</span></span></summary>'
+            f'<div class="b">{_h.escape(detail)}</div></details>')
+
+
+def foot_row(meta: str, detail: str) -> str:
+    """헤더 행이 없는 자리(차트 아래 등)에 단독으로 쓰는 우측 정렬 각주 배지 행."""
+    return f'<div class="ui-fx ui-foot-row">{foot_badge(meta, detail)}</div>'
