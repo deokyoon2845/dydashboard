@@ -1,7 +1,7 @@
 """[뷰어] 주도주 — 주식 탭의 '주도주' 하위탭. (레이아웃 A안: 한 화면 대시보드)
  
 구성
-  · 도움말(주도주 보는 법) expander
+  · 도움말(주도주 보는 법) 팝오버 — 체온계·금리차와 동일한 컴팩트 ⓘ 칩
   · 상단 스트립: 유니버스 → 정밀스캔 → 주도 N (정직한 깔때기)
   · 한눈에 보기: [좌] 컴팩트 주도 매트릭스(높이 축소) · [우] 통합 리더보드 TOP N(짧은 스파크라인)
   · 주도 섹터 강도: 가로 막대 2열(색=1개월 모멘텀, 길이=주도 점수, 우측에 주도 종목 수)
@@ -1235,7 +1235,8 @@ def _render_sector_panel(sec, leaders, history):
 def render_leaders():
     tab_header("주도주", css=_CSS)
  
-    with st.expander("ⓘ 주도주 보는 법", expanded=False):
+    # '보는 법' 통일 — 전폭 expander 대신 컴팩트 ⓘ 팝오버(체온계·금리차·브리핑과 동일 문법).
+    with st.popover("ⓘ 주도주 보는 법"):
         st.markdown('<div class="ldr-help">', unsafe_allow_html=True)
         st.markdown(_HELP_MD)
         st.markdown('</div>', unsafe_allow_html=True)
