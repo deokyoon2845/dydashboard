@@ -2764,11 +2764,11 @@ def _render_hot_complexes():
 
 
 def _hi_band_html(band, hi_area):
-    """평형별 1년 밴드(list of {area,lo,hi,n}) → 칩 HTML(B안). 신고가 평형은 강조."""
-    empty = ('<div class="re-hi-band"><div class="re-hi-band-empty">'
-             '최근 1년 평형별 밴드 데이터 없음 (다음 수집 후 표시)</div></div>')
+    """평형별 1년 밴드(list of {area,lo,hi,n}) → 칩 HTML(B안). 신고가 평형은 강조.
+    밴드 데이터가 없으면 빈 문자열 반환 — 카드마다 결측 안내를 반복하지 않는다
+    (수집이 쌓이면 자동으로 표시 · 결측 안내의 반복은 콘텐츠보다 소음이 커짐)."""
     if not band or not isinstance(band, list):
-        return empty
+        return ""
     try:
         ha = int(float(str(hi_area).replace("㎡", "").strip()))
     except Exception:
@@ -2785,7 +2785,7 @@ def _hi_band_html(band, hi_area):
         hl = " hl" if (ha is not None and int(ar) == ha) else ""
         chips += f'<span class="re-hi-chip{hl}">{int(ar)}㎡ <b>{rng}</b>{n_s}</span>'
     if not chips:
-        return empty
+        return ""
     return ('<div class="re-hi-band">'
             '<div class="re-hi-bh">최근 1년 · 평형별 실거래가 밴드</div>'
             f'<div class="re-hi-chips">{chips}</div></div>')
