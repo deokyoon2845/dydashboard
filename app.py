@@ -359,10 +359,16 @@ st.markdown(CSS.replace("__VARS__", LIGHT_VARS), unsafe_allow_html=True)
 from modules.ui import FOOT_CSS, foot_badge  # noqa: E402
 st.markdown(FOOT_CSS, unsafe_allow_html=True)
  
-# ── 상단 헤더 ──
+# ── 상단 헤더 — 배너 클릭 = '오늘의 한 장'(주식 > 시장)으로 ──
+# 순수 HTML은 세션을 바꿀 수 없으므로 표준 '로고=홈' 패턴(앱 루트 링크)을 쓴다.
+# 리로드 시 기본 탭이 주식 > 시장이라 정확히 오늘의 한 장에 착지한다.
 now = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")
 st.markdown(
-    f'<div class="app-name">DY Monitoring</div>'
+    '<style>.app-home{text-decoration:none;color:inherit;display:inline-block;}'
+    '.app-home .app-name{transition:color .15s ease;}'
+    '.app-home:hover .app-name{color:var(--sage-deep,#7E9A83);}</style>'
+    '<a class="app-home" href="./" target="_self" title="오늘의 한 장으로">'
+    '<div class="app-name">DY Monitoring</div></a>'
     f'<div class="app-upd">조회 {now} KST · 데이터 기준일은 항목별 표기</div>',
     unsafe_allow_html=True,
 )
@@ -791,10 +797,11 @@ def _render_indices_body():
     render_calendar()
  
  
-# ── 시장 탭 편집 헤드: 브리핑 브리지 카드 + 섹션 점프 내비 ──
-# B+C안 — 최신 보고서의 무드·헤드라인·핵심지표를 시장 탭 첫 화면에 재사용하고(추가
-# AI 호출 0), 6페이지 세로 스크롤을 섹션 점프 칩으로 해결한다. 브리핑 rpt-tldr와
-# 동일한 시각 문법(좌측 세이지 액센트·Fraunces 헤드라인·무드 배지)을 공유한다.
+# ── 시장 탭 '오늘의 한 장' + 섹션 점프 내비 ──
+# v1 4블록 — ①헤드라인 밴드(보고서 무드·헤드라인·지표 칩) ②매크로 스파인(라이브 시세)
+# ③시그널 카드(topics 중요도 상위 3) ④합의·이견(최고 중요도 주제). 기존 보고서 데이터와
+# fetch_index 캐시만 재사용하므로 추가 AI 호출 0. 브리핑 rpt-tldr와 동일한 시각 문법
+# (좌측 세이지 액센트·Fraunces 헤드라인·무드 배지)을 공유한다.
 _MKT_SECTIONS = [("국내 증시", "sec-krx"), ("시장 심리", "sec-mood"),
                  ("글로벌 지수", "sec-global"), ("외환·금리", "sec-fx"),
                  ("일정", "sec-cal")]
@@ -822,6 +829,35 @@ __MKH_MOOD__
   background:var(--summary-bg,#F6F7F2);border:1px solid var(--line,#ECEDE7);border-radius:9px;padding:6px 12px;
   transition:color .15s ease,border-color .15s ease;}
 .mkt-nav a:hover{color:var(--sage-deep,#7E9A83);border-color:var(--sage,#A7BBA9);}
+/* 오늘의 한 장 — 블록 라벨·매크로 스파인·시그널 카드·합의/이견 */
+.mkt-head .moods{display:inline-flex;align-items:center;gap:6px;}
+.mkt-head .moods .ar{color:var(--muted,#9a9b92);font-size:11px;font-weight:700;}
+.op-lab{font-size:10px;font-weight:700;letter-spacing:.09em;color:var(--muted,#9a9b92);margin:13px 0 7px;}
+.op-spine{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:8px;margin-top:10px;}
+.op-mini{background:#fff;border:1px solid var(--line,#ECEDE7);border-radius:12px;padding:9px 11px;}
+.op-mini .n{font-size:10.5px;color:var(--muted,#9a9b92);font-weight:600;}
+.op-mini .v{font-size:14px;font-weight:700;color:var(--ink,#34352f);letter-spacing:-.02em;margin-top:2px;}
+.op-mini .c{font-size:11px;font-weight:700;}
+.op-mini .c.u{color:var(--up,#B65F5A);}
+.op-mini .c.d{color:var(--down,#5A7CA0);}
+.op-mini .c.n0{color:var(--muted,#9a9b92);}
+.op-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;}
+.op-card{background:#fff;border:1px solid var(--line,#ECEDE7);border-radius:14px;padding:12px 13px;}
+.op-card .top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
+.op-card .rk{font-family:'Fraunces','Noto Sans KR',serif;font-size:15px;color:var(--sage-deep,#7E9A83);}
+.op-card .imp{font-size:9.5px;font-weight:700;color:var(--muted,#9a9b92);background:var(--summary-bg,#F6F7F2);border-radius:7px;padding:2px 7px;white-space:nowrap;}
+.op-card .t{font-size:12.5px;font-weight:700;color:var(--ink,#34352f);line-height:1.4;margin:5px 0 6px;}
+.op-card .d{font-size:11px;color:var(--muted,#9a9b92);line-height:1.55;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+.op-card .stk{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px;}
+.op-card .stk span{font-size:10px;font-weight:600;color:var(--pill-ink,#5d6258);background:var(--summary-bg,#F6F7F2);border:1px solid var(--line,#ECEDE7);border-radius:7px;padding:2px 7px;}
+.op-cd{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;}
+.op-cd .box{border-radius:0 12px 12px 0;padding:11px 13px;}
+.op-cd .box.c{background:#F4F8F3;border-left:3px solid var(--sage-deep,#7E9A83);}
+.op-cd .box.dd{background:#FBF1F0;border-left:3px solid var(--up,#B65F5A);}
+.op-cd .h{font-size:10px;font-weight:700;letter-spacing:.06em;margin-bottom:4px;}
+.op-cd .box.c .h{color:var(--sage-deep,#7E9A83);}
+.op-cd .box.dd .h{color:var(--up,#B65F5A);}
+.op-cd .b{font-size:11.5px;color:#4a4d45;line-height:1.6;}
 /* 앵커 점프 시 섹션 배너가 화면 최상단에 붙지 않도록 여유 + 부드러운 스크롤 */
 .sect-banner{scroll-margin-top:4.2rem;}
 html{scroll-behavior:smooth;}
@@ -835,28 +871,66 @@ html{scroll-behavior:smooth;}
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def _latest_report_brief():
-    """최신 보고서 1건의 헤드 요약(브리지 카드용) — 10분 캐시.
-    반환: {headline, mood, kind, date, snap} · DB 미설정/보고서 없음/실패 시 None
-    (카드를 조용히 생략 — 결측 안내를 노출하지 않는다)."""
+def _today_page_data():
+    """'오늘의 한 장' 데이터 — 최신 일자 보고서(장마감 후 우선) + 같은 날 장전 무드.
+    반환: {headline, mood, pre_mood, kind, date, snap, topics[≤3], consensus, dissent}
+    DB 미설정/보고서 없음/실패 시 None (블록을 조용히 생략)."""
     try:
         from modules.db import supabase_configured, list_recent
         if not supabase_configured():
             return None
-        rows = list_recent(2) or []
+        rows = list_recent(6) or []
         if not rows:
             return None
-        r = rows[0]   # report_date desc → slug desc: 같은 날짜면 장마감 후 우선
-        data = r.get("data") or {}
+        r0 = rows[0]   # report_date desc → slug desc: 같은 날짜면 장마감 후 우선
+        d0 = str(r0.get("report_date") or r0.get("slug", ""))[:10]
+        data = r0.get("data") or {}
         headline = str(data.get("headline", "")).strip()
         if not headline:
             return None
-        kind = data.get("report_kind") or r.get("report_kind") or "post"
+        kind0 = data.get("report_kind") or r0.get("report_kind") or "post"
+        kind0 = "pre" if kind0 == "pre" else "post"
+
+        # 같은 날짜의 장전 보고서 무드 — ①블록 '장전→장후' 전환 표시용
+        pre_mood = None
+        if kind0 == "post":
+            for r in rows[1:]:
+                if str(r.get("report_date") or "")[:10] != d0:
+                    break
+                rd = r.get("data") or {}
+                if (rd.get("report_kind") or r.get("report_kind")) == "pre":
+                    pre_mood = rd.get("mood", "neutral")
+                    break
+
+        # ③블록: topics 상위 3 (analyze 단계에서 이미 importance 내림차순 정렬됨)
+        topics = []
+        for t in (data.get("topics") or [])[:3]:
+            if not isinstance(t, dict) or not str(t.get("title", "")).strip():
+                continue
+            impl = (str(t.get("implication", "")).strip()
+                    or str(t.get("fact", "")).strip())
+            if len(impl) > 158:            # CSS 3줄 클램프 + 서버측 하드 컷(HTML 경량화)
+                impl = impl[:157] + "…"
+            topics.append({"title": str(t.get("title", "")).strip(),
+                           "imp": t.get("importance"),
+                           "impl": impl,
+                           "stocks": [str(s).strip() for s in
+                                      (t.get("stocks") or []) if str(s).strip()][:3]})
+
+        # ④블록: 최고 중요도 주제의 합의/이견
+        mv = {}
+        if data.get("topics"):
+            mv = (data["topics"][0] or {}).get("market_view") or {}
+
         return {"headline": headline,
                 "mood": data.get("mood", "neutral"),
-                "kind": "pre" if kind == "pre" else "post",
-                "date": str(r.get("report_date") or r.get("slug", ""))[:10],
-                "snap": str(data.get("snapshot_line", "")).strip()}
+                "pre_mood": pre_mood,
+                "kind": kind0,
+                "date": d0,
+                "snap": str(data.get("snapshot_line", "")).strip(),
+                "topics": topics,
+                "consensus": str(mv.get("consensus", "")).strip(),
+                "dissent": str(mv.get("dissent", "")).strip()}
     except Exception:
         return None
 
@@ -886,26 +960,88 @@ def _snap_chips_html(snap: str) -> str:
 
 
 def _render_market_head():
-    """시장 탭 편집 헤드 — ① 최신 보고서 브리지 카드(있을 때만) ② 섹션 점프 내비.
-    보고서가 없으면 카드 없이 내비만 그린다."""
+    """시장 탭 '오늘의 한 장'(B안) — ①헤드라인 밴드(무드 전환) ②매크로 스파인
+    ③시그널 카드(topics 상위 3) ④합의·이견 + 브리핑 점프 + 섹션 내비.
+    보고서가 없으면 ②스파인과 내비만 그린다(결측 안내 없음)."""
+    import html as _html
     from modules.mood import MOOD_KO, mood_css
     st.markdown(_MKT_HEAD_CSS.replace("__MKH_MOOD__", mood_css("mkh")),
                 unsafe_allow_html=True)
 
-    brief = _latest_report_brief()
-    if brief:
-        import html as _html
-        cls = {"positive": "pos", "neutral": "neu",
-               "cautious": "cau"}.get(brief["mood"], "neu")
-        mood_ko = MOOD_KO.get(brief["mood"], "중립")
-        kind_ko = "장전 보고서" if brief["kind"] == "pre" else "장마감 후 보고서"
+    page = _today_page_data()
+
+    # ① 헤드라인 밴드 — 무드(장전→장후 전환) + 날짜·종류 + 헤드라인 + 지표 칩
+    if page:
+        def _badge(m, prefix=""):
+            cls = {"positive": "pos", "neutral": "neu",
+                   "cautious": "cau"}.get(m, "neu")
+            return (f'<span class="mkh-badge mkh-{cls}">'
+                    f'{prefix}{MOOD_KO.get(m, "중립").upper()}</span>')
+        if page["pre_mood"] and page["kind"] == "post":
+            moods = ('<span class="moods">' + _badge(page["pre_mood"], "장전 ")
+                     + '<span class="ar">→</span>'
+                     + _badge(page["mood"], "장후 ") + '</span>')
+        else:
+            moods = _badge(page["mood"])
+        kind_ko = "장전 보고서" if page["kind"] == "pre" else "장마감 후 보고서"
         st.markdown(
             f'<div class="mkt-head">'
-            f'<div class="top"><span class="mkh-badge mkh-{cls}">{mood_ko.upper()}</span>'
-            f'<span class="meta">{_fmt_brief_date(brief["date"])} · {kind_ko}</span></div>'
-            f'<div class="hl">{_html.escape(brief["headline"])}</div>'
-            f'{_snap_chips_html(brief["snap"])}'
+            f'<div class="top">{moods}'
+            f'<span class="meta">{_fmt_brief_date(page["date"])} · {kind_ko}</span></div>'
+            f'<div class="hl">{_html.escape(page["headline"])}</div>'
+            f'{_snap_chips_html(page["snap"])}'
             f'</div>', unsafe_allow_html=True)
+
+    # ② 매크로 스파인 — 라이브 시세 5종 (fetch_index 캐시 재사용 · 실패 항목은 생략)
+    _SPINE = [("코스피", "^KS11"), ("코스닥", "^KQ11"), ("원/달러", "KRW=X"),
+              ("나스닥", "^IXIC"), ("VIX", "^VIX")]
+    minis = ""
+    for name, tk in _SPINE:
+        try:
+            d = fetch_index(tk)
+        except Exception:
+            d = None
+        if not d:
+            continue
+        chg = d.get("change", 0) or 0
+        cls = "u" if chg > 0 else ("d" if chg < 0 else "n0")
+        arrow = "▲" if chg > 0 else ("▼" if chg < 0 else "▬")
+        minis += (f'<div class="op-mini"><div class="n">{name}</div>'
+                  f'<div class="v">{d["current"]:,.2f}</div>'
+                  f'<div class="c {cls}">{arrow} {d.get("pct", 0.0):+.2f}%</div></div>')
+    if minis:
+        st.markdown(f'<div class="op-spine">{minis}</div>', unsafe_allow_html=True)
+
+    # ③ 시그널 카드 — topics 상위 3 · implication 요약 + 종목 칩
+    if page and page["topics"]:
+        cards = ""
+        for i, t in enumerate(page["topics"], 1):
+            imp = t.get("imp")
+            imp_s = (f'<span class="imp">중요도 {int(imp)}</span>'
+                     if isinstance(imp, (int, float)) else "")
+            stk = "".join(f'<span>{_html.escape(s)}</span>' for s in t["stocks"])
+            stk_html = f'<div class="stk">{stk}</div>' if stk else ""
+            cards += (f'<div class="op-card">'
+                      f'<div class="top"><span class="rk">{i}</span>{imp_s}</div>'
+                      f'<div class="t">{_html.escape(t["title"])}</div>'
+                      f'<div class="d">{_html.escape(t["impl"])}</div>'
+                      f'{stk_html}</div>')
+        st.markdown('<div class="op-lab">오늘의 시그널</div>'
+                    f'<div class="op-cards">{cards}</div>', unsafe_allow_html=True)
+
+    # ④ 합의 · 이견 — 최고 중요도 주제의 양쪽 시각 (이견 없으면 합의만 전폭)
+    if page and (page["consensus"] or page["dissent"]):
+        boxes = ""
+        if page["consensus"]:
+            boxes += ('<div class="box c"><div class="h">합의</div>'
+                      f'<div class="b">{_html.escape(page["consensus"])}</div></div>')
+        if page["dissent"]:
+            boxes += ('<div class="box dd"><div class="h">이견</div>'
+                      f'<div class="b">{_html.escape(page["dissent"])}</div></div>')
+        st.markdown('<div class="op-lab">합의 · 이견 — 최고 중요도 주제</div>'
+                    f'<div class="op-cd">{boxes}</div>', unsafe_allow_html=True)
+
+    if page:
         if st.button("브리핑에서 자세히 →", key="mkt_to_brief"):
             st.session_state["_stock_subtab_jump"] = "브리핑"
             st.rerun()
@@ -920,7 +1056,7 @@ def render_indices():
     st.title("주요 지수 현황")
     # 출처·지연 안내는 각 섹션 헤더의 ⓘ 배지로 이동(A안) — 탭 서브캡션 제거.
  
-    # 편집 헤드 — 최신 보고서 브리지 + 섹션 점프 내비 (본문·새로고침보다 먼저)
+    # '오늘의 한 장' — 헤드라인·스파인·시그널·합의/이견 + 섹션 내비 (본문보다 먼저)
     _render_market_head()
  
     if st.button("🔄 새로고침"):
