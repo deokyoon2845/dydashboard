@@ -354,6 +354,10 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 </style>
 """
 st.markdown(CSS.replace("__VARS__", LIGHT_VARS), unsafe_allow_html=True)
+
+# 각주 배지(A안) 공용 스타일 — ui.foot_badge를 쓰는 모든 탭에서 공유(1회 주입).
+from modules.ui import FOOT_CSS, foot_badge  # noqa: E402
+st.markdown(FOOT_CSS, unsafe_allow_html=True)
  
 # ── 상단 헤더 ──
 now = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")
@@ -683,13 +687,7 @@ def _render_domestic_charts():
                 _big_index_chart_intraday("코스닥", "^KQ11")
             else:
                 _big_index_chart("코스닥", "^KQ11", days)
- 
-    if is_intraday:
-        st.caption("당일(휴장 시 직전 거래일) 5분봉 · 전일 종가 대비 등락(회색 점선=전일 종가) · "
-                   "정규장(09:00~15:30)만 표시 · yfinance 기준 약 15분 지연이며 일부 누락될 수 있어요.")
-    else:
-        st.caption("차트 위에 마우스를 올리면 해당 시점·값(세로축)이 십자선으로 표시되고, "
-                   "가로 스크롤·드래그로 기간을 확대할 수 있어요.")
+    # 조작·범례 안내는 '코스피 · 코스닥' 헤더의 ⓘ 배지로 이동(A안) — 하단 각주 제거.
  
  
 # ── 지수 현황 본문 ──
@@ -732,9 +730,14 @@ def _render_indices_body():
  
     # ══════════════════ 1. 국내 증시 ══════════════════
     st.markdown('<div class="sect-banner" id="sec-krx">국내 증시</div>', unsafe_allow_html=True)
-    krx_head = '<div class="mkt-group">코스피 · 코스닥'
+    krx_head = '<div class="mkt-group ui-fx">코스피 · 코스닥'
     if not unified and group_asof.get("국내"):
         krx_head += f'<span class="grp-asof">기준 {group_asof["국내"]}</span>'
+    krx_head += foot_badge(
+        "Yahoo Finance · 약 15분 지연",
+        "일별 차트: 마우스 hover=십자선으로 시점·값 표시, 가로 스크롤·드래그=기간 확대 · "
+        "당일(1일) 차트: 5분봉·전일 종가 대비 등락(회색 점선=전일 종가)·정규장(09:00~15:30)만 "
+        "표시되며 일부 누락될 수 있어요")
     krx_head += "</div>"
     st.markdown(krx_head, unsafe_allow_html=True)
     _render_domestic_charts()
@@ -757,9 +760,13 @@ def _render_indices_body():
  
     # ══════════════════ 3. 글로벌 지수 ══════════════════
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
-    st.markdown('<div class="sect-banner" id="sec-global">글로벌 지수</div>', unsafe_allow_html=True)
-    st.caption("🌡️ 히트맵 · 타일 색 = 등락률의 은은한 틴트 (빨강 상승 / 파랑 하락, ±3%에서 최대) · "
-               "미니차트 = 3개월 추이 (하단 눈금 = 보름)")
+    st.markdown(
+        '<div class="sect-banner ui-fx" id="sec-global">글로벌 지수'
+        + foot_badge(
+            "Yahoo Finance · 종가",
+            "🌡️ 히트맵 · 타일 색 = 등락률의 은은한 틴트(빨강 상승 / 파랑 하락, ±3%에서 최대) · "
+            "미니차트 = 3개월 추이(하단 눈금 = 보름)")
+        + '</div>', unsafe_allow_html=True)
     for g in ("미국", "변동성·원자재", "암호화폐"):
         if g in INDEX_GROUPS:
             _heat_group(g)
@@ -911,7 +918,7 @@ def _render_market_head():
 def render_indices():
     st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
     st.title("주요 지수 현황")
-    st.caption("데이터: Yahoo Finance · 일별 종가 기준 · 약 15분 지연")
+    # 출처·지연 안내는 각 섹션 헤더의 ⓘ 배지로 이동(A안) — 탭 서브캡션 제거.
  
     # 편집 헤드 — 최신 보고서 브리지 + 섹션 점프 내비 (본문·새로고침보다 먼저)
     _render_market_head()
