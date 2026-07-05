@@ -129,9 +129,17 @@ def _fetch_kr_yields(key):
 
 
 def render_rates():
+    from modules.ui import foot_badge
+
     # ── 미 국채 수익률 (히트맵 타일) ──
-    st.markdown('<div class="mkt-group">📈 금리 · 미 국채 수익률</div>',
-                unsafe_allow_html=True)
+    st.markdown(
+        '<div class="mkt-group ui-fx">📈 금리 · 미 국채 수익률'
+        + foot_badge(
+            "yfinance · 약 15분 지연",
+            "색 = 전일 대비 변화의 은은한 틴트(상승 빨강/하락 파랑, ±10bp에서 최대) · "
+            "미니차트 = 3개월 추이(눈금=보름) · 장단기 금리차(10년−3개월)가 음수면 "
+            "'금리 역전' — 경기침체 경고 신호로 읽히는 구간")
+        + '</div>', unsafe_allow_html=True)
 
     data = {name: _fetch_rate(tk) for name, tk in _RATE_TICKERS}
 
@@ -144,21 +152,21 @@ def render_rates():
             tiles += _rate_tile(name, None, None)
     st.markdown(f'<div class="mkt-grid">{tiles}</div>', unsafe_allow_html=True)
 
-    # 장단기 금리차 (10년 − 3개월): 음수면 '금리 역전' = 경기침체 경고 신호
+    # 장단기 금리차 (10년 − 3개월): 동적 신호라 본문에 남긴다(범례는 배지로 이동).
     t10, t3 = data.get("미 10년"), data.get("미 3개월")
     if t10 and t3:
         spread = t10["cur"] - t3["cur"]
         note = "정상 (우상향)" if spread >= 0 else "역전 — 경기침체 경고 신호로 읽히는 구간"
-        st.caption(f"미 10년−3개월 장단기 금리차: {spread:+.2f}%p · {note} · "
-                   f"색 = 전일 대비 변화(상승 빨강/하락 파랑, ±10bp 최대) · "
-                   f"미니차트 = 3개월 추이(눈금=보름) · 데이터: yfinance · 약 15분 지연")
-    else:
-        st.caption("색 = 전일 대비 변화(상승 빨강/하락 파랑) · 미니차트 = 3개월 추이 · "
-                   "데이터: yfinance · 약 15분 지연")
+        st.caption(f"미 10년−3개월 장단기 금리차: {spread:+.2f}%p · {note}")
 
     # ── 한국 국고채 수익률 (ECOS · 히트맵 타일) ──
-    st.markdown('<div class="mkt-group" style="margin-top:18px;">🇰🇷 한국 국고채 수익률</div>',
-                unsafe_allow_html=True)
+    st.markdown(
+        '<div class="mkt-group ui-fx" style="margin-top:18px;">🇰🇷 한국 국고채 수익률'
+        + foot_badge(
+            "한국은행 ECOS",
+            "색 = 전일 대비 변화의 은은한 틴트(상승 빨강/하락 파랑, ±10bp에서 최대) · "
+            "미니차트 = 3개월 추이(눈금=보름)")
+        + '</div>', unsafe_allow_html=True)
     key = _cfg("ECOS_API_KEY")
     if not key:
         st.caption("한국 국고채는 ECOS_API_KEY가 필요해요. Secrets에 키를 넣으면 표시됩니다.")
@@ -174,14 +182,9 @@ def render_rates():
             tiles += _rate_tile(label, None, None)
     st.markdown(f'<div class="mkt-grid">{tiles}</div>', unsafe_allow_html=True)
 
-    # 한국 장단기 금리차 (10년 − 2년)
+    # 한국 장단기 금리차 (10년 − 2년) — 동적 신호는 본문 유지.
     k10, k2 = kr.get("한 10년"), kr.get("한 2년")
     if k10 and k2:
         ks = k10["cur"] - k2["cur"]
         note = "정상 (우상향)" if ks >= 0 else "역전"
-        st.caption(f"한 10년−2년 장단기 금리차: {ks:+.2f}%p · {note} · "
-                   f"색 = 전일 대비 변화 · 미니차트 = 3개월 추이(눈금=보름) · "
-                   f"데이터: 한국은행 ECOS")
-    else:
-        st.caption("색 = 전일 대비 변화(상승 빨강/하락 파랑) · 미니차트 = 3개월 추이 · "
-                   "데이터: 한국은행 ECOS")
+        st.caption(f"한 10년−2년 장단기 금리차: {ks:+.2f}%p · {note}")
