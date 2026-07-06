@@ -255,9 +255,9 @@ def _render_items(items):
 
 
 def render_realestate_keywords():
-    # CSS는 accent-bar와 한 블록으로 합쳐 주입(별도 블록이 만드는 세로 간격 제거).
-    st.markdown(_RE_KW_CSS + '<div class="accent-bar"></div>', unsafe_allow_html=True)
-    st.title("부동산 키워드")
+    # 표준 크롬(tab_header) — 탭 CSS를 액센트 바와 한 블록으로 합쳐 주입(간격 일치).
+    from modules.ui import tab_header
+    tab_header("부동산 키워드", css=_RE_KW_CSS)
 
     if st.button("🔄 키워드 갱신", key="re_kw_refresh"):
         with st.spinner("네이버 부동산 뉴스 수집 → 키워드 추출 중..."):
