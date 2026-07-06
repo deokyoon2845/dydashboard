@@ -9,7 +9,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from modules.indices import fetch_history
+from modules.indices import fetch_history, fetch_index
 
 _RSI_TARGETS = {"코스피": "^KS11", "코스닥": "^KQ11", "S&P500": "^GSPC", "나스닥": "^IXIC"}
 
@@ -33,6 +33,162 @@ def compute_rsi(ticker, period=14):
     if l == 0:
         return 100.0
     return float(100 - 100 / (1 + g / l))
+
+
+# ── 시장 국면 판정(체온계 종합) — 부동산 사이클과 대칭인 '위험선호' 모델 ──
+# 공포·탐욕 / VIX / RSI 평균 / 수급(코스피 5거래일)을 각각 -1(위험회피)~+1(위험선호)
+# 점수로 정규화한 뒤, 가용 지표의 단순 평균 = 종합 강도 s 로 국면을 판정한다.
+# 매매 신호가 아니라 '시장이 위험을 얼마나 감수하려 하나'를 읽는 온도계.
+# ★임계값은 전부 아래 상수 — 체감과 다르면 여기만 조정하면 된다.
+_PHASES = ["위험회피", "경계", "중립", "위험선호"]
+_PHASE_BANDS = (-0.40, -0.10, 0.30)   # s<-0.40 회피 · <-0.10 경계 · <+0.30 중립 · 이상 선호
+
+
+def _score_fng(score):
+    """공포·탐욕 0~100 → CNN 5구간 그대로 -1~+1."""
+    if score is None:
+        return None
+    if score < 25:
+        return -1.0
+    if score < 45:
+        return -0.5
+    if score <= 55:
+        return 0.0
+    if score <= 75:
+        return 0.5
+    return 1.0
+
+
+def _score_vix(v):
+    """VIX 레벨 점수. 저변동성은 우호적이나 그 자체가 안일함(과열) 신호일 수 있어 +0.5 캡."""
+    if v is None:
+        return None
+    if v < 17:
+        return 0.5
+    if v < 25:
+        return 0.0
+    if v < 30:
+        return -0.5
+    return -1.0
+
+
+def _score_rsi(avg):
+    """RSI 평균 → 점수. 국면 측정이므로 고RSI=위험선호(+), 저RSI=위험회피(−)."""
+    if avg is None:
+        return None
+    if avg >= 65:
+        return 1.0
+    if avg >= 55:
+        return 0.5
+    if avg > 45:
+        return 0.0
+    if avg > 35:
+        return -0.5
+    return -1.0
+
+
+def _score_flow(f_sum, i_sum):
+    """코스피 최근 5거래일 외국인·기관 순매수 '방향' 합 → (sign+sign)/2 = ±1·±0.5·0."""
+    def _sgn(x):
+        return 1 if x > 0 else (-1 if x < 0 else 0)
+    return (_sgn(f_sum) + _sgn(i_sum)) / 2.0
+
+
+_FLOW_WORD = {1.0: "동반 매수", 0.5: "매수 우위", 0.0: "혼조",
+              -0.5: "매도 우위", -1.0: "동반 매도"}
+
+
+def _phase_payload(fng, rsi_vals):
+    """국면 위젯 데이터 — parts=[{name,val,s}] · 가용 지표 평균 s → phase 인덱스.
+    가용 지표 0개면 None(위젯 조용히 생략). 일부 실패는 나머지로 판정하고 개수 표기."""
+    parts = []
+    if fng and fng.get("score") is not None:
+        rating = _RATING_KO.get(str(fng.get("rating", "")).lower(), "")
+        val = f'{fng["score"]}' + (f" · {rating}" if rating else "")
+        parts.append({"name": "공포·탐욕", "val": val, "s": _score_fng(fng["score"])})
+    try:
+        d = fetch_index("^VIX")
+        vix = float(d["current"]) if d else None
+    except Exception:
+        vix = None
+    if vix is not None:
+        parts.append({"name": "VIX", "val": f"{vix:.1f}", "s": _score_vix(vix)})
+    rs = [v for v in (rsi_vals or {}).values() if v is not None]
+    if rs:
+        avg = sum(rs) / len(rs)
+        parts.append({"name": "RSI 평균", "val": f"{avg:.0f}", "s": _score_rsi(avg)})
+    try:
+        from modules.supply_trend import _fetch_investor
+        df = _fetch_investor("01")
+    except Exception:
+        df = None
+    if df is not None and not df.empty:
+        t = df.tail(5)
+        s = _score_flow(float(t["외국인"].sum()), float(t["기관"].sum()))
+        parts.append({"name": "수급 5일", "val": _FLOW_WORD.get(s, "혼조"), "s": s})
+
+    parts = [p for p in parts if p["s"] is not None]
+    if not parts:
+        return None
+    score = sum(p["s"] for p in parts) / len(parts)
+    if score < _PHASE_BANDS[0]:
+        ph = 0
+    elif score < _PHASE_BANDS[1]:
+        ph = 1
+    elif score < _PHASE_BANDS[2]:
+        ph = 2
+    else:
+        ph = 3
+    return {"score": score, "phase": ph, "parts": parts}
+
+
+_PHASE_CSS = """
+<style>
+.tmo{background:#fff;border:1px solid var(--line,#ECEDE7);border-radius:16px;padding:13px 16px;margin:0 0 14px;}
+.tmo-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;}
+.tmo-top .t{font-size:12px;font-weight:700;color:var(--ink,#34352f);}
+.tmo-top .r{font-size:11.5px;color:var(--muted,#9a9b92);font-weight:600;}
+.tmo-top .r b{color:var(--sage-deep,#7E9A83);}
+.tmo-ph{display:flex;gap:6px;margin:10px 0 11px;}
+.tmo-ph .p{flex:1;text-align:center;padding:8px 4px;border-radius:10px;border:1px solid var(--line,#ECEDE7);
+  background:#fff;font-size:12.5px;font-weight:700;color:var(--muted,#9a9b92);}
+.tmo-ph .p.on{border-color:var(--sage-deep,#7E9A83);background:#F1F5F0;color:var(--sage-deep,#7E9A83);}
+.tmo-parts{display:flex;gap:7px;flex-wrap:wrap;}
+.tmo-chip{display:inline-flex;align-items:baseline;gap:5px;background:var(--summary-bg,#F6F7F2);
+  border:1px solid var(--line,#ECEDE7);border-radius:9px;padding:5px 10px;font-size:11.5px;
+  font-weight:600;color:var(--pill-ink,#5d6258);white-space:nowrap;}
+.tmo-chip b{font-size:12px;font-weight:700;}
+.tmo-chip b.u{color:var(--up,#B65F5A);}
+.tmo-chip b.d{color:var(--down,#5A7CA0);}
+.tmo-chip b.n{color:var(--ink,#34352f);}
+.tmo-foot{font-size:11px;color:var(--muted,#9a9b92);margin-top:9px;line-height:1.55;}
+</style>"""
+
+
+def _phase_html(pp):
+    """국면 위젯 HTML — 4국면 필 + 판정 근거 칩 + 종합 강도 푸터."""
+    pills = "".join(
+        f'<div class="p{" on" if i == pp["phase"] else ""}">{name}</div>'
+        for i, name in enumerate(_PHASES))
+    chips = ""
+    for p in pp["parts"]:
+        cls = "u" if p["s"] > 0 else ("d" if p["s"] < 0 else "n")
+        chips += (f'<span class="tmo-chip">{p["name"]} '
+                  f'<b class="{cls}">{p["val"]}</b></span>')
+    pos = sum(1 for p in pp["parts"] if p["s"] > 0)
+    neg = sum(1 for p in pp["parts"] if p["s"] < 0)
+    neu = len(pp["parts"]) - pos - neg
+    return (f'<div class="tmo">'
+            f'<div class="tmo-top"><span class="t">시장 국면 판정</span>'
+            f'<span class="r">{len(pp["parts"])}지표 종합 → 현재 '
+            f'<b>{_PHASES[pp["phase"]]}</b></span></div>'
+            f'<div class="tmo-ph">{pills}</div>'
+            f'<div class="tmo-parts">{chips}</div>'
+            f'<div class="tmo-foot">판정 근거 — 위험선호 {pos} · 중립 {neu} · '
+            f'위험회피 {neg} → 종합 강도 {pp["score"]:+.2f} '
+            f'(밴드 {_PHASE_BANDS[0]:+.2f} / {_PHASE_BANDS[1]:+.2f} / '
+            f'{_PHASE_BANDS[2]:+.2f})</div>'
+            f'</div>')
 
 
 @st.cache_data(ttl=1800)
@@ -99,6 +255,12 @@ def _metric_help():
         return
     with st.popover("ⓘ 지표 보는 법"):
         st.markdown(
+            "**시장 국면 판정 (종합)**  \n"
+            "공포·탐욕 / VIX / RSI 평균 / 수급(코스피 5거래일)을 각각 -1(위험회피)~"
+            "+1(위험선호)로 점수화해 평균낸 종합 강도로 국면을 판정해요. "
+            "-0.40 미만 위험회피 · -0.10 미만 경계 · +0.30 미만 중립 · 이상 위험선호. "
+            "매매 신호가 아니라 '시장이 위험을 얼마나 감수하려 하나'를 읽는 온도계이며, "
+            "일부 지표가 실패하면 가용 지표만으로 판정하고 개수를 표기해요.\n\n"
             "**공포·탐욕 지수 (CNN · 0~100)**  \n"
             "낮을수록 공포(투자자 위축), 높을수록 탐욕(과열). "
             "0~24 극단적 공포 · 25~44 공포 · 45~55 중립 · 56~75 탐욕 · 76~100 극단적 탐욕. "
@@ -270,6 +432,7 @@ def _fng_card(fng):
 def render_indicators():
     st.markdown(_VIX_CSS, unsafe_allow_html=True)
     st.markdown(_RSI_CSS, unsafe_allow_html=True)
+    st.markdown(_PHASE_CSS, unsafe_allow_html=True)
 
     # 헤더 + 지표 설명 팝오버 (오른쪽 작은 버튼)
     hc1, hc2 = st.columns([4, 1])
@@ -278,18 +441,25 @@ def render_indicators():
     with hc2:
         _metric_help()
 
-    # 공포·탐욕(좌) + VIX 6개월 차트(우) — 2단
     fng = fetch_cnn_fng()
+    rsi_vals = {name: compute_rsi(tk) for name, tk in _RSI_TARGETS.items()}
+
+    # 국면 판정 위젯 — 부동산 사이클과 대칭(A안 승격). 가용 지표 0개면 조용히 생략.
+    pp = _phase_payload(fng, rsi_vals)
+    if pp:
+        st.markdown(_phase_html(pp), unsafe_allow_html=True)
+
+    # 공포·탐욕(좌) + VIX 6개월 차트(우) — 2단
     left, right = st.columns(2, gap="medium")
     with left:
         _fng_card(fng)
     with right:
         _vix_chart_card()
 
-    # RSI
+    # RSI — 위에서 계산한 rsi_vals 재사용(중복 계산 제거)
     rcards = []
     for name, tk in _RSI_TARGETS.items():
-        v = compute_rsi(tk)
+        v = rsi_vals[name]
         if v is None:
             rcards.append(f'<div class="mkt-card"><div class="mkt-name">{name} RSI</div>'
                           f'<div class="mkt-na">데이터 없음</div></div>')
