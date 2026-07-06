@@ -2372,6 +2372,11 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
         if len(band) < 4:
             band = seq
         d["spark"] = [round(r["ppa"]) for r in band][-16:]
+        # 건별 실거래(대형 차트용) — 뷰어 '주목 단지' 카드의 시점×거래가 산점도.
+        #   {d:거래일ISO, p:거래가(만원), a:전용면적㎡}. 3개월 스윕 전 평형 · 최근 60건 캡
+        #   (스냅샷 페이로드 억제). 구 스냅샷엔 없음 → 뷰어는 spark 폴백(하위호환).
+        d["deals"] = [{"d": r["date"].isoformat(), "p": r["price"],
+                       "a": round(r["area"], 1)} for r in seq[-60:]]
         d["p59"] = _recent_price_in_band(rs, 49.0, 63.0)
         d["p84"] = _recent_price_in_band(rs, 74.0, 90.0)
         d["p59_eok"] = _fmt_eok(d["p59"]) if d["p59"] else None
