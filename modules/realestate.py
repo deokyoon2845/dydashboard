@@ -32,7 +32,7 @@ import json
 import streamlit as st
 import streamlit.components.v1 as components
 
-from modules.ui import foot_row   # 각주 배지(A안) — 정적 범례를 ⓘ 접힘 각주로 승격
+from modules.ui import foot_row, tab_header   # 각주 배지(A안) · 표준 탭 크롬
 
 _VIEWBOX = "0 0 1100 1087"
 
@@ -3361,9 +3361,8 @@ def _render_collect_controls():
 def render_realestate():
     """부동산 탭 본문 — 지도 / 지표 / 거래 / 분양 서브탭.
 
-    증시 탭과 동일 구조로 통일: 서브탭을 먼저 두고, 각 서브탭 안에서
-    [액센트 바(.accent-bar) + 제목(st.title) + 캡션/컨트롤]로 연다.
-    (.accent-bar·h1 스타일은 app.py 전역 CSS를 그대로 사용해 증시와 픽셀 일치.)
+    증시 탭과 동일 구조로 통일: 서브탭을 먼저 두고, 각 서브탭을 표준 크롬
+    tab_header(제목·캡션·_RE_CSS 합본 주입)로 연다 — 전 탭 헤더 문법 일원화.
     갱신/진단은 주 화면인 '지도' 탭 안에 위치하고, 나머지 탭은 같은 세션/스냅샷을 읽는다.
     """
     # ── lazy 서브탭: 선택된 탭만 실제 실행(매 렌더마다 5개 탭이 다 도는 부담 제거) ──
@@ -3377,32 +3376,29 @@ def render_realestate():
     ) or "사이클"   # 선택 해제(None) 시 기본값으로 폴백
 
     if _re_maintab == "사이클":
-        st.markdown(_RE_CSS + '<div class="accent-bar"></div>',
-                    unsafe_allow_html=True)
-        st.title("부동산 시장 지표")
         _cyc_asof = _re_collect_asof()
         if _cyc_asof:
-            st.caption("부동산 사이클·선행지표 — 매수우위·매매전망·선도50·전세수급"
-                       f"(KB 주간·월간) · 기준 {_cyc_asof} KST · "
-                       "항목별 갱신주기 상이 · 매일 아침 자동 갱신")
+            _cyc_cap = ("부동산 사이클·선행지표 — 매수우위·매매전망·선도50·전세수급"
+                        f"(KB 주간·월간) · 기준 {_cyc_asof} KST · "
+                        "항목별 갱신주기 상이 · 매일 아침 자동 갱신")
         else:
-            st.caption("부동산 사이클·선행지표 — KB 주간·월간 지수 기반 · "
-                       "현재 샘플(아침 자동 수집 후 실데이터로 채워집니다)")
+            _cyc_cap = ("부동산 사이클·선행지표 — KB 주간·월간 지수 기반 · "
+                        "현재 샘플(아침 자동 수집 후 실데이터로 채워집니다)")
+        tab_header("부동산 시장 지표", caption=_cyc_cap, css=_RE_CSS)
         _render_indicator_charts(_resolved_indicator_series())
 
     elif _re_maintab == "지도":
-        st.markdown(_RE_CSS + '<div class="accent-bar"></div>', unsafe_allow_html=True)
-        st.title("가격지도")
+        tab_header("가격지도", css=_RE_CSS)
         _render_collect_controls()
         _render_watchlist_band()
         _render_streak_section()
         _render_map()
 
     elif _re_maintab == "실거래":
-        st.markdown(_RE_CSS + '<div class="accent-bar"></div>', unsafe_allow_html=True)
-        st.title("아파트 실거래")
-        st.caption("아파트 단지·실거래 종합 — 시장 방향·특이거래·시총·주목단지 · "
-                   "국토부 실거래 기준 · 직거래 기본 제외")
+        tab_header("아파트 실거래",
+                   caption="아파트 단지·실거래 종합 — 시장 방향·특이거래·시총·주목단지 · "
+                           "국토부 실거래 기준 · 직거래 기본 제외",
+                   css=_RE_CSS)
         _band_view = st.segmented_control(
             "기간", ["오늘", "주간"], default="오늘", key="re_band_view",
             label_visibility="collapsed")
@@ -3439,9 +3435,10 @@ def render_realestate():
             _render_hot_complexes()
 
     elif _re_maintab == "분양":
-        st.markdown(_RE_CSS + '<div class="accent-bar"></div>', unsafe_allow_html=True)
-        st.title("분양 단지")
-        st.caption("한국부동산원 청약홈 분양정보 · 청약 임박·진행 우선 · 매일 아침 자동 갱신 · 최근·다음 시각은 하단 🕐 자동 갱신 현황")
+        tab_header("분양 단지",
+                   caption="한국부동산원 청약홈 분양정보 · 청약 임박·진행 우선 · "
+                           "매일 아침 자동 갱신 · 최근·다음 시각은 하단 🕐 자동 갱신 현황",
+                   css=_RE_CSS)
         if _re_authed():
             if st.button(
                     "🔄 최신 분양정보 불러오기", key="re_sub_refresh",
