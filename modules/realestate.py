@@ -827,7 +827,6 @@ _RE_CSS = """
   transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease;}
 .re-anom:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(52,53,47,.07);border-color:var(--sage,#A7BBA9);}
 .re-anom.excl{opacity:.5;}
-.re-bdg{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:6px;flex:none;}
 .re-apt{font-weight:700;color:var(--ink,#34352f);}
 .re-sub{font-size:12px;color:var(--muted,#9a9b92);}
 .re-price{font-weight:700;color:var(--ink,#34352f);text-align:right;}
@@ -848,50 +847,6 @@ _RE_CSS = """
   background:linear-gradient(90deg,#E6F1FB,#EFEEE9 50%,#FCEBEB);position:relative;}
 .re-press .bar i{display:block;height:100%;background:#B65F5A;opacity:.55;}
 .re-press .nums b{font-weight:800;}
-/* 신고가 카드(B안) — 헤더 + 지도 아이콘 + 평형별 1년 밴드 칩 */
-.re-hi{background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);border-radius:12px;
-  padding:11px 14px;margin-bottom:8px;
-  transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease;}
-.re-hi:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(52,53,47,.07);border-color:var(--sage,#A7BBA9);}
-.re-hi.excl{opacity:.5;}
-.re-hi-top{display:flex;align-items:flex-start;gap:11px;}
-.re-hi-nm{font-weight:700;color:var(--ink,#34352f);font-size:14px;}
-.re-hi-nm a{color:inherit;text-decoration:none;border-bottom:1px dashed #D6D8CF;}
-.re-hi-nm a:hover{border-bottom-color:var(--sage,#A7BBA9);}
-.re-hi-sub{font-size:11.5px;color:var(--muted,#9a9b92);margin-top:2px;}
-.re-hi-map{flex:none;align-self:center;font-size:11px;font-weight:700;color:var(--sage-deep,#7E9A83);
-  text-decoration:none;border:1px solid var(--line,#ECEDE7);border-radius:7px;padding:3px 9px;
-  background:#fff;white-space:nowrap;}
-.re-hi-map:hover{background:#EEF1EC;border-color:var(--sage,#A7BBA9);}
-.re-hi-price{margin-left:auto;text-align:right;flex:none;}
-.re-hi-price b{font-size:17px;font-weight:800;color:var(--ink,#34352f);letter-spacing:-.02em;}
-.re-hi-price .tag{display:block;font-size:11px;font-weight:800;color:var(--up,#B65F5A);margin-top:2px;}
-.re-hi-band{border-top:1px dashed #E4E5DE;margin-top:11px;padding-top:10px;}
-.re-hi-bh{font-size:10.5px;font-weight:800;color:var(--muted,#9a9b92);letter-spacing:.02em;margin-bottom:9px;}
-.re-hi-chips{display:flex;flex-wrap:wrap;gap:7px;}
-.re-hi-chip{border:1px solid var(--line,#ECEDE7);border-radius:9px;padding:6px 10px;font-size:12px;
-  font-weight:700;color:var(--ink,#34352f);background:var(--bg,#FCFCFA);}
-.re-hi-chip.hl{border-color:#E7B7B4;background:#FCEBEB;color:#A32D2D;}
-.re-hi-chip b{font-weight:800;}
-.re-hi-chip small{color:var(--muted,#9a9b92);font-weight:600;margin-left:4px;}
-.re-hi-chip.hl small{color:#B77;}
-.re-hi-band-empty{font-size:11.5px;color:var(--muted,#9a9b92);}
-@media(max-width:680px){.re-hi-top{flex-wrap:wrap;} .re-hi-map{order:3;margin-left:34px;}}
-/* 신고가 단지 그룹 카드(A안) — 같은 단지 연속 신고가를 한 카드로 · 🔥 배지 + 거래별 행 */
-.gr-streak{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:800;
-  color:#fff;background:linear-gradient(90deg,#B65F5A,#C98077);border-radius:6px;
-  padding:2px 9px;margin-left:7px;vertical-align:2px;white-space:nowrap;}
-.gr-rows{border-top:1px dashed #E4E5DE;margin-top:10px;padding-top:4px;}
-.gr-row{display:grid;grid-template-columns:70px 52px 1fr auto 84px;align-items:baseline;gap:10px;
-  padding:7px 2px;border-bottom:1px solid #F4F5F0;font-size:12.5px;}
-.gr-row:last-child{border-bottom:none;}
-.gr-row.dim{opacity:.5;}
-.gr-row .d{color:var(--muted,#9a9b92);font-weight:600;font-size:11.5px;white-space:nowrap;}
-.gr-row .a{font-weight:700;color:#5d6258;}
-.gr-row .t{font-size:10.5px;font-weight:700;color:#A32D2D;}
-.gr-row .p{font-weight:800;color:var(--ink,#34352f);text-align:right;white-space:nowrap;}
-.gr-row .m{font-size:11px;font-weight:800;color:var(--up,#B65F5A);text-align:right;white-space:nowrap;}
-@media(max-width:680px){.gr-row{grid-template-columns:60px 44px 1fr auto 72px;gap:7px;}}
 /* 주간 뷰(A안) — 지표별 스파크라인 */
 .wk-wrap{background:var(--bg,#FCFCFA);border:1px solid var(--line,#ECEDE7);border-radius:12px;
   padding:4px 16px 8px;margin-bottom:8px;}
@@ -2711,6 +2666,427 @@ def _render_cap_leaders():
              f"주요 단지 유니버스 {n_gu}개 지역"), unsafe_allow_html=True)
 
 
+# ════════════════════════════════════════════════════════════════
+#  지역 보드('지역' 서브탭) — 평당가 10급지 동적 그루핑 + TOP20 행 알림
+#  · 데이터: fetch_cap_leaders(유니버스 전 단지 · 엔진이 chg/last_deal/pavg 동봉).
+#  · 리전(원자 단위): 서울 25개 자치구 + 경기 핵심(과천·분당·판교·위례·광교·광명·
+#    동탄·평촌·수지·용인)·일산·다산·별내 + 인천 송도·청라. 동네 단위(판교·위례 등)는
+#    법정동(dong) 매칭으로 시군구에서 분리. 미열거 지역(구성남·미사·덕양 등)은 '기타'.
+#  · 티어 배정(동적): 리전 평당가 = 소속 단지 평당가(대표가÷대표면적×3.3058)의 중위.
+#    경계 [9천/6천/5천/4천/3천만원] 고정 → 1~6급지. 대표가는 유니버스(월 리빌드)에서
+#    오므로 배정은 사실상 월 단위로 갱신되고, 최근 거래 단지는 최신가가 반영된다.
+#  · 최적화: 뷰어 파이썬이 리전→티어 배정·요약·시총 TOP20 컷까지 끝내고 iframe엔
+#    타일 요약 + 티어당 20단지만 실음(유니버스 전체 JSON 미탑재).
+# ════════════════════════════════════════════════════════════════
+_TIER_BOUNDS = [12000, 10000, 8000, 6500, 5500,
+                4500, 4000, 3500, 3000]              # 평당 만원 · 내림차순 경계
+_TIER_META = [
+    ("t1", "1급지", "평당 1.2억↑"),
+    ("t2", "2급지", "1.0~1.2억"),
+    ("t3", "3급지", "8천만~1억"),
+    ("t4", "4급지", "6.5~8천만"),
+    ("t5", "5급지", "5.5~6.5천만"),
+    ("t6", "6급지", "4.5~5.5천만"),
+    ("t7", "7급지", "4~4.5천만"),
+    ("t8", "8급지", "3.5~4천만"),
+    ("t9", "9급지", "3~3.5천만"),
+    ("t10", "10급지", "3천만 미만"),
+    ("etc", "기타", "미분류 유니버스 지역"),
+]
+# ── 동네 단위 법정동 리스트 (시군구 → 리전 분리 재료) ──
+_PANGYO_DONGS = {"판교동", "백현동", "삼평동", "운중동", "대장동"}
+_BUNDANG_DONGS = {"분당동", "수내동", "정자동", "서현동", "이매동", "야탑동",
+                  "금곡동", "구미동", "동원동", "석운동", "하산운동", "궁내동", "율동"}
+_WIRYE_DONGS_SN = {"창곡동"}          # 위례(성남 수정구)
+_WIRYE_DONGS_HN = {"학암동"}          # 위례(하남)
+_GWANGGYO_DONGS = {"이의동", "원천동", "하동"}          # 광교(수원 — 용인 상현동은 수지로)
+_SUJI_DONGS = {"풍덕천동", "죽전동", "동천동", "고기동", "신봉동", "성복동", "상현동"}
+_DONGTAN_DONGS = {"반송동", "석우동", "능동",
+                  "청계동", "영천동", "오산동", "목동", "산척동",
+                  "장지동", "송동", "방교동", "신동", "중동"}
+_MANAN_DONGS = {"안양동", "석수동", "박달동"}            # 안양 만안구(≠평촌)
+_ILSAN_DONGS = {"장항동", "마두동", "백석동", "풍동", "식사동", "중산동", "정발산동",
+                "산황동", "사리현동", "성석동", "설문동", "문봉동", "지영동",
+                "일산동", "주엽동", "탄현동", "대화동", "덕이동", "가좌동",
+                "구산동", "법곳동"}
+_DASAN_DONGS = {"다산동", "도농동", "지금동"}            # 다산신도시(진건·지금)
+_BYEOLNAE_DONGS = {"별내동"}
+
+
+# 서울 안에서 소속 구 평균을 크게 웃돌아 별도 리전으로 분리 관리하는 동네들.
+#   목동 신시가지 8~14단지는 법정동상 신정동이라 목동·신정동을 묶는다.
+_SEOUL_DONG_SPLIT = {
+    "영등포구": ({"여의도동"}, "여의도"),
+    "양천구": ({"목동", "신정동"}, "목동"),
+    "성동구": ({"성수동1가", "성수동2가"}, "성수"),
+    "용산구": ({"이촌동"}, "이촌"),
+    "송파구": ({"잠실동", "신천동"}, "잠실"),
+}
+
+
+def _region_of_cx(gu, dong):
+    """(지역, 법정동) → 리전명. 열거 밖 지역·동 미상 애매 케이스는 None(→기타)."""
+    if gu.endswith("구") and gu not in ("연수구", "인천서구"):
+        sp = _SEOUL_DONG_SPLIT.get(gu)
+        if sp and dong in sp[0]:
+            return sp[1]                               # 여의도·목동·성수·이촌·잠실 분리
+        return gu                                      # 서울 자치구는 구 자체가 리전
+    if gu == "과천시":
+        return "과천"
+    if gu == "광명시":
+        return "광명"
+    if gu == "성남시":
+        if dong in _PANGYO_DONGS:
+            return "판교"
+        if dong in _WIRYE_DONGS_SN:
+            return "위례"
+        if dong in _BUNDANG_DONGS:
+            return "분당"
+        return None                                    # 구성남 등
+    if gu == "하남시":
+        return "위례" if dong in _WIRYE_DONGS_HN else None   # 미사 등
+    if gu == "용인시":
+        if not dong:
+            return None
+        return "수지" if dong in _SUJI_DONGS else "용인"
+    if gu == "수원시":
+        return "광교" if dong in _GWANGGYO_DONGS else None
+    if gu == "화성시":
+        return "동탄" if dong in _DONGTAN_DONGS else None
+    if gu == "안양시":
+        return None if (not dong or dong in _MANAN_DONGS) else "평촌"
+    if gu == "고양시":
+        return "일산" if dong in _ILSAN_DONGS else None      # 덕양 등
+    if gu == "남양주시":
+        if dong in _DASAN_DONGS:
+            return "다산"
+        if dong in _BYEOLNAE_DONGS:
+            return "별내"
+        return None
+    if gu == "연수구":
+        return "송도" if dong == "송도동" else None
+    if gu == "인천서구":
+        return "청라" if dong == "청라동" else None
+    return None
+
+
+def _cx_pyeong(c):
+    """caplead 엔트리 → 평당가(만원). 대표가(price 만원)÷대표면적(㎡)×3.3058. 실패 None."""
+    try:
+        area = float(str(c.get("area") or "").replace("㎡", "").strip())
+        price = float(c.get("price") or 0)
+        if area <= 0 or price <= 0:
+            return None
+        return price / area * 3.3058
+    except Exception:
+        return None
+
+
+_REGION_BOARD_HTML = r'''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><style>
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
+:root{--bg:#FCFCFA;--card:#fff;--ink:#34352f;--muted:#9a9b92;--line:#ECEDE7;--line2:#DEDED7;
+ --sage:#A7BBA9;--sage2:#7E9A83;--up:#B65F5A;--dn:#5A7CA0;--sum:#F6F7F2;
+ --kf:'Pretendard',-apple-system,sans-serif;}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);font-size:14px;
+ -webkit-font-smoothing:antialiased}
+.box{padding:2px 1px 8px}
+.up{color:var(--up)}.dn{color:var(--dn)}
+.gt-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:14px}
+@media(max-width:680px){.gt-grid{grid-template-columns:repeat(2,1fr)}}
+.gt{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:11px 13px;
+ cursor:pointer;transition:transform .14s,box-shadow .14s,border-color .14s}
+.gt:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(52,53,47,.08);border-color:var(--sage)}
+.gt.on{border-color:var(--sage2);box-shadow:inset 0 0 0 1.5px var(--sage2)}
+.gt-top{display:flex;align-items:baseline;justify-content:space-between;gap:6px}
+.gt-nm{font-size:13px;font-weight:800;letter-spacing:-.01em}
+.gt-rng{font-size:9px;font-weight:700;color:var(--muted);white-space:nowrap}
+.gt-rg{font-size:9.5px;font-weight:600;color:#6f7068;margin-top:3px;line-height:1.45;
+ display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:27px}
+.gt-chg{font-size:16px;font-weight:800;letter-spacing:-.02em;margin-top:6px}
+.gt-chg.fl{color:var(--muted);font-size:13px}
+.gt-bar{display:flex;height:5px;border-radius:3px;overflow:hidden;background:#EFF0EA;margin-top:6px}
+.gt-bar .u{background:var(--up)}.gt-bar .d{background:var(--dn)}
+.gt-ud{font-size:9.5px;font-weight:700;color:var(--muted);margin-top:4px;display:flex;justify-content:space-between}
+.cx-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:4px 2px 8px;flex-wrap:wrap}
+.cx-title{font-size:13px;font-weight:800}
+.cx-title em{font-style:normal;font-size:11px;font-weight:600;color:var(--muted);margin-left:7px}
+.cx-rgs{font-size:10.5px;font-weight:600;color:var(--muted);width:100%;margin-top:2px;line-height:1.5}
+.cx-rgs b{color:#5d6258;font-weight:700}
+.cx-cap{font-size:10.5px;color:var(--muted);font-weight:700;white-space:nowrap}
+.cx{background:var(--card);border:1px solid var(--line);border-radius:13px;overflow:hidden}
+.cx-row{display:grid;grid-template-columns:26px 1fr auto;align-items:flex-start;gap:11px;
+ padding:11px 14px;border-bottom:1px solid var(--line)}
+.cx-row:last-child{border-bottom:none}
+.cx-row:hover{background:var(--sum)}
+.rank{font-size:13.5px;font-weight:800;color:var(--sage2);text-align:center;margin-top:1px}
+.cx-row.top1 .rank{color:var(--up)}
+.rg-bdg{display:inline-block;font-size:9.5px;font-weight:800;color:var(--sage2);background:#EEF3EF;
+ border-radius:5px;padding:1px 6px;margin-right:6px;vertical-align:1px}
+.cx-nm{font-size:13px;font-weight:700;line-height:1.3;min-width:0}
+.cx-nm .nv{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;
+ border-radius:4px;background:#03C75A;color:#fff;font-size:9.5px;font-weight:900;line-height:1;
+ margin-left:5px;vertical-align:1px;text-decoration:none}
+.cx-nm .nv:hover{filter:brightness(.92)}
+.cx-nm small{display:block;font-size:10.5px;font-weight:600;color:var(--muted);margin-top:2px}
+.pv{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.pv span{font-size:11px;font-weight:800;color:var(--ink);background:#F7F8F4;
+ border:1px solid var(--line);border-radius:7px;padding:3px 8px;white-space:nowrap}
+.pv span i{font-style:normal;font-weight:700;color:var(--muted);font-size:9.5px;margin-right:4px}
+.pv span small{font-weight:600;color:#B7B8B0;font-size:9px;margin-left:3px}
+.pv .none{color:#B7B8B0;background:#FAFAF7;font-weight:700}
+.al{margin-top:8px;display:flex;flex-direction:column;gap:4px;border-top:1px dashed #EDEEE7;padding-top:8px}
+.al-i{font-size:11px;font-weight:700;color:#5d6258;display:flex;gap:7px;align-items:baseline;flex-wrap:wrap}
+.al-i .b{font-size:9.5px;font-weight:800;border-radius:5px;padding:1.5px 7px;white-space:nowrap}
+.al-i .b.hi{background:var(--up);color:#fff}
+.al-i .b.up{background:#FBEEED;color:var(--up);border:1px solid #EFD3D0}
+.al-i .b.dn{background:#EAF0F7;color:var(--dn);border:1px solid #D3DEEC}
+.al-i .dt{color:var(--muted);font-weight:600;font-size:10.5px}
+.al-i b.p{font-weight:800;color:var(--ink)}
+.al-more{font-size:10px;font-weight:700;color:var(--muted)}
+.cx-r{text-align:right;white-space:nowrap}
+.cx-chg b{font-size:13.5px;font-weight:800}
+.cx-chg .stale{color:#B7B8B0;font-weight:800}
+.cx-r small{display:block;font-size:9.5px;font-weight:700;color:var(--muted);margin-top:2px}
+.empty{font-size:12px;color:var(--muted);padding:18px 14px}
+@media(max-width:680px){.cx-row{grid-template-columns:22px 1fr auto;gap:8px;padding:10px 11px}}
+</style></head><body><div class="box">
+  <div class="gt-grid" id="gtGrid"></div>
+  <div class="cx-head"><span class="cx-title" id="cxTitle"></span>
+    <span class="cx-cap">시총 TOP 20 · 평형 3개월 평균 · 🔺신고가·▲▼±5% 알림</span>
+    <span class="cx-rgs" id="cxRgs"></span></div>
+  <div class="cx" id="cxList"></div>
+</div>
+<script>
+const G=__G__;
+let sel=null;
+for(const g of G){if(g.n){sel=g.k;break;}}
+const pct=c=>(c>=0?"+":"")+c.toFixed(1)+"%";
+const pyf=p=>p>=10000?(p/10000).toFixed(1).replace(/\.0$/,"")+"억":Math.round(p/1000)/10+"천만";
+function bar(g){const t=(g.up+g.dn+g.fl)||1;
+ return '<div class="gt-bar"><span class="u" style="width:'+(g.up/t*100)+'%"></span>'
+  +'<span class="d" style="width:'+(g.dn/t*100)+'%"></span></div>';}
+function pvHTML(c){
+ if(!c.pavg||!c.pavg.length)
+  return '<div class="pv"><span class="none">\ucd5c\uadfc 3\uac1c\uc6d4 \uac70\ub798 \uc5c6\uc74c \u00b7 \ub300\ud45c\uac00 '+(c.p||"\u2014")+'</span></div>';
+ return '<div class="pv">'+c.pavg.map(function(b){
+  return '<span><i>'+b.area+'\u33a1</i>'+b.avg+'\uc5b5<small>'+b.n+'\uac74</small></span>';}).join("")+'</div>';}
+function chgHTML(c){
+ if(c.chg==null)return '<span class="cx-chg"><b class="stale">\u2014</b></span><small>\uac70\ub798 \ub738</small>';
+ var cls=c.chg>=0?"up":"dn";
+ return '<span class="cx-chg"><b class="'+cls+'">'+pct(c.chg)+'</b></span><small>30\uc77c\u6bd4</small>';}
+function alHTML(c){
+ if(!c.al||!c.al.length)return "";
+ var items=c.al.slice(0,3).map(function(a){
+  var bdg=a.t==="hi"
+   ?'<span class="b hi">\ud83d\udd3a \uc2e0\uace0\uac00'+(a.v!=null?" +"+a.v+"%":"")+'</span>'
+   :(a.t==="up"?'<span class="b up">\u25b2 \ud3c9\uade0+'+a.v+'%</span>'
+               :'<span class="b dn">\u25bc \ud3c9\uade0'+a.v+'%</span>');
+  return '<div class="al-i">'+bdg+'<span class="dt">'+a.d+'</span>'
+   +'<span>'+a.area+'\u33a1</span><b class="p">'+a.p+'</b></div>';}).join("");
+ var more=c.al.length>3?'<div class="al-more">+'+(c.al.length-3)+'\uac74 \ub354</div>':"";
+ return '<div class="al">'+items+more+'</div>';}
+function nv(c){var q=encodeURIComponent(((c.dong?c.gu+" "+c.dong:c.gu)+" "+c.apt).trim());
+ return '<a class="nv" href="https://search.naver.com/search.naver?query='+q
+  +'" target="_blank" rel="noopener" onclick="event.stopPropagation()">N</a>';}
+function draw(){
+ document.getElementById("gtGrid").innerHTML=G.map(function(g){
+  var chg=(g.chg==null)?'<div class="gt-chg fl">\u2014</div>'
+   :'<div class="gt-chg '+(g.chg>=0?"up":"dn")+'">'+pct(g.chg)+'</div>';
+  var rgs=g.regions.length?g.regions.map(function(r){return r.nm;}).join("\u00b7"):"\u2014";
+  return '<div class="gt '+(g.k===sel?"on":"")+'" data-k="'+g.k+'">'
+   +'<div class="gt-top"><span class="gt-nm">'+g.nm+'</span><span class="gt-rng">'+g.rng+'</span></div>'
+   +'<div class="gt-rg" title="'+rgs+'">'+rgs+'</div>'+chg+bar(g)
+   +'<div class="gt-ud"><span class="up">\u25b2'+g.up+'</span><span>'+g.n+'\ub2e8\uc9c0</span>'
+   +'<span class="dn">\u25bc'+g.dn+'</span></div></div>';}).join("");
+ document.querySelectorAll(".gt").forEach(function(el){el.onclick=function(){sel=el.dataset.k;draw();};});
+ var g=G.find(function(x){return x.k===sel;});if(!g)return;
+ document.getElementById("cxTitle").innerHTML=g.nm+' \uc8fc\uc694 \ub2e8\uc9c0<em>'+g.rng
+  +(g.cap?' \u00b7 \ud2f0\uc5b4 \uc2dc\ucd1d '+g.cap:'')+'</em>';
+ document.getElementById("cxRgs").innerHTML=g.regions.length
+  ?'\uad6c\uc131: '+g.regions.map(function(r){return '<b>'+r.nm+'</b> '+pyf(r.py);}).join(' \u00b7 ')
+  :'';
+ document.getElementById("cxList").innerHTML=g.rows.length?g.rows.map(function(c,i){
+  return '<div class="cx-row'+(i===0?" top1":"")+'"><div class="rank">'+(i+1)+'</div>'
+   +'<div class="cx-nm"><span class="rg-bdg">'+c.rg+'</span>'+c.apt+nv(c)
+   +'<small>'+c.gu+(c.dong?" "+c.dong:"")+' \u00b7 '+c.units.toLocaleString()+'\uc138\ub300'
+   +' \u00b7 \uc2dc\ucd1d '+c.cap+'</small>'+pvHTML(c)+alHTML(c)+'</div>'
+   +'<div class="cx-r">'+chgHTML(c)
+   +(c.dd?'<small>\ucd5c\uadfc '+c.dd+'</small>':'')+'</div></div>';}).join("")
+  :'<div class="empty">\uc774 \ud2f0\uc5b4\uc5d0 \ubc30\uc815\ub41c \ub2e8\uc9c0\uac00 \uc5c6\uc5b4\uc694.</div>';
+ _fit();}
+draw();
+function _fit(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;
+ if(window.frameElement){window.frameElement.style.height=h+"px";window.frameElement.setAttribute("height",h);}}catch(e){}}
+window.addEventListener("load",_fit);setTimeout(_fit,150);setTimeout(_fit,600);setTimeout(_fit,1500);
+window.addEventListener("resize",_fit);try{new ResizeObserver(_fit).observe(document.body);}catch(e){}
+</script></body></html>'''
+
+
+def _eok_s(manwon):
+    """만원 → '18.2억' (뷰어 알림용 간이 포맷)."""
+    v = manwon / 1e4
+    s = f"{v:.1f}".rstrip("0").rstrip(".")
+    return f"{s}억"
+
+
+def _hi_alert_index(days=30):
+    """anomalies(엔진 신고가 스캔) → (gu, apt)별 최근 N일 신고가 목록(직거래 제외).
+    지역 보드 TOP20 행 알림에 병합할 재료. [{'d':'MM.DD','area':㎡,'p':가격,'v':마진%}]"""
+    from datetime import date as _date, timedelta as _td
+    cut = _date.today() - _td(days=days)
+    idx = {}
+    for r in fetch_anomalies() or []:
+        na = _anom_norm(r)
+        if not na or na[0] != "신고가" or na[9]:       # 신고가만 · 직거래 제외
+            continue
+        dt = _anom_date(na[10])
+        if not dt or dt < cut:
+            continue
+        idx.setdefault((na[4], na[3]), []).append({
+            "d": f"{dt.month:02d}.{dt.day:02d}",
+            "area": _area_int(na[5]),
+            "p": na[6],
+            "v": (round(na[13], 1) if isinstance(na[13], (int, float)) else None),
+        })
+    return idx
+
+
+def _cx_alerts(c, hi_idx):
+    """단지 알림 병합 — 신고가(hi_idx) 우선 + 평균 ±5% 괴리(caplead.alerts).
+    같은 (일자, 평형)이 신고가로 이미 있으면 괴리 알림은 중복 제거. 날짜 내림차순."""
+    als = []
+    for h in hi_idx.get((c["gu"], c["apt"]), []):
+        als.append({"d": h["d"], "t": "hi", "area": h["area"],
+                    "p": h["p"], "v": h["v"]})
+    seen = {(a["d"], a["area"]) for a in als}
+    for a in (c.get("alerts") or []):
+        d = str(a.get("d") or "")[5:10].replace("-", ".")
+        area = a.get("area")
+        if not d or (d, area) in seen:
+            continue
+        als.append({"d": d, "t": a.get("t"), "area": area,
+                    "p": _eok_s(a["price"]), "v": a.get("dev")})
+    als.sort(key=lambda x: x["d"], reverse=True)
+    return als or None
+
+
+def _tier_of(py):
+    """평당가(만원) → 티어 키. None → 'etc'."""
+    if py is None:
+        return "etc"
+    for i, b in enumerate(_TIER_BOUNDS):
+        if py >= b:
+            return f"t{i + 1}"
+    return "t10"
+
+
+def _region_board_payload():
+    """fetch_cap_leaders → 6티어(+기타) 페이로드. 반환 (그룹 리스트, live 여부).
+    그룹: {k,nm,rng,regions:[{nm,py}],chg,up,dn,fl,n,cap,rows[≤20]}.
+      · 리전 평당가 = 소속 단지 평당가(대표가÷대표면적×3.3058) 중위 → 티어 배정(동적)
+      · 그룹 chg = 최근 3개월 거래 有 단지들의 30일 등락 평균 · ▲▼ = 상승/하락 단지 수
+      · rows: 티어 내 시총순 TOP20 — rg(리전 배지)/pavg(평형별 3개월 평균)/chg/dd"""
+    import statistics as _stats
+    src = fetch_cap_leaders() or []
+    live = src is not _SAMPLE_CAPLEAD
+    hi_idx = _hi_alert_index()      # 신고가(30일·직거래 제외) — TOP20 행 알림 병합용
+    # 1) 단지 → 리전 배정 + 리전 평당가 표본 수집
+    by_region, py_pool = {}, {}
+    for c in src:
+        if not isinstance(c, dict):
+            continue
+        if not (c.get("apt") and c.get("gu") and c.get("units")):
+            continue
+        rg = _region_of_cx(c["gu"], c.get("dong") or "") or "__etc__"
+        by_region.setdefault(rg, []).append(c)
+        py = _cx_pyeong(c)
+        if py:
+            py_pool.setdefault(rg, []).append(py)
+    # 2) 리전 평당가(중위) → 티어 배정
+    region_py = {rg: _stats.median(v) for rg, v in py_pool.items() if v}
+    buckets = {k: [] for k, _, _ in _TIER_META}
+    tier_regions = {k: [] for k, _, _ in _TIER_META}
+    for rg, lst in by_region.items():
+        tk = "etc" if rg == "__etc__" else _tier_of(region_py.get(rg))
+        for c in lst:
+            c["_rg"] = "기타" if rg == "__etc__" else rg
+        buckets[tk].extend(lst)
+        if rg != "__etc__":
+            tier_regions[tk].append({"nm": rg, "py": round(region_py.get(rg, 0))})
+    # 3) 티어별 요약 + 시총 TOP20
+    out = []
+    for k, nm, rng in _TIER_META:
+        lst = buckets[k]
+        chgs = [c["chg"] for c in lst if isinstance(c.get("chg"), (int, float))]
+        up = sum(1 for v in chgs if v > 0)
+        dn = sum(1 for v in chgs if v < 0)
+        cap_sum = sum(c.get("cap_manwon") or (c.get("cap_eok") or 0) * 1e4
+                      for c in lst)
+        rows = []
+        for c in sorted(lst, key=lambda x: x.get("cap_manwon")
+                        or (x.get("cap_eok") or 0) * 1e4, reverse=True)[:20]:
+            dd = str(c.get("last_deal") or "")[5:10].replace("-", ".")
+            gu_disp = "인천 서구" if c["gu"] == "인천서구" else c["gu"]
+            rows.append({
+                "apt": c["apt"], "gu": gu_disp, "dong": c.get("dong") or "",
+                "rg": c.get("_rg") or gu_disp,
+                "units": int(c["units"]), "cap": c.get("cap_fmt") or "",
+                "p": c.get("price_eok") or "", "pavg": c.get("pavg"),
+                "chg": (c["chg"] if isinstance(c.get("chg"), (int, float))
+                        else None),
+                "dd": dd or None,
+                "al": _cx_alerts(c, hi_idx),
+            })
+        out.append({
+            "k": k, "nm": nm, "rng": rng, "n": len(lst),
+            "regions": sorted(tier_regions[k], key=lambda r: r["py"],
+                              reverse=True),
+            "chg": (round(sum(chgs) / len(chgs), 1) if chgs else None),
+            "up": up, "dn": dn, "fl": len(lst) - up - dn,
+            "cap": _fmt_cap(cap_sum) if cap_sum else "",
+            "rows": rows,
+        })
+    return out, live
+
+
+def _fmt_cap(manwon):
+    """시가총액(만원) → '19.0조'/'5,200억' (엔진 _fmt_cap과 동일 규칙 · 뷰어 로컬 복제)."""
+    jo = manwon / 1e8
+    if jo >= 1:
+        return f"{jo:.1f}조"
+    return f"{round(manwon / 1e4):,}억"
+
+
+def _render_region_board():
+    """'지역' 서브탭 — 평당가 6급지 타일(구성 리전·평균 등락·▲▼비율) + 선택 티어
+    시총 TOP20 (리전 배지 · 평형 3개월 평균가 칩 · 30일 등락 · 최근 거래일)."""
+    import json as _json
+    groups, live = _region_board_payload()
+    if not any(g["n"] for g in groups):
+        st.caption("지역 보드 데이터가 아직 없어요. 매일 아침 자동 수집 후 표시됩니다.")
+        return
+    html = _REGION_BOARD_HTML.replace(
+        "__G__", _json.dumps(groups, ensure_ascii=False))
+    # 높이: 타일 2행 + 리스트 20행(평형칩 wrap 여유) — iframe 내 _fit이 실측 보정
+    components.html(html, height=2300, scrolling=False)
+    src = ("국토부 실거래 × 유니버스" if live
+           else "샘플 · 아침 수집 후 실데이터로 교체")
+    st.markdown(foot_row(
+        src, "급지=리전 평당가(단지 대표가÷대표면적×3.3058 중위)로 동적 배정 · "
+             "경계 9천/6천/5천/4천/3천만원 고정 · 대표가는 유니버스 월 리빌드 주기로 갱신 · "
+             "리전=서울 자치구 + 판교·위례·광교·수지·동탄·평촌·일산·다산·별내·송도·청라 등 "
+             "법정동 분리(위례=성남 창곡+하남 학암, 송파 장지동은 송파구 유지 · "
+             "광교=수원 3개동, 상현동은 수지) · 미열거 지역=기타 · "
+             "그룹 등락=3개월 내 거래 단지의 30일比 평균 · 단지=티어 내 시총 TOP20 · "
+             "평형칩=평형별 3개월 평균(건수) · 알림=🔺평형별 신고가(직전 6개월 최고 "
+             "초과·마진%)와 ▲▼평형 3개월 평균 대비 ±5% 이상 괴리 거래(최근 30일·"
+             "직거래 제외·평균은 자기 거래 포함이라 소폭 보수적) · 송도·청라·다산·"
+             "별내는 다음 유니버스 리빌드부터 편입"),
+        unsafe_allow_html=True)
+
+
 def _render_hot_complexes():
     """주목 단지 보드 — 최근 거래 활발·상승(국토부 실거래) + 단지정보(세대수·시공사·소재지)
     + 면적별(59·84㎡) 최근 실거래가 + '네이버페이부동산' 링크."""
@@ -2788,213 +3164,6 @@ def _area_int(area):
         return int(float(str(area).replace("㎡", "").strip()))
     except Exception:
         return None
-
-
-def _hi_band_html(band, hi_area):
-    """평형별 1년 밴드(list of {area,lo,hi,n}) → 칩 HTML(B안). 신고가 평형은 강조.
-    hi_area: 단일값('45㎡'/45) 또는 set/list(그룹 카드 — 여러 평형 동시 강조).
-    밴드 데이터가 없으면 빈 문자열 반환 — 카드마다 결측 안내를 반복하지 않는다
-    (수집이 쌓이면 자동으로 표시 · 결측 안내의 반복은 콘텐츠보다 소음이 커짐)."""
-    if not band or not isinstance(band, list):
-        return ""
-    if isinstance(hi_area, (set, list, tuple)):
-        has = {a for a in (_area_int(x) for x in hi_area) if a is not None}
-    else:
-        a = _area_int(hi_area)
-        has = {a} if a is not None else set()
-    chips = ""
-    for b in band:
-        if not isinstance(b, dict):
-            continue
-        ar, lo, hi, n = b.get("area"), b.get("lo"), b.get("hi"), b.get("n")
-        if ar is None or lo is None or hi is None:
-            continue
-        rng = f"{lo}억" if lo == hi else f"{lo}~{hi}억"
-        n_s = f"<small>{int(n)}건</small>" if isinstance(n, (int, float)) and n else ""
-        hl = " hl" if int(ar) in has else ""
-        chips += f'<span class="re-hi-chip{hl}">{int(ar)}㎡ <b>{rng}</b>{n_s}</span>'
-    if not chips:
-        return ""
-    return ('<div class="re-hi-band">'
-            '<div class="re-hi-bh">최근 1년 · 평형별 실거래가 밴드</div>'
-            f'<div class="re-hi-chips">{chips}</div></div>')
-
-
-def _render_anomalies():
-    """특이거래 탭 — 신고가 전용. 최신순은 같은 단지의 연속 신고가를 한 카드로 통합
-    (🔥N건 연속 배지 + 거래별 행 + 평형별 1년 밴드 1회), 마진·금액순은 개별 카드."""
-    from datetime import date as _date
-    today = _date.today()
-    reg_f = st.segmented_control(
-        "지역", ["수도권", "서울", "경기", "강남3구"],
-        default="수도권", key="re_anom_region")
-    sort_f = st.segmented_control(
-        "정렬", ["최신순", "마진순", "금액순"],
-        default="최신순", key="re_hi_sort")
-    sens_f = st.segmented_control(
-        "민감도", ["느슨", "표준", "엄격"], default="표준", key="re_anom_sens",
-        help="소형단지(거래빈도) 컷·신고가 마진·표시기간을 한 번에 조절 — 너무 많/적으면 바꿔보세요")
-    exclude_direct = st.checkbox("직거래(증여추정) 제외", value=True, key="re_excl_direct")
-    P = _ANOM_PRESETS.get(sens_f or "표준", _ANOM_PRESETS["표준"])
-
-    def _pass_region(gu):
-        if reg_f == "서울":
-            return _region_of(gu) == "seoul"
-        if reg_f == "경기":
-            return _region_of(gu) == "gg"
-        if reg_f == "강남3구":
-            return any(n in gu for n in _GANGNAM3)
-        return True
-
-    def _pass_preset(r):
-        d, freq, sig = r[10], r[12], r[13]
-        if isinstance(freq, (int, float)) and freq < P["freq"]:   # 소형/저유동 컷
-            return False
-        dt = _anom_date(d)                                        # 표시 기간 컷
-        if dt and (today - dt).days > P["days"]:
-            return False
-        if isinstance(sig, (int, float)) and sig < P["margin"]:  # 신고가 마진 컷
-            return False
-        return True
-
-    anoms = [na for na in (_anom_norm(r) for r in fetch_anomalies()) if na]
-    rows = [r for r in anoms
-            if r[0] == "신고가"
-            and not (r[9] and exclude_direct)
-            and _pass_region(r[4]) and _pass_preset(r)]
-
-    if not rows:
-        st.caption("조건에 맞는 신고가가 없어요. 민감도·지역을 바꿔보세요.")
-        return
-
-    def _price_won(p):
-        try:
-            s = str(p).replace(",", "").strip()
-            return float(s.replace("억", "").strip()) if "억" in s else -1.0
-        except Exception:
-            return -1.0
-
-    def _sig(r):
-        return r[13] if isinstance(r[13], (int, float)) else 0.0
-
-    if sort_f == "금액순":
-        rows.sort(key=lambda r: _price_won(r[6]), reverse=True)
-    elif sort_f == "마진순":
-        rows.sort(key=_sig, reverse=True)
-    else:   # 최신순
-        rows.sort(key=lambda r: (r[10] is not None, r[10] or "", _sig(r)),
-                  reverse=True)
-
-    # ── 캡션: 건수 + 단지수 병기(그룹핑 도입으로 '건≠카드'가 되므로 혼선 방지) ──
-    n_apts = len({(r[4], r[3]) for r in rows})
-    st.caption(f"신고가 {len(rows)}건 · {n_apts}개 단지 · 최근 {P['days']}일 · {reg_f} · "
-               f"직거래 {'제외' if exclude_direct else '포함'}")
-
-    def _one_card(r):
-        """개별 신고가 카드(마진순·금액순 + 최신순 단일 건 단지). 거래일 인라인."""
-        (typ, bg, fg, apt, gu, area, price, chg, trade,
-         excl, d, units, freq, sig, band) = r
-        unit_s = (f" · {int(units):,}세대"
-                  if isinstance(units, (int, float)) and units else "")
-        freq_s = (f" · 1년 {int(freq)}건"
-                  if isinstance(freq, (int, float)) and freq else "")
-        trade_html = ('<span style="color:#A32D2D">직거래(증여추정·제외)</span>'
-                      if trade == "직거래" else trade)
-        date_inline = (f"{_anom_daylabel(d)} · " if _anom_date(d) else "")
-        margin_s = (f"신고 +{sig:.1f}%" if isinstance(sig, (int, float)) else "신고")
-        apt_link = (f'<a href="{_naver_land_url(apt)}" target="_blank" '
-                    f'rel="noopener">{apt}</a>')
-        nmap = _naver_n(f"{gu} {apt}".strip())
-        band_html = _hi_band_html(band, area)
-        return (
-            f'<div class="re-hi{" excl" if excl else ""}">'
-            f'<div class="re-hi-top">'
-            f'<span class="re-bdg" style="background:{bg};color:{fg};margin-top:1px">{typ}</span>'
-            f'<div style="flex:1;min-width:0"><div class="re-hi-nm">{apt_link}</div>'
-            f'<div class="re-hi-sub">{gu} · {area}{unit_s}{freq_s} · '
-            f'{date_inline}{trade_html}</div></div>'
-            f'{nmap}'
-            f'<div class="re-hi-price"><b>{price}</b>'
-            f'<span class="tag">{margin_s}</span></div>'
-            f'</div>{band_html}</div>')
-
-    def _grp_card(grp):
-        """단지 통합 카드(A안) — 같은 단지 신고가 N건을 한 카드로.
-        헤더: 단지명 + 🔥 N건 연속 배지 · 기간 · 대표가=최고 마진 거래.
-        본문: 거래별 컴팩트 행(날짜·평형·가격·마진, 직거래는 dim+표시).
-        밴드: 카드당 1번, 신고가 평형 전부 강조."""
-        typ, bg, fg = grp[0][0], grp[0][1], grp[0][2]
-        apt, gu = grp[0][3], grp[0][4]
-        units = next((r[11] for r in grp
-                      if isinstance(r[11], (int, float)) and r[11]), None)
-        freq = next((r[12] for r in grp
-                     if isinstance(r[12], (int, float)) and r[12]), None)
-        band = next((r[14] for r in grp if r[14]), None)
-        unit_s = f" · {int(units):,}세대" if units else ""
-        freq_s = f" · 1년 {int(freq)}건" if freq else ""
-        dates = sorted(dt for dt in (_anom_date(r[10]) for r in grp) if dt)
-        period_s = (f"{dates[0].month:02d}.{dates[0].day:02d} ~ "
-                    f"{dates[-1].month:02d}.{dates[-1].day:02d}"
-                    if len(dates) >= 2 else
-                    (_anom_daylabel(grp[0][10]) if dates else ""))
-        best = max(grp, key=_sig)
-        best_tag = (f"최고 신고 +{best[13]:.1f}%"
-                    if isinstance(best[13], (int, float)) else "신고")
-        rows_html = ""
-        for r in sorted(grp, key=lambda x: (x[10] or ""), reverse=True):
-            m_s = (f"신고 +{r[13]:.1f}%"
-                   if isinstance(r[13], (int, float)) else "신고")
-            t_s = "직거래" if r[8] == "직거래" else ""
-            rows_html += (
-                f'<div class="gr-row{" dim" if r[9] else ""}">'
-                f'<span class="d">{_anom_daylabel(r[10])}</span>'
-                f'<span class="a">{r[5]}</span>'
-                f'<span class="t">{t_s}</span>'
-                f'<span class="p">{r[6]}</span>'
-                f'<span class="m">{m_s}</span></div>')
-        hi_areas = {r[5] for r in grp}
-        band_html = _hi_band_html(band, hi_areas)
-        apt_link = (f'<a href="{_naver_land_url(apt)}" target="_blank" '
-                    f'rel="noopener">{apt}</a>')
-        nmap = _naver_n(f"{gu} {apt}".strip())
-        return (
-            f'<div class="re-hi">'
-            f'<div class="re-hi-top">'
-            f'<span class="re-bdg" style="background:{bg};color:{fg};margin-top:1px">{typ}</span>'
-            f'<div style="flex:1;min-width:0">'
-            f'<div class="re-hi-nm">{apt_link}'
-            f'<span class="gr-streak">🔥 {len(grp)}건 연속</span></div>'
-            f'<div class="re-hi-sub">{gu}{unit_s}{freq_s} · {period_s}</div></div>'
-            f'{nmap}'
-            f'<div class="re-hi-price"><b>{best[6]}</b>'
-            f'<span class="tag">{best_tag}</span></div>'
-            f'</div>'
-            f'<div class="gr-rows">{rows_html}</div>'
-            f'{band_html}</div>')
-
-    if sort_f == "최신순":
-        # A안: 같은 단지(지역+단지명)의 신고가를 한 카드로 통합. 그룹 순서는 rows
-        # 정렬(최신 거래일 우선)에서 각 단지가 처음 등장한 위치 = 그룹 최신일 순.
-        # 날짜 그룹 헤더는 제거(그룹이 날짜를 가로지르므로) — 기간은 카드에 표기.
-        grouped, order = {}, []
-        for r in rows:
-            k = (r[4], r[3])
-            if k not in grouped:
-                grouped[k] = []
-                order.append(k)
-            grouped[k].append(r)
-        html = "".join(
-            _grp_card(grouped[k]) if len(grouped[k]) > 1 else _one_card(grouped[k][0])
-            for k in order)
-    else:   # 마진순·금액순 — 랭킹 목적이라 개별 카드 유지
-        html = "".join(_one_card(r) for r in rows)
-    st.markdown(html, unsafe_allow_html=True)
-    st.markdown(foot_row(
-        "주요 단지 유니버스 · 국토부 실거래",
-        "소형 노이즈 제외 · 신고가=최근 6개월 최고 초과(마진≥민감도) · "
-        "최신순은 같은 단지 신고가를 한 카드로 통합(🔥N건 연속 · 대표가=최고 마진) · "
-        "밴드=해당 단지 각 평형의 최근 1년 실거래 최저~최고(직거래 제외 반영) · "
-        "민감도로 양 조절 · 단지명·N 아이콘=네이버 검색"), unsafe_allow_html=True)
 
 
 # ── 시장 요약 밴드(아파트 탭 상단 공통 1열) ─────────────────────────
@@ -3486,7 +3655,7 @@ def render_realestate():
 
     elif _re_maintab == "실거래":
         tab_header("아파트 실거래",
-                   caption="아파트 단지·실거래 종합 — 시장 방향·특이거래·시총·주목단지 · "
+                   caption="아파트 단지·실거래 종합 — 시장 방향·지역 급지·시총·주목단지 · "
                            "국토부 실거래 기준 · 직거래 기본 제외",
                    css=_RE_CSS)
         _band_view = st.segmented_control(
@@ -3496,12 +3665,13 @@ def render_realestate():
             _render_market_week()
         else:
             _render_market_band()
-        st_anom, st_cap, st_hot = st.tabs(["특이거래", "시총", "주목 단지"])
-        with st_anom:
-            st.markdown('<div class="re-grp">특이거래'
-                        '<span class="sub">신고가 · 평형별 최근 1년 실거래가 밴드</span></div>',
+        st_rg, st_cap, st_hot = st.tabs(["지역", "시총", "주목 단지"])
+        with st_rg:
+            st.markdown('<div class="re-grp">지역 급지별 매매 현황'
+                        '<span class="sub">평당가 10급지 동적 배정 · 여의도·목동·성수·'
+                        '이촌·잠실 분리 · 티어당 시총 TOP20 + 신고가·괴리 알림</span></div>',
                         unsafe_allow_html=True)
-            _render_anomalies()
+            _render_region_board()
         with st_cap:
             cap_view = st.segmented_control(
                 "보기", ["시가총액", "상승률", "모멘텀"], default="시가총액",
