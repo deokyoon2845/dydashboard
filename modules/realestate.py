@@ -2681,8 +2681,8 @@ def _render_cap_leaders():
 _TIER_BOUNDS = [12000, 10000, 8000, 6500, 5500,
                 4500, 4000, 3500, 3000]              # 평당 만원 · 내림차순 경계
 _TIER_META = [
-    ("t1", "1급지", "평당 1.2억↑"),
-    ("t2", "2급지", "1.0~1.2억"),
+    ("t1", "1급지", "강남3구 · 고정"),
+    ("t2", "2급지", "평당 1.0억↑"),
     ("t3", "3급지", "8천만~1억"),
     ("t4", "4급지", "6.5~8천만"),
     ("t5", "5급지", "5.5~6.5천만"),
@@ -2793,8 +2793,26 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);f
  -webkit-font-smoothing:antialiased}
 .box{padding:2px 1px 8px}
 .up{color:var(--up)}.dn{color:var(--dn)}
-.gt-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:14px}
-@media(max-width:680px){.gt-grid{grid-template-columns:repeat(2,1fr)}}
+.gt-wrap{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px}
+.gt-col{display:flex;flex-direction:column;gap:9px}
+#gtEtc{margin-bottom:12px}
+@media(max-width:680px){.gt-wrap{grid-template-columns:1fr}}
+.dt{display:grid;grid-template-columns:minmax(190px,300px) 1fr;gap:16px;align-items:center;
+ background:var(--card);border:1px solid var(--line);border-radius:13px;padding:12px 15px;margin-bottom:12px}
+@media(max-width:680px){.dt{grid-template-columns:1fr}}
+.dt-map svg{width:100%;height:auto;display:block}
+.dt-map path{fill:#EFF0EA;stroke:#fff;stroke-width:1.2}
+.dt-map path.sh{fill:var(--sage)}
+.dt-h{font-size:13px;font-weight:800}
+.dt-h em{font-style:normal;font-size:10.5px;font-weight:700;color:var(--muted);margin-left:7px}
+.dt-rgs{font-size:10.5px;font-weight:600;color:#6f7068;margin-top:5px;line-height:1.55}
+.dt-rgs b{color:#5d6258}
+.dt-top3{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.dt-top3 span{font-size:11px;font-weight:700;color:var(--ink);background:#F7F8F4;
+ border:1px solid var(--line);border-radius:7px;padding:4px 9px;white-space:nowrap}
+.dt-top3 span i{font-style:normal;color:var(--sage2);font-weight:800;margin-right:5px}
+.dt-top3 span b{font-weight:800}
+.dt-note{font-size:9.5px;color:#B7B8B0;font-weight:600;margin-top:7px}
 .gt{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:11px 13px;
  cursor:pointer;transition:transform .14s,box-shadow .14s,border-color .14s}
 .gt:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(52,53,47,.08);border-color:var(--sage)}
@@ -2852,14 +2870,21 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);f
 .empty{font-size:12px;color:var(--muted);padding:18px 14px}
 @media(max-width:680px){.cx-row{grid-template-columns:22px 1fr auto;gap:8px;padding:10px 11px}}
 </style></head><body><div class="box">
-  <div class="gt-grid" id="gtGrid"></div>
+  <div class="gt-wrap"><div class="gt-col" id="gtColL"></div><div class="gt-col" id="gtColR"></div></div>
+  <div id="gtEtc"></div>
+  <div class="dt"><div class="dt-map" id="dtMap"></div>
+    <div><div class="dt-h" id="dtH"></div><div class="dt-rgs" id="dtRgs"></div>
+      <div class="dt-top3" id="dtT3"></div>
+      <div class="dt-note">지도 음영 = 시·군·구 단위 근사 · 송도·청라는 지도 범위 밖(구성에만 표시)</div></div></div>
   <div class="cx-head"><span class="cx-title" id="cxTitle"></span>
-    <span class="cx-cap">시총 TOP 20 · 평형 3개월 평균 · 🔺신고가·▲▼±5% 알림</span>
-    <span class="cx-rgs" id="cxRgs"></span></div>
+    <span class="cx-cap">시총 TOP 20 · 평형 3개월 평균 · 🔺신고가·▲▼±5% 알림</span></div>
   <div class="cx" id="cxList"></div>
 </div>
 <script>
-const G=__G__;
+const G=__G__,GEO=__GEO__,TG=__TG__;
+document.getElementById("dtMap").innerHTML=
+ '<svg viewBox="0 210 1100 875" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="\uae09\uc9c0 \uc9c0\uc5ed \uc9c0\ub3c4">'
+ +GEO.map(function(s){return '<path data-n="'+s.n+'" d="'+s.d+'"/>';}).join("")+'</svg>';
 let sel=null;
 for(const g of G){if(g.n){sel=g.k;break;}}
 const pct=c=>(c>=0?"+":"")+c.toFixed(1)+"%";
@@ -2890,23 +2915,39 @@ function alHTML(c){
 function nv(c){var q=encodeURIComponent(((c.dong?c.gu+" "+c.dong:c.gu)+" "+c.apt).trim());
  return '<a class="nv" href="https://search.naver.com/search.naver?query='+q
   +'" target="_blank" rel="noopener" onclick="event.stopPropagation()">N</a>';}
+function card(g){
+ var chg=(g.chg==null)?'<div class="gt-chg fl">\u2014</div>'
+  :'<div class="gt-chg '+(g.chg>=0?"up":"dn")+'">'+pct(g.chg)+'</div>';
+ var rgs=g.regions.length?g.regions.map(function(r){return r.nm;}).join("\u00b7"):"\u2014";
+ return '<div class="gt '+(g.k===sel?"on":"")+'" data-k="'+g.k+'">'
+  +'<div class="gt-top"><span class="gt-nm">'+g.nm+'</span><span class="gt-rng">'+g.rng+'</span></div>'
+  +'<div class="gt-rg" title="'+rgs+'">'+rgs+'</div>'+chg+bar(g)
+  +'<div class="gt-ud"><span class="up">\u25b2'+g.up+'</span><span>'+g.n+'\ub2e8\uc9c0</span>'
+  +'<span class="dn">\u25bc'+g.dn+'</span></div></div>';}
 function draw(){
- document.getElementById("gtGrid").innerHTML=G.map(function(g){
-  var chg=(g.chg==null)?'<div class="gt-chg fl">\u2014</div>'
-   :'<div class="gt-chg '+(g.chg>=0?"up":"dn")+'">'+pct(g.chg)+'</div>';
-  var rgs=g.regions.length?g.regions.map(function(r){return r.nm;}).join("\u00b7"):"\u2014";
-  return '<div class="gt '+(g.k===sel?"on":"")+'" data-k="'+g.k+'">'
-   +'<div class="gt-top"><span class="gt-nm">'+g.nm+'</span><span class="gt-rng">'+g.rng+'</span></div>'
-   +'<div class="gt-rg" title="'+rgs+'">'+rgs+'</div>'+chg+bar(g)
-   +'<div class="gt-ud"><span class="up">\u25b2'+g.up+'</span><span>'+g.n+'\ub2e8\uc9c0</span>'
-   +'<span class="dn">\u25bc'+g.dn+'</span></div></div>';}).join("");
+ var main=G.filter(function(x){return x.k!=="etc";});
+ var etc=G.find(function(x){return x.k==="etc";});
+ document.getElementById("gtColL").innerHTML=main.slice(0,5).map(card).join("");
+ document.getElementById("gtColR").innerHTML=main.slice(5,10).map(card).join("");
+ document.getElementById("gtEtc").innerHTML=etc?card(etc):"";
  document.querySelectorAll(".gt").forEach(function(el){el.onclick=function(){sel=el.dataset.k;draw();};});
  var g=G.find(function(x){return x.k===sel;});if(!g)return;
+ // 상세 패널 — 미니지도 음영 + 구성 + TOP3
+ var shade={};
+ if(g.k!=="etc")g.regions.forEach(function(r){(TG[r.nm]||[r.nm]).forEach(function(n){shade[n]=1;});});
+ document.querySelectorAll("#dtMap path").forEach(function(p){
+  p.classList.toggle("sh",!!shade[p.dataset.n]);});
+ document.getElementById("dtH").innerHTML=g.nm+'<em>'+g.rng
+  +(g.cap?' \u00b7 \ud2f0\uc5b4 \uc2dc\ucd1d '+g.cap:'')+'</em>';
+ document.getElementById("dtRgs").innerHTML=g.regions.length
+  ?'\uad6c\uc131: '+g.regions.map(function(r){return '<b>'+r.nm+'</b> '+pyf(r.py);}).join(' \u00b7 ')
+  :'\uad6c\uc131 \uc9c0\uc5ed \uc5c6\uc74c';
+ document.getElementById("dtT3").innerHTML=g.rows.length
+  ?g.rows.slice(0,3).map(function(c,i){
+    return '<span><i>'+(i+1)+'</i>'+c.apt+' <b>'+(c.p?c.p+'\uc5b5':c.cap)+'</b></span>';}).join("")
+  :'<span class="none">\ub2e8\uc9c0 \uc5c6\uc74c</span>';
  document.getElementById("cxTitle").innerHTML=g.nm+' \uc8fc\uc694 \ub2e8\uc9c0<em>'+g.rng
   +(g.cap?' \u00b7 \ud2f0\uc5b4 \uc2dc\ucd1d '+g.cap:'')+'</em>';
- document.getElementById("cxRgs").innerHTML=g.regions.length
-  ?'\uad6c\uc131: '+g.regions.map(function(r){return '<b>'+r.nm+'</b> '+pyf(r.py);}).join(' \u00b7 ')
-  :'';
  document.getElementById("cxList").innerHTML=g.rows.length?g.rows.map(function(c,i){
   return '<div class="cx-row'+(i===0?" top1":"")+'"><div class="rank">'+(i+1)+'</div>'
    +'<div class="cx-nm"><span class="rg-bdg">'+c.rg+'</span>'+c.apt+nv(c)
@@ -2972,6 +3013,18 @@ def _cx_alerts(c, hi_idx):
     return als or None
 
 
+# 지역 보드 미니지도 — 리전명 → _GEO 도형명(시·군·구 근사). 미열거 리전은 이름 그대로 조회.
+# 송도·청라는 _GEO(서울+경기)에 인천 지오메트리가 없어 음영 제외(정보 패널에는 표시).
+_TIER_GEO_MAP = {
+    "강남3구": ["강남구", "서초구", "송파구"],
+    "여의도": ["영등포구"], "목동": ["양천구"], "성수": ["성동구"], "이촌": ["용산구"],
+    "판교": ["성남시"], "분당": ["성남시"], "위례": ["성남시", "하남시"],
+    "수지": ["용인시"], "용인": ["용인시"], "광교": ["수원시"], "동탄": ["화성시"],
+    "평촌": ["안양시"], "일산": ["고양시"], "다산": ["남양주시"], "별내": ["남양주시"],
+    "과천": ["과천시"], "광명": ["광명시"],
+}
+
+
 def _tier_of(py):
     """평당가(만원) → 티어 키. None → 'etc'."""
     if py is None:
@@ -3000,6 +3053,8 @@ def _region_board_payload():
         if not (c.get("apt") and c.get("gu") and c.get("units")):
             continue
         rg = _region_of_cx(c["gu"], c.get("dong") or "") or "__etc__"
+        if c["gu"] in _GANGNAM3:
+            rg = "강남3구"   # 지역 보드 한정 통합 — 잠실·신천 분리도 여기서는 흡수(1급지 고정)
         by_region.setdefault(rg, []).append(c)
         py = _cx_pyeong(c)
         if py:
@@ -3009,7 +3064,14 @@ def _region_board_payload():
     buckets = {k: [] for k, _, _ in _TIER_META}
     tier_regions = {k: [] for k, _, _ in _TIER_META}
     for rg, lst in by_region.items():
-        tk = "etc" if rg == "__etc__" else _tier_of(region_py.get(rg))
+        if rg == "__etc__":
+            tk = "etc"
+        elif rg == "강남3구":
+            tk = "t1"                              # 1급지 = 강남3구 고정
+        else:
+            tk = _tier_of(region_py.get(rg))
+            if tk == "t1":
+                tk = "t2"                          # 1급지는 강남3구 전용 → 타지역은 2급지로
         for c in lst:
             c["_rg"] = "기타" if rg == "__etc__" else rg
         buckets[tk].extend(lst)
@@ -3067,14 +3129,19 @@ def _render_region_board():
     if not any(g["n"] for g in groups):
         st.caption("지역 보드 데이터가 아직 없어요. 매일 아침 자동 수집 후 표시됩니다.")
         return
-    html = _REGION_BOARD_HTML.replace(
-        "__G__", _json.dumps(groups, ensure_ascii=False))
-    # 높이: 타일 2행 + 리스트 20행(평형칩 wrap 여유) — iframe 내 _fit이 실측 보정
-    components.html(html, height=2300, scrolling=False)
+    html = (_REGION_BOARD_HTML
+            .replace("__G__", _json.dumps(groups, ensure_ascii=False))
+            .replace("__GEO__", _json.dumps(
+                [{"n": s["n"], "d": s["d"]} for s in _GEO], ensure_ascii=False))
+            .replace("__TG__", _json.dumps(_TIER_GEO_MAP, ensure_ascii=False)))
+    # 높이: 좌우 5단 타일 + 상세 패널(지도) + 리스트 20행 — iframe 내 _fit이 실측 보정
+    components.html(html, height=2600, scrolling=False)
     src = ("국토부 실거래 × 유니버스" if live
            else "샘플 · 아침 수집 후 실데이터로 교체")
     st.markdown(foot_row(
-        src, "급지=리전 평당가(단지 대표가÷대표면적×3.3058 중위)로 동적 배정 · "
+        src, "1급지=강남3구(강남·서초·송파, 잠실 포함) 고정 — 평당 1.2억↑ 타지역은 "
+             "2급지로 배정 · 나머지 급지=리전 평당가(단지 대표가÷대표면적×3.3058 중위)로 "
+             "동적 배정 · "
              "경계 9천/6천/5천/4천/3천만원 고정 · 대표가는 유니버스 월 리빌드 주기로 갱신 · "
              "리전=서울 자치구 + 판교·위례·광교·수지·동탄·평촌·일산·다산·별내·송도·청라 등 "
              "법정동 분리(위례=성남 창곡+하남 학암, 송파 장지동은 송파구 유지 · "
