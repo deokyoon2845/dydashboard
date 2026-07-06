@@ -77,7 +77,7 @@ _SAMPLE = {
 
 _CSS = """
 <style>
-.ipo-bar{height:3px;width:30px;background:var(--sage,#A7BBA9);border-radius:3px;margin:0 0 12px;}
+/* 탭 상단 바는 표준 크롬(tab_header)의 .accent-bar(전역 CSS)를 사용 — 자체 바 제거 */
 .ipo-sec{font-size:13px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
   color:var(--sage-deep,#7E9A83);margin:24px 0 12px;display:flex;align-items:center;gap:8px;}
 .ipo-sec:before{content:"";width:14px;height:2px;background:var(--sage,#A7BBA9);border-radius:2px;}
@@ -553,17 +553,16 @@ def _apply(recent, market, sector, sort):
 
 # ── 메인 렌더 ─────────────────────────────────────────────────
 def render_ipo_tab():
-    st.markdown(_CSS, unsafe_allow_html=True)
-    st.markdown('<div class="ipo-bar"></div>', unsafe_allow_html=True)
-    st.title("IPO")
-
+    # 데이터를 먼저 읽어 캡션을 만든 뒤, 표준 크롬(tab_header)으로 연다.
     data = load_ipo()
     recent = data.get("recent") or []
     upcoming = data.get("upcoming") or []
     cap_txt = f"기준 {data.get('asof','')} · 최근 2년 내 상장(시총 5,000억원 이상)"
     if data.get("_sample"):
         cap_txt = "샘플 데이터 — 엔진 첫 실행 후 실데이터로 대체돼요 · " + cap_txt
-    st.caption(cap_txt)
+
+    from modules.ui import tab_header
+    tab_header("IPO", caption=cap_txt, css=_CSS)
 
     # ① 향후 IPO 일정
     st.markdown('<div class="ipo-sec">향후 IPO 일정 '
