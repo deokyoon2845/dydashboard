@@ -1484,7 +1484,7 @@ def _apt_info_fetch(pairs):
         by_sgg.setdefault(sgg, set()).add(apt)
     info_cache = {}
     for sgg, apts in by_sgg.items():
-        codes = SIGUNGU_CODES.get(sgg)
+        codes = _region_codes(sgg) or None
         name2code = {}
         if codes:
             code_list = codes if isinstance(codes, (list, tuple)) else [codes]
@@ -1557,7 +1557,7 @@ def collect_anomalies(asof=None, exclude_direct=True, months=ANOM_MONTHS, limit=
  
     items = []
     for name in regions:
-        codes = SIGUNGU_CODES.get(name) or []
+        codes = _region_codes(name)
         rows = []
         for code in codes:
             for ym in yms:
@@ -1717,11 +1717,29 @@ UNIVERSE_GG = ["과천시", "성남시", "하남시", "광명시", "안양시",
                "용인시", "수원시", "화성시", "고양시"]
  
  
+# ── 유니버스 전용 확장 지역 — 지도·거래량 집계(서울+경기 정의)엔 불포함 ──
+#   '지역' 서브탭 티어 보드용: 송도(연수구)·청라(인천서구)·다산/별내(남양주).
+#   SIGUNGU_CODES에 넣지 않는 이유: _SEOUL/_seoul_gu_names/지도 거래량 합계 등
+#   '수도권=서울+경기' 정의를 쓰는 기존 지표를 오염시키지 않기 위해(명시적 분리).
+UNIVERSE_EXTRA_CODES = {
+    "연수구": ["28185"],       # 인천 연수구(송도) — 서울 구와 이름 충돌 없음
+    "인천서구": ["28260"],     # 인천 서구(청라) — 표기 명확화를 위해 '인천서구'
+}
+UNIVERSE_EXTRA_SCOPE = ["남양주시", "연수구", "인천서구"]   # 남양주는 코드 기존 보유
+
+
+def _region_codes(name):
+    """지역명 → 법정동코드 리스트(수도권 기본 + 유니버스 확장). 미등록 지역은 []."""
+    return SIGUNGU_CODES.get(name) or UNIVERSE_EXTRA_CODES.get(name) or []
+
+
 def universe_scope():
-    """유니버스 대상 지역명 리스트(서울 25개구 + 경기 핵심 9시). SIGUNGU_CODES 교집합."""
+    """유니버스 대상 지역명 — 서울 25개구 + 경기 핵심 9시 + 확장(남양주·송도·청라)."""
     seoul = [n for n in SIGUNGU_CODES if n.endswith("구")]
     gg = [g for g in UNIVERSE_GG if g in SIGUNGU_CODES]
-    return seoul + gg
+    extra = [e for e in UNIVERSE_EXTRA_SCOPE
+             if e in SIGUNGU_CODES or e in UNIVERSE_EXTRA_CODES]
+    return seoul + gg + extra
  
  
 def load_universe():
@@ -1782,7 +1800,7 @@ def collect_universe(asof=None, force=False):
     price_cut = asof - timedelta(days=UNIVERSE_PRICE_MONTHS * 31)
     region_cands = {}          # 지역 → [단지 dict(가격 포함)]
     for name in scope:
-        codes = SIGUNGU_CODES.get(name) or []
+        codes = _region_codes(name)
         per = {}               # apt → [매매 rows]
         for code in codes:
             for ym in yms:
@@ -1951,6 +1969,51 @@ def _recent_price_in_band(rows, lo, hi):
     if not cand:
         return None
     return max(cand, key=lambda r: r["date"])["price"]
+
+
+def _area_avgs(rows):
+    """rows(3개월 매매) → 평형별 평균가 [{'area':㎡, 'avg':억, 'n':건수}] 면적 오름차순.
+    지역 보드('지역' 서브탭)의 단지 행에 평형별 최근 3개월 평균가를 칩으로 표시하는 재료.
+    rows는 이미 직거래 제외된 3개월 스윕(agg._rows) — 추가 API 콜 없음. 빈 입력 → None."""
+    d = {}
+    for r in rows or []:
+        d.setdefault(round(r["area"]), []).append(r["price"])
+    out = []
+    for ar in sorted(d):
+        ps = d[ar]
+        out.append({"area": int(ar), "avg": round(sum(ps) / len(ps) / 1e4, 1),
+                    "n": len(ps)})
+    return out or None
+
+
+# 지역 보드 TOP20 행 알림 — 평형별 3개월 평균 대비 ±ALERT_DEV% 이상 괴리 거래(직거래
+# 제외는 스윕 단계에서 이미 적용). 신고가 알림은 뷰어가 anomalies에서 매칭해 병합한다.
+ALERT_DEV = 5.0     # 임계(%) — 지역 보드 알림 민감도
+ALERT_DAYS = 30     # 표시 기간 — RTMS 신고지연(최대 30일) 감안
+
+
+def _price_alerts(rows, pavg):
+    """3개월 rows + 평형별 평균 → 최근 30일 ±5% 괴리 거래 목록(최신순 최대 6건).
+    [{'d':ISO일자,'area':㎡,'price':만원,'dev':±%,'t':'up'|'dn'}] · 없으면 None."""
+    if not rows or not pavg:
+        return None
+    avg = {b["area"]: b["avg"] for b in pavg if b.get("avg")}
+    cut = date.today() - timedelta(days=ALERT_DAYS)
+    out = []
+    for r in rows:
+        if r["date"] < cut:
+            continue
+        a = avg.get(round(r["area"]))
+        if not a:
+            continue
+        dev = (r["price"] / 1e4 / a - 1) * 100
+        if abs(dev) < ALERT_DEV:
+            continue
+        out.append({"d": r["date"].isoformat(),
+                    "area": int(round(r["area"])), "price": r["price"],
+                    "dev": round(dev, 1), "t": "up" if dev > 0 else "dn"})
+    out.sort(key=lambda x: x["d"], reverse=True)
+    return out[:6] or None
  
  
 def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=True,
@@ -1980,7 +2043,11 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
     stats = {"ok": 0, "fail": 0, "rows": 0, "calls": 0, "empty200": 0,
              "http": {}, "last_err": ""}
     agg = {}
-    for name, codes in SIGUNGU_CODES.items():
+    # 스윕 지역 = 수도권(SIGUNGU_CODES) + 유니버스 확장(인천 송도·청라 — 남양주는 기존).
+    #   확장 지역도 chg(30일比)·pavg(평형별 3개월 평균)를 얻어 지역 보드에 실린다.
+    #   지도·거래량 지표는 이 스윕과 무관(별도 함수)이라 '수도권' 정의는 불변.
+    _sweep = {**SIGUNGU_CODES, **UNIVERSE_EXTRA_CODES}
+    for name, codes in _sweep.items():
         rows = []
         for code in codes:
             for ym in yms:
@@ -2103,6 +2170,12 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
                 "addr": (d["gu"] + " " + (d.get("dong") or "")).strip(),
                 "jr": d.get("jr"), "gap_eok": d.get("gap"),   # 전세가율·갭은 유니버스에서
                 "fresh": bool(a),                              # 최근3개월 거래 있음(최신가)
+                # ── 지역 보드('지역' 서브탭) 재료 — 같은 스윕 재사용(추가 콜 0) ──
+                "chg": (a.get("chg") if a else None),          # 최근30일 vs 이전 평단가 등락%
+                "last_deal": (max(r["date"] for r in rs).isoformat() if rs
+                              else d.get("last_deal")),        # 최근 거래일(무거래 시 유니버스)
+                "pavg": (pavg := _area_avgs(rs)),              # 평형별 3개월 평균가(억)
+                "alerts": _price_alerts(rs, pavg),             # 평균 ±5% 괴리 거래(30일)
             })
         cap_leaders.sort(key=lambda c: c["cap_manwon"], reverse=True)
     elif with_cap:
@@ -2126,6 +2199,11 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
                 "p59_eok": _fmt_eok(p59) if p59 else None,
                 "p84_eok": _fmt_eok(p84) if p84 else None,
                 "dong": dnm, "addr": (d["gu"] + " " + dnm).strip(),
+                "fresh": True,                                 # 폴백=오늘 스윕 출신
+                "chg": d.get("chg"),
+                "last_deal": (max(r["date"] for r in rs).isoformat() if rs else None),
+                "pavg": (pavg := _area_avgs(rs)),
+                "alerts": _price_alerts(rs, pavg),
             })
         # 구별 시총 top cap_per_gu(작은 구도 노출 보장) ∪ 전체 시총 top cap_overall
         bygu2 = {}
@@ -2242,7 +2320,7 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
             show_gus |= {g["gu"] for g in gain_leaders}
         jeon = {}
         for gu in show_gus:
-            for code in SIGUNGU_CODES.get(gu, []):
+            for code in _region_codes(gu):
                 for ym in yms:
                     for r in _fetch(key, code, ym, "전월세", stats):
                         if exclude_direct and r["direct"]:
