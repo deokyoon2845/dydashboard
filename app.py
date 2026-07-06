@@ -356,7 +356,7 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 st.markdown(CSS.replace("__VARS__", LIGHT_VARS), unsafe_allow_html=True)
 
 # 각주 배지(A안) 공용 스타일 — ui.foot_badge를 쓰는 모든 탭에서 공유(1회 주입).
-from modules.ui import FOOT_CSS, foot_badge  # noqa: E402
+from modules.ui import FOOT_CSS, foot_badge, tab_header  # noqa: E402
 st.markdown(FOOT_CSS, unsafe_allow_html=True)
  
 # ── 상단 헤더 — 배너 클릭 = '오늘의 한 장'(주식 > 시장)으로 ──
@@ -1052,9 +1052,8 @@ def _render_market_head():
 
 # ── 지수 현황 탭 ──
 def render_indices():
-    st.markdown('<div class="accent-bar"></div>', unsafe_allow_html=True)
-    st.title("주요 지수 현황")
-    # 출처·지연 안내는 각 섹션 헤더의 ⓘ 배지로 이동(A안) — 탭 서브캡션 제거.
+    # 표준 크롬(tab_header) — 출처·지연 안내는 각 섹션 헤더의 ⓘ 배지에 있음(캡션 없음).
+    tab_header("주요 지수 현황")
  
     # '오늘의 한 장' — 헤드라인·스파인·시그널·합의/이견 + 섹션 내비 (본문보다 먼저)
     _render_market_head()
