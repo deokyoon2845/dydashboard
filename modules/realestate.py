@@ -841,9 +841,6 @@ _RE_CSS = """
 .re-stat{background:var(--card,#fff);border:1px solid var(--line,#ECEDE7);border-radius:10px;
   padding:7px 12px;font-size:12.5px;color:var(--ink,#34352f);}
 .re-stat b{font-size:16px;font-weight:800;margin-right:4px;letter-spacing:-.02em;}
-.re-daygroup{font-size:11.5px;font-weight:700;color:var(--muted,#9a9b92);margin:12px 2px 6px;
-  display:flex;align-items:center;gap:8px;}
-.re-daygroup::after{content:"";flex:1;height:1px;background:var(--line,#ECEDE7);}
 /* 상승압력 게이지 */
 .re-press{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px;font-size:11.5px;color:var(--muted,#9a9b92);}
 .re-press .lab b{color:var(--ink,#34352f);font-weight:800;}
@@ -880,6 +877,21 @@ _RE_CSS = """
 .re-hi-chip.hl small{color:#B77;}
 .re-hi-band-empty{font-size:11.5px;color:var(--muted,#9a9b92);}
 @media(max-width:680px){.re-hi-top{flex-wrap:wrap;} .re-hi-map{order:3;margin-left:34px;}}
+/* 신고가 단지 그룹 카드(A안) — 같은 단지 연속 신고가를 한 카드로 · 🔥 배지 + 거래별 행 */
+.gr-streak{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:800;
+  color:#fff;background:linear-gradient(90deg,#B65F5A,#C98077);border-radius:6px;
+  padding:2px 9px;margin-left:7px;vertical-align:2px;white-space:nowrap;}
+.gr-rows{border-top:1px dashed #E4E5DE;margin-top:10px;padding-top:4px;}
+.gr-row{display:grid;grid-template-columns:70px 52px 1fr auto 84px;align-items:baseline;gap:10px;
+  padding:7px 2px;border-bottom:1px solid #F4F5F0;font-size:12.5px;}
+.gr-row:last-child{border-bottom:none;}
+.gr-row.dim{opacity:.5;}
+.gr-row .d{color:var(--muted,#9a9b92);font-weight:600;font-size:11.5px;white-space:nowrap;}
+.gr-row .a{font-weight:700;color:#5d6258;}
+.gr-row .t{font-size:10.5px;font-weight:700;color:#A32D2D;}
+.gr-row .p{font-weight:800;color:var(--ink,#34352f);text-align:right;white-space:nowrap;}
+.gr-row .m{font-size:11px;font-weight:800;color:var(--up,#B65F5A);text-align:right;white-space:nowrap;}
+@media(max-width:680px){.gr-row{grid-template-columns:60px 44px 1fr auto 72px;gap:7px;}}
 /* 주간 뷰(A안) — 지표별 스파크라인 */
 .wk-wrap{background:var(--bg,#FCFCFA);border:1px solid var(--line,#ECEDE7);border-radius:12px;
   padding:4px 16px 8px;margin-bottom:8px;}
@@ -2770,16 +2782,26 @@ def _render_hot_complexes():
         "N 아이콘(초록)으로 네이버 검색"), unsafe_allow_html=True)
 
 
+def _area_int(area):
+    """'45㎡' / 45.0 / '45' → 45(int). 실패 시 None."""
+    try:
+        return int(float(str(area).replace("㎡", "").strip()))
+    except Exception:
+        return None
+
+
 def _hi_band_html(band, hi_area):
     """평형별 1년 밴드(list of {area,lo,hi,n}) → 칩 HTML(B안). 신고가 평형은 강조.
+    hi_area: 단일값('45㎡'/45) 또는 set/list(그룹 카드 — 여러 평형 동시 강조).
     밴드 데이터가 없으면 빈 문자열 반환 — 카드마다 결측 안내를 반복하지 않는다
     (수집이 쌓이면 자동으로 표시 · 결측 안내의 반복은 콘텐츠보다 소음이 커짐)."""
     if not band or not isinstance(band, list):
         return ""
-    try:
-        ha = int(float(str(hi_area).replace("㎡", "").strip()))
-    except Exception:
-        ha = None
+    if isinstance(hi_area, (set, list, tuple)):
+        has = {a for a in (_area_int(x) for x in hi_area) if a is not None}
+    else:
+        a = _area_int(hi_area)
+        has = {a} if a is not None else set()
     chips = ""
     for b in band:
         if not isinstance(b, dict):
@@ -2789,7 +2811,7 @@ def _hi_band_html(band, hi_area):
             continue
         rng = f"{lo}억" if lo == hi else f"{lo}~{hi}억"
         n_s = f"<small>{int(n)}건</small>" if isinstance(n, (int, float)) and n else ""
-        hl = " hl" if (ha is not None and int(ar) == ha) else ""
+        hl = " hl" if int(ar) in has else ""
         chips += f'<span class="re-hi-chip{hl}">{int(ar)}㎡ <b>{rng}</b>{n_s}</span>'
     if not chips:
         return ""
@@ -2799,7 +2821,8 @@ def _hi_band_html(band, hi_area):
 
 
 def _render_anomalies():
-    """특이거래 탭 — 신고가 전용. 각 신고가 단지의 평형별 최근 1년 실거래가 밴드 동반."""
+    """특이거래 탭 — 신고가 전용. 최신순은 같은 단지의 연속 신고가를 한 카드로 통합
+    (🔥N건 연속 배지 + 거래별 행 + 평형별 1년 밴드 1회), 마진·금액순은 개별 카드."""
     from datetime import date as _date
     today = _date.today()
     reg_f = st.segmented_control(
@@ -2862,33 +2885,28 @@ def _render_anomalies():
         rows.sort(key=lambda r: (r[10] is not None, r[10] or "", _sig(r)),
                   reverse=True)
 
-    st.caption(f"신고가 {len(rows)}건 · 최근 {P['days']}일 · {reg_f} · "
+    # ── 캡션: 건수 + 단지수 병기(그룹핑 도입으로 '건≠카드'가 되므로 혼선 방지) ──
+    n_apts = len({(r[4], r[3]) for r in rows})
+    st.caption(f"신고가 {len(rows)}건 · {n_apts}개 단지 · 최근 {P['days']}일 · {reg_f} · "
                f"직거래 {'제외' if exclude_direct else '포함'}")
 
-    grouped = (sort_f == "최신순")
-    html = ""
-    cur_day = None
-    for (typ, bg, fg, apt, gu, area, price, chg, trade,
-         excl, d, units, freq, sig, band) in rows:
-        if grouped:
-            dl = _anom_daylabel(d)
-            if dl != cur_day:
-                cur_day = dl
-                html += f'<div class="re-daygroup">{dl}</div>'
+    def _one_card(r):
+        """개별 신고가 카드(마진순·금액순 + 최신순 단일 건 단지). 거래일 인라인."""
+        (typ, bg, fg, apt, gu, area, price, chg, trade,
+         excl, d, units, freq, sig, band) = r
         unit_s = (f" · {int(units):,}세대"
                   if isinstance(units, (int, float)) and units else "")
         freq_s = (f" · 1년 {int(freq)}건"
                   if isinstance(freq, (int, float)) and freq else "")
         trade_html = ('<span style="color:#A32D2D">직거래(증여추정·제외)</span>'
                       if trade == "직거래" else trade)
-        date_inline = ("" if grouped or not _anom_date(d)
-                       else f"{_anom_daylabel(d)} · ")
+        date_inline = (f"{_anom_daylabel(d)} · " if _anom_date(d) else "")
         margin_s = (f"신고 +{sig:.1f}%" if isinstance(sig, (int, float)) else "신고")
         apt_link = (f'<a href="{_naver_land_url(apt)}" target="_blank" '
                     f'rel="noopener">{apt}</a>')
         nmap = _naver_n(f"{gu} {apt}".strip())
         band_html = _hi_band_html(band, area)
-        html += (
+        return (
             f'<div class="re-hi{" excl" if excl else ""}">'
             f'<div class="re-hi-top">'
             f'<span class="re-bdg" style="background:{bg};color:{fg};margin-top:1px">{typ}</span>'
@@ -2899,10 +2917,82 @@ def _render_anomalies():
             f'<div class="re-hi-price"><b>{price}</b>'
             f'<span class="tag">{margin_s}</span></div>'
             f'</div>{band_html}</div>')
+
+    def _grp_card(grp):
+        """단지 통합 카드(A안) — 같은 단지 신고가 N건을 한 카드로.
+        헤더: 단지명 + 🔥 N건 연속 배지 · 기간 · 대표가=최고 마진 거래.
+        본문: 거래별 컴팩트 행(날짜·평형·가격·마진, 직거래는 dim+표시).
+        밴드: 카드당 1번, 신고가 평형 전부 강조."""
+        typ, bg, fg = grp[0][0], grp[0][1], grp[0][2]
+        apt, gu = grp[0][3], grp[0][4]
+        units = next((r[11] for r in grp
+                      if isinstance(r[11], (int, float)) and r[11]), None)
+        freq = next((r[12] for r in grp
+                     if isinstance(r[12], (int, float)) and r[12]), None)
+        band = next((r[14] for r in grp if r[14]), None)
+        unit_s = f" · {int(units):,}세대" if units else ""
+        freq_s = f" · 1년 {int(freq)}건" if freq else ""
+        dates = sorted(dt for dt in (_anom_date(r[10]) for r in grp) if dt)
+        period_s = (f"{dates[0].month:02d}.{dates[0].day:02d} ~ "
+                    f"{dates[-1].month:02d}.{dates[-1].day:02d}"
+                    if len(dates) >= 2 else
+                    (_anom_daylabel(grp[0][10]) if dates else ""))
+        best = max(grp, key=_sig)
+        best_tag = (f"최고 신고 +{best[13]:.1f}%"
+                    if isinstance(best[13], (int, float)) else "신고")
+        rows_html = ""
+        for r in sorted(grp, key=lambda x: (x[10] or ""), reverse=True):
+            m_s = (f"신고 +{r[13]:.1f}%"
+                   if isinstance(r[13], (int, float)) else "신고")
+            t_s = "직거래" if r[8] == "직거래" else ""
+            rows_html += (
+                f'<div class="gr-row{" dim" if r[9] else ""}">'
+                f'<span class="d">{_anom_daylabel(r[10])}</span>'
+                f'<span class="a">{r[5]}</span>'
+                f'<span class="t">{t_s}</span>'
+                f'<span class="p">{r[6]}</span>'
+                f'<span class="m">{m_s}</span></div>')
+        hi_areas = {r[5] for r in grp}
+        band_html = _hi_band_html(band, hi_areas)
+        apt_link = (f'<a href="{_naver_land_url(apt)}" target="_blank" '
+                    f'rel="noopener">{apt}</a>')
+        nmap = _naver_n(f"{gu} {apt}".strip())
+        return (
+            f'<div class="re-hi">'
+            f'<div class="re-hi-top">'
+            f'<span class="re-bdg" style="background:{bg};color:{fg};margin-top:1px">{typ}</span>'
+            f'<div style="flex:1;min-width:0">'
+            f'<div class="re-hi-nm">{apt_link}'
+            f'<span class="gr-streak">🔥 {len(grp)}건 연속</span></div>'
+            f'<div class="re-hi-sub">{gu}{unit_s}{freq_s} · {period_s}</div></div>'
+            f'{nmap}'
+            f'<div class="re-hi-price"><b>{best[6]}</b>'
+            f'<span class="tag">{best_tag}</span></div>'
+            f'</div>'
+            f'<div class="gr-rows">{rows_html}</div>'
+            f'{band_html}</div>')
+
+    if sort_f == "최신순":
+        # A안: 같은 단지(지역+단지명)의 신고가를 한 카드로 통합. 그룹 순서는 rows
+        # 정렬(최신 거래일 우선)에서 각 단지가 처음 등장한 위치 = 그룹 최신일 순.
+        # 날짜 그룹 헤더는 제거(그룹이 날짜를 가로지르므로) — 기간은 카드에 표기.
+        grouped, order = {}, []
+        for r in rows:
+            k = (r[4], r[3])
+            if k not in grouped:
+                grouped[k] = []
+                order.append(k)
+            grouped[k].append(r)
+        html = "".join(
+            _grp_card(grouped[k]) if len(grouped[k]) > 1 else _one_card(grouped[k][0])
+            for k in order)
+    else:   # 마진순·금액순 — 랭킹 목적이라 개별 카드 유지
+        html = "".join(_one_card(r) for r in rows)
     st.markdown(html, unsafe_allow_html=True)
     st.markdown(foot_row(
         "주요 단지 유니버스 · 국토부 실거래",
         "소형 노이즈 제외 · 신고가=최근 6개월 최고 초과(마진≥민감도) · "
+        "최신순은 같은 단지 신고가를 한 카드로 통합(🔥N건 연속 · 대표가=최고 마진) · "
         "밴드=해당 단지 각 평형의 최근 1년 실거래 최저~최고(직거래 제외 반영) · "
         "민감도로 양 조절 · 단지명·N 아이콘=네이버 검색"), unsafe_allow_html=True)
 
