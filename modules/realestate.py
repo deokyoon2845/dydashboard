@@ -631,6 +631,51 @@ _SAMPLE_HOT = [
 ]
 
 
+def _synth_sample_deals(h, days=90, n=18):
+    """샘플 주목단지용 건별 거래 합성 — spark(㎡당가 추세)를 따라 59·84㎡ 거래를
+    최근 days일에 분산 배치. 엔진 deals(실데이터)가 오기 전에도 카드 대형 차트가
+    샘플 모드에서 그려지게 한다. 반환 [{d,p,a}]."""
+    import math
+    from datetime import date as _date, timedelta as _td
+    spark = [v for v in (h.get("spark") or []) if isinstance(v, (int, float))]
+    if len(spark) < 2:
+        return []
+
+    def _eok_to_manwon(s):
+        try:
+            return float(str(s).replace("억", "")) * 1e4
+        except (TypeError, ValueError):
+            return None
+
+    p59 = _eok_to_manwon(h.get("p59_eok"))
+    p84 = _eok_to_manwon(h.get("p84_eok"))
+    if p59 is None and p84 is None:
+        return []
+    today = _date.today()
+    last = spark[-1] or 1
+    out = []
+    for i in range(n):
+        f = i / (n - 1)
+        idx = f * (len(spark) - 1)
+        j = int(idx)
+        t = idx - j
+        v = (spark[j] if j >= len(spark) - 1
+             else spark[j] * (1 - t) + spark[j + 1] * t)
+        wob = math.sin(i * 2.3) * 0.012
+        if p84 is not None and (i % 3 != 0 or p59 is None):
+            base, a = p84, 84.9
+        else:
+            base, a = p59, 59.9
+        dt = today - _td(days=round((1 - f) * days))
+        out.append({"d": dt.isoformat(),
+                    "p": round(base * (v / last) * (1 + wob)), "a": a})
+    return out
+
+
+for _h in _SAMPLE_HOT:
+    _h.setdefault("deals", _synth_sample_deals(_h))
+
+
 def fetch_hot_complexes():
     """주목 단지 리스트. 세션/DB metrics의 '_hot' → 샘플 폴백."""
     m = _resolved_metrics()
@@ -847,21 +892,6 @@ _RE_CSS = """
   background:linear-gradient(90deg,#E6F1FB,#EFEEE9 50%,#FCEBEB);position:relative;}
 .re-press .bar i{display:block;height:100%;background:#B65F5A;opacity:.55;}
 .re-press .nums b{font-weight:800;}
-/* 주간 뷰(A안) — 지표별 스파크라인 */
-.wk-wrap{background:var(--bg,#FCFCFA);border:1px solid var(--line,#ECEDE7);border-radius:12px;
-  padding:4px 16px 8px;margin-bottom:8px;}
-.wk-row{display:grid;grid-template-columns:78px 1fr 92px;align-items:center;gap:12px;
-  padding:9px 0;border-bottom:1px solid #F1F2EC;}
-.wk-row:last-child{border-bottom:none;}
-.wk-row .k{font-size:12px;font-weight:700;color:#5d6258;}
-.wk-row.hero .k{font-weight:800;color:var(--ink,#34352f);}
-.wk-row .r{text-align:right;}
-.wk-row .r b{font-size:15px;font-weight:800;letter-spacing:-.02em;}
-.wk-row .r .d{display:block;font-size:10.5px;font-weight:700;margin-top:1px;}
-.wk-spark{display:block;overflow:visible;}
-.wk-spark-na{color:#b9bab2;font-size:12px;}
-.wk-up{color:var(--up,#B65F5A);} .wk-dn{color:var(--down,#5A7CA0);}
-.wk-sg{color:var(--sage-deep,#7E9A83);} .wk-mut{color:var(--muted,#9a9b92);}
 /* 주목 단지 보드 */
 .re-hotwrap{display:flex;flex-direction:column;gap:7px;margin-bottom:6px;}
 .re-hot{display:flex;align-items:center;gap:11px;background:var(--card,#fff);
@@ -881,6 +911,14 @@ _RE_CSS = """
 .re-hc-rk{flex:none;width:23px;height:23px;border-radius:7px;background:#F2F5F0;color:#5d6258;
   font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;margin-top:1px;}
 .re-hc-main{flex:1;min-width:0;}
+.re-hc.has-chart .re-hc-main{flex:0 1 274px;}
+/* 대형 실거래 차트(우측) — 점 1개=실거래 1건 · 평형별 색·연결선 */
+.re-hc-chart{flex:1;min-width:250px;display:flex;flex-direction:column;justify-content:center;}
+.re-hc-chart svg{width:100%;height:auto;display:block;}
+.re-hc-leg{display:flex;gap:12px;justify-content:flex-end;font-size:10px;font-weight:700;
+  color:var(--muted,#9a9b92);margin-bottom:1px;}
+.re-hc-leg i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px;}
+.re-hc-note{font-size:9.5px;color:#b6b7ae;text-align:right;margin-top:2px;}
 .re-hc-top{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
 .re-hc-nm{font-size:14px;font-weight:800;color:var(--ink,#34352f);}
 .re-hc-chg{font-size:12px;font-weight:800;}
@@ -909,7 +947,9 @@ _RE_CSS = """
   border:1px solid var(--line2,#DEDED7);border-radius:9px;padding:7px 11px;text-decoration:none;
   white-space:nowrap;transition:background .15s ease,border-color .15s ease;}
 .re-hc-map:hover{background:#EEF1EC;border-color:var(--sage,#A7BBA9);}
-@media(max-width:680px){.re-hc{flex-wrap:wrap;} .re-hc-map{margin-left:34px;margin-top:2px;}}
+@media(max-width:680px){.re-hc{flex-wrap:wrap;} .re-hc-map{margin-left:34px;margin-top:2px;}
+  .re-hc.has-chart .re-hc-main{flex:1 1 calc(100% - 80px);}
+  .re-hc-chart{flex:1 1 100%;order:5;margin-top:4px;}}
 /* 가격지수 동향(연속/26년초대비) 섹션 */
 .re-strk-sec{font-size:12px;font-weight:700;color:var(--ink,#34352f);margin:2px 2px 9px;letter-spacing:.02em;}
 .re-strk-sec span{font-weight:500;color:var(--muted,#9a9b92);margin-left:6px;font-size:11px;}
@@ -2411,6 +2451,120 @@ def _hot_spark_svg(vals, w=68, h=22):
             f'<circle cx="{lx}" cy="{ly}" r="1.9" fill="{col}"/></svg></span>')
 
 
+_DEAL_COL = {"g59": "#5A7CA0", "g84": "#B65F5A", "etc": "#c9cabf"}
+_DEAL_LAB = {"g59": "59㎡", "g84": "84㎡", "etc": "기타"}
+
+
+def _deal_eok(v):
+    """만원 → '26.7억' 표기(정수면 소수점 생략)."""
+    s = f"{v / 1e4:.1f}"
+    return (s[:-2] if s.endswith(".0") else s) + "억"
+
+
+def _hot_deal_chart_svg(deals, w=440, h=190):
+    """주목 단지 대형 실거래 차트 — 점 1개=실거래 1건(가로 시점 × 세로 거래가),
+    59㎡ 파랑·84㎡ 빨강·기타 회색, 평형별 연결선, 마지막 거래 금액 라벨,
+    축 눈금(월/일·억)·축 제목 포함 SVG. 반환 (svg, 존재 평형그룹 리스트) — 유효점<2면 ("", [])."""
+    from datetime import date as _date, timedelta as _td
+    pts = []
+    for r in (deals or []):
+        if not isinstance(r, dict):
+            continue
+        try:
+            y, m, dd = str(r.get("d", ""))[:10].split("-")
+            dt = _date(int(y), int(m), int(dd))
+            p = float(r.get("p"))
+            a = float(r.get("a") or 0)
+        except (ValueError, TypeError):
+            continue
+        if p <= 0:
+            continue
+        g = ("g59" if 49.0 <= a < 63.0
+             else "g84" if 74.0 <= a <= 90.0 else "etc")
+        pts.append((dt, p, g))
+    if len(pts) < 2:
+        return "", []
+    pts.sort(key=lambda t: t[0])
+    d0, d1 = pts[0][0], pts[-1][0]
+    span = max((d1 - d0).days, 1)
+    pmin = min(p for _, p, _ in pts)
+    pmax = max(p for _, p, _ in pts)
+    pad = (pmax - pmin) * 0.10 or max(pmax * 0.02, 1)
+    ylo, yhi = pmin - pad, pmax + pad
+    L, R, T, B = 50, 14, 14, 36                   # 플롯 여백(좌=금액눈금, 하=시점축)
+
+    def _px(dt):
+        return L + (dt - d0).days / span * (w - L - R)
+
+    def _py(p):
+        return T + (yhi - p) / (yhi - ylo) * (h - T - B)
+
+    # y 그리드 4줄 + 금액 눈금(억)
+    body = ""
+    for i in range(4):
+        v = ylo + (yhi - ylo) * (i + 0.5) / 4
+        yy = _py(v)
+        body += (f'<line x1="{L}" y1="{yy:.1f}" x2="{w - R}" y2="{yy:.1f}" '
+                 f'stroke="#ECEDE6" stroke-width="1"/>'
+                 f'<text x="{L - 5}" y="{yy + 3:.1f}" font-size="9.5" '
+                 f'fill="#A9AB9F" text-anchor="end">{_deal_eok(v)}</text>')
+    # x축선 + 시점 눈금(스팬 45일↑면 월 경계 '5월', 아니면 4등분 'M.D')
+    ax_y = h - B + 2
+    body += f'<line x1="{L}" y1="{ax_y}" x2="{w - R}" y2="{ax_y}" stroke="#DDDED6"/>'
+    ticks = []
+    if span >= 45:
+        y_, m_ = d0.year, d0.month + 1
+        if m_ > 12:
+            y_, m_ = y_ + 1, 1
+        cur = _date(y_, m_, 1)
+        while cur <= d1:
+            ticks.append((cur, f"{cur.month}월"))
+            y_, m_ = cur.year, cur.month + 1
+            if m_ > 12:
+                y_, m_ = y_ + 1, 1
+            cur = _date(y_, m_, 1)
+    if len(ticks) < 2:
+        ticks = [(d0 + _td(days=round(span * i / 3)),) for i in range(4)]
+        ticks = [(dt, f"{dt.month}.{dt.day}") for (dt,) in ticks]
+    for dt, lab in ticks:
+        body += (f'<text x="{_px(dt):.1f}" y="{ax_y + 12}" font-size="9.5" '
+                 f'fill="#A9AB9F" text-anchor="middle">{lab}</text>')
+    # 축 제목
+    body += (f'<text x="{(L + w - R) / 2:.0f}" y="{h - 4}" font-size="9" '
+             f'fill="#C2C3B9" text-anchor="middle">시점(거래일)</text>'
+             f'<text x="10" y="{(T + h - B) / 2:.0f}" font-size="9" fill="#C2C3B9" '
+             f'text-anchor="middle" transform="rotate(-90 10 {(T + h - B) / 2:.0f})">'
+             f'거래가(억)</text>')
+    # 평형별 연결선(59·84) + 점 + 마지막 거래 금액 라벨
+    groups = [g for g in ("g59", "g84", "etc")
+              if any(p[2] == g for p in pts)]
+    for g in groups:
+        gp = [(x, p) for x, p, gg in pts if gg == g]
+        col = _DEAL_COL[g]
+        if g != "etc" and len(gp) >= 2:
+            poly = " ".join(f"{_px(dt):.1f},{_py(p):.1f}" for dt, p in gp)
+            body += (f'<polyline fill="none" stroke="{col}" stroke-width="1.5" '
+                     f'stroke-opacity=".55" stroke-linecap="round" '
+                     f'stroke-linejoin="round" points="{poly}"/>')
+        for k, (dt, p) in enumerate(gp):
+            last = (k == len(gp) - 1)
+            body += (f'<circle cx="{_px(dt):.1f}" cy="{_py(p):.1f}" '
+                     f'r="{3.8 if last and g != "etc" else 3.1}" '
+                     f'fill="{col}" fill-opacity=".85"/>')
+        if g != "etc":
+            dt, p = gp[-1]
+            tx = min(max(_px(dt), L + 22), w - 30)
+            ty = _py(p) + (-8 if g == "g84" else 14)
+            ty = min(max(ty, T + 8), h - B - 3)
+            body += (f'<text x="{tx:.1f}" y="{ty:.1f}" font-size="10" '
+                     f'font-weight="800" fill="{col}" text-anchor="middle">'
+                     f'{_deal_eok(p)}</text>')
+    svg = (f'<svg viewBox="0 0 {w} {h}" xmlns="http://www.w3.org/2000/svg" '
+           f'font-family="Pretendard,-apple-system,sans-serif" '
+           f'preserveAspectRatio="xMidYMid meet">{body}</svg>')
+    return svg, groups
+
+
 _WD_KR = ["월", "화", "수", "목", "금", "토", "일"]
 
 
@@ -2500,6 +2654,8 @@ flat();
 </script></body></html>'''
 
 
+# (시총 서브탭 삭제로 아래 _render_cap_gainers/_render_cap_leaders는 현재 미호출 —
+#  fetch_cap_leaders는 지역 보드가 계속 사용하므로 데이터 파이프라인은 유지, 재사용 대비 보존)
 def _render_cap_gainers(metric="ytd", top=10):
     """시총(=평단가) 상승률 보드 — metric='ytd'(작년말 대비) 또는 'mom'(3개월 모멘텀)."""
     import json as _json
@@ -3190,7 +3346,20 @@ def _render_hot_complexes():
             meta.append(str(h["builder"]))
         meta_s = " · ".join(m for m in meta if m)
         prices = _pp("59㎡", h.get("p59_eok")) + _pp("84㎡", h.get("p84_eok"))
-        spark = _hot_spark_svg(h.get("spark"))
+        # 우측 대형 실거래 차트(건별 deals) — 없거나 점<2면 기존 미니 스파크 폴백(구 스냅샷 호환)
+        chart_svg, groups = _hot_deal_chart_svg(h.get("deals"))
+        if chart_svg:
+            leg = "".join(
+                f'<span><i style="background:{_DEAL_COL[g]}"></i>{_DEAL_LAB[g]}</span>'
+                for g in groups)
+            right = (f'<div class="re-hc-chart"><div class="re-hc-leg">{leg}</div>'
+                     f'{chart_svg}'
+                     f'<div class="re-hc-note">점 1개=실거래 1건 · 최근 3개월 · '
+                     f'직거래 제외</div></div>')
+            spark, card_cls = "", "re-hc has-chart"
+        else:
+            right = ""
+            spark, card_cls = _hot_spark_svg(h.get("spark")), "re-hc"
         jr = h.get("jr")
         if isinstance(jr, (int, float)):
             gap = h.get("gap_eok")
@@ -3206,7 +3375,7 @@ def _render_hot_complexes():
             jbox = ""
         mq = (addr + " " + apt).strip() if addr else apt
         body += (
-            f'<div class="re-hc"><span class="re-hc-rk">{i}</span>'
+            f'<div class="{card_cls}"><span class="re-hc-rk">{i}</span>'
             f'<div class="re-hc-main">'
             f'<div class="re-hc-top"><span class="re-hc-nm">{apt}</span>'
             f'<span class="re-hc-chg {chg_cls}">{"+" if chg >= 0 else ""}{chg}%</span></div>'
@@ -3214,14 +3383,15 @@ def _render_hot_complexes():
             f'<div class="re-hc-stat">최근 {h.get("recent", 0)}건 · {vol_s} · '
             f'3개월 {h.get("freq", 0)}건</div>'
             f'<div class="re-hc-prices">{prices}{spark}</div>{jbox}</div>'
-            f'{_naver_n(mq)}</div>')
+            f'{right}{_naver_n(mq)}</div>')
     st.markdown(f'<div class="re-hcwrap">{body}</div>', unsafe_allow_html=True)
     st.markdown(foot_row(
         "국토부 실거래 · 직거래 제외",
         "주요 단지 유니버스 중 가격 모멘텀(3개월 등락)+거래 가속이 큰 대장주 순 · "
         "'평소 ×N'=최근 30일 거래밀도÷직전 60일 평균(기간 정규화) · "
         "59·84㎡는 각 면적대 최근 실거래가 · 전세가율=전세 ㎡당가÷매매 ㎡당가 · "
-        "갭=(매매−전세)×대표면적 · 추이=대표면적대 ㎡당가 시퀀스 · "
+        "갭=(매매−전세)×대표면적 · 차트=최근 3개월 건별 실거래(점 1개=1건, "
+        "59㎡ 파랑·84㎡ 빨강·기타 회색 · 선=평형별 시간순 연결 · 라벨=평형별 마지막 거래가) · "
         "N 아이콘(초록)으로 네이버 검색"), unsafe_allow_html=True)
 
 
@@ -3257,19 +3427,21 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);-
 .kl{font-size:11px;font-weight:700;color:var(--muted);margin-bottom:4px}
 .kv{font-size:18px;font-weight:800;color:var(--ink);letter-spacing:-.02em}
 .kv small{font-size:11px;font-weight:700;color:var(--muted);margin-left:2px}
+.cap b{color:#7E9A83}
+.kl small{font-size:9.5px;font-weight:700;color:#b6b7ae;margin-left:2px}
 </style></head><body>
 <div class="band">
   <div class="hero">
-    <div class="cap">오늘의 아파트 시장 · __DATE__</div>
+    <div class="cap">__CAPTION__</div>
     <div class="dir"><span class="ar" style="color:__DCOL__">__ARROW__</span><span class="t">__DLABEL__</span><span class="p" style="color:__DCOL__">__PCT__%</span></div>
     <div class="pbar"><span class="up" style="width:__PCT__%"></span></div>
     <div class="nums"><span style="color:var(--up)">신고가 __HI__</span><span style="color:var(--dn)">신저가 __LO__</span></div>
   </div>
   <div class="grid">
-    <div><div class="kl">신고가</div><div class="kv" style="color:var(--up)">__HI__<small>건</small></div></div>
-    <div><div class="kl">신저가</div><div class="kv" style="color:var(--dn)">__LO__<small>건</small></div></div>
-    <div><div class="kl">거래활발</div><div class="kv">__ACT__<small>단지</small></div></div>
-    <div><div class="kl">평균 상승률</div><div class="kv" style="color:__GCOL__">__GAIN__</div></div>
+    <div><div class="kl">__KL1__</div><div class="kv" style="color:var(--up)">__HI__<small>건</small></div></div>
+    <div><div class="kl">__KL2__</div><div class="kv" style="color:var(--dn)">__LO__<small>건</small></div></div>
+    <div><div class="kl">__KL3__</div><div class="kv">__ACT__<small>단지</small></div></div>
+    <div><div class="kl">__KL4__</div><div class="kv" style="color:__GCOL__">__GAIN__</div></div>
   </div>
 </div>
 <script>
@@ -3326,12 +3498,10 @@ def _market_summary():
     return s
 
 
-def _render_market_band():
-    """'아파트' 탭 상단 시장 요약 밴드(헤드라인 방향 배지) — 서브탭 위 공통 1열."""
-    s = _market_summary()
-    if not s:
-        return
-    hi, lo, tot = s["hi"], s["lo"], s["hi"] + s["lo"]
+def _band_fill(caption, hi, lo, act, avg,
+               kl=("신고가", "신저가", "거래활발", "평균 상승률")):
+    """요약 밴드 HTML 채우기 — 오늘/주간 공용. 방향(상승우세) 배지·색은 hi/lo에서 계산."""
+    tot = hi + lo
     pct = round(hi / tot * 100) if tot else 50
     if pct >= 60:
         dlabel, arrow, dcol = "상승 우세", "▲", "#B65F5A"
@@ -3339,124 +3509,120 @@ def _render_market_band():
         dlabel, arrow, dcol = "하락 우세", "▼", "#5A7CA0"
     else:
         dlabel, arrow, dcol = "혼조", "◆", "#7E9A83"
-    avg = s["avg"]
     if avg is None:
         gain, gcol = "–", "#9a9b92"
     else:
         gcol = "#B65F5A" if avg >= 0 else "#5A7CA0"
         gain = f'{"+" if avg >= 0 else ""}{avg}<small>%</small>'
-    _ref = s.get("latest")
-    datestr = (f'{_ref.month}.{_ref.day} 최신거래 기준' if _ref
-               else f'{s["today"].month}.{s["today"].day} 기준')
-    html = (_MARKET_BAND_HTML
-            .replace("__DATE__", datestr)
+    return (_MARKET_BAND_HTML
+            .replace("__CAPTION__", caption)
+            .replace("__KL1__", kl[0]).replace("__KL2__", kl[1])
+            .replace("__KL3__", kl[2]).replace("__KL4__", kl[3])
             .replace("__DLABEL__", dlabel)
             .replace("__ARROW__", arrow)
             .replace("__DCOL__", dcol)
             .replace("__PCT__", str(pct))
             .replace("__HI__", str(hi))
             .replace("__LO__", str(lo))
-            .replace("__ACT__", str(s["act"]))
+            .replace("__ACT__", str(act))
             .replace("__GCOL__", gcol)
             .replace("__GAIN__", gain))
+
+
+def _market_week_summary():
+    """주간 요약 밴드 집계 — 최신 스냅샷의 특이거래를 '최신 거래일 기준 최근 7일' 창으로
+    재집계해 신고가·신저가 주간 합을 만든다(일별 스냅샷 hi/lo를 그냥 더하면 같은 거래가
+    여러 날 반복 계산되므로 사용하지 않음). 거래활발·평균 상승률은 최근 7일 일별
+    스냅샷의 주간 평균(이력 없으면 현재 스냅샷 값 폴백). 반환 dict 또는 None."""
+    from datetime import timedelta as _td
+    P = _ANOM_PRESETS["표준"]
+
+    def _pass_nodate(r):
+        typ, freq, sig = r[0], r[12], r[13]
+        if isinstance(freq, (int, float)) and freq < P["freq"]:
+            return False
+        if isinstance(sig, (int, float)):
+            if typ in ("급등", "급락") and sig < P["jump"]:
+                return False
+            if typ in ("신고가", "신저가") and sig < P["margin"]:
+                return False
+            if typ == "거래량 급증" and sig < P["surge"]:
+                return False
+        return True
+
+    normed = [na for na in (_anom_norm(r) for r in (fetch_anomalies() or [])) if na]
+    pool = [(r, _anom_date(r[10])) for r in normed if not r[9] and _pass_nodate(r)]
+    pool = [(r, dt) for r, dt in pool if dt]
+    if not pool:
+        return None
+    latest = max(dt for _, dt in pool)
+    start = latest - _td(days=6)
+    wk = [r for r, dt in pool if dt >= start]
+    hi = sum(1 for r in wk if r[0] == "신고가")
+    lo = sum(1 for r in wk if r[0] == "신저가")
+
+    acts, avgs = [], []
+    for row in (_load_recent_re_snapshots(7) or []):
+        hot = [h for h in ((row.get("metrics") or {}).get("_hot") or [])
+               if isinstance(h, dict)]
+        if not hot:
+            continue
+        acts.append(len(hot))
+        chgs = [h.get("chg") for h in hot
+                if isinstance(h.get("chg"), (int, float))]
+        if chgs:
+            avgs.append(sum(chgs) / len(chgs))
+    if not acts:                                  # 스냅샷 이력 없음 → 현재값 폴백
+        hot = [h for h in (fetch_hot_complexes() or []) if isinstance(h, dict)]
+        if hot:
+            acts = [len(hot)]
+            chgs = [h.get("chg") for h in hot
+                    if isinstance(h.get("chg"), (int, float))]
+            if chgs:
+                avgs = [sum(chgs) / len(chgs)]
+    act = round(sum(acts) / len(acts)) if acts else 0
+    avg = round(sum(avgs) / len(avgs), 1) if avgs else None
+    if hi + lo == 0 and act == 0:
+        return None
+    return {"hi": hi, "lo": lo, "act": act, "avg": avg,
+            "start": start, "latest": latest, "ndays": len(acts)}
+
+
+def _render_market_week_band():
+    """주간 요약 밴드 — '오늘' 밴드와 같은 양식·집계 항목으로 위에 쌓인다(스택 1단).
+    데이터 없으면 조용히 생략(아래 '오늘' 밴드는 독립 렌더)."""
+    s = _market_week_summary()
+    if not s:
+        return
+    d0, d1 = s["start"], s["latest"]
+    caption = (f'<b>주간</b> 아파트 시장 · {d0.month}.{d0.day}→{d1.month}.{d1.day} · '
+               '최신거래일 기준 7일')
+    html = _band_fill(
+        caption, s["hi"], s["lo"], s["act"], s["avg"],
+        kl=("신고가 <small>7일 합</small>", "신저가 <small>7일 합</small>",
+            "거래활발 <small>주간 평균</small>", "평균 상승률 <small>주간 평균</small>"))
+    components.html(html, height=210, scrolling=False)
+
+
+def _render_market_band():
+    """'아파트' 탭 상단 시장 요약 밴드(헤드라인 방향 배지) — 주간 밴드 아래 스택 2단(오늘).
+    foot는 여기서 한 번만(주간+오늘 공통 설명)."""
+    s = _market_summary()
+    if not s:
+        return
+    _ref = s.get("latest")
+    datestr = (f'{_ref.month}.{_ref.day} 최신거래 기준' if _ref
+               else f'{s["today"].month}.{s["today"].day} 기준')
+    html = _band_fill(f'오늘의 아파트 시장 · {datestr}',
+                      s["hi"], s["lo"], s["act"], s["avg"])
     components.html(html, height=210, scrolling=False)
     st.markdown(foot_row(
-        "특이거래 탭과 동일 집계",
+        "특이거래 기준과 동일 집계",
         "상승압력=신고가÷(신고가+신저가) · 표준 민감도·직거래 제외 · "
-        "거래활발=주목단지 랭킹 단지수 · 평균 상승률=주목단지 평균"), unsafe_allow_html=True)
-
-
-def _wk_spark(vals, color, w=132, h=30, pad=3):
-    """주간 지표 시계열 → 폭 채움 스파크라인 SVG(A안). 점<2면 '–'."""
-    vv = [v for v in vals if isinstance(v, (int, float))]
-    if len(vv) < 2:
-        return '<span class="wk-spark-na">–</span>'
-    lo, hi = min(vv), max(vv)
-    rng = (hi - lo) or 1
-    n = len(vv)
-    pts = []
-    for i, v in enumerate(vv):
-        x = pad + i / (n - 1) * (w - 2 * pad)
-        y = h - pad - (v - lo) / rng * (h - 2 * pad)
-        pts.append(f"{x:.1f},{y:.1f}")
-    return (f'<svg class="wk-spark" viewBox="0 0 {w} {h}" preserveAspectRatio="none" '
-            f'width="100%" height="{h}"><polyline fill="none" stroke="{color}" '
-            f'stroke-width="1.6" vector-effect="non-scaling-stroke" '
-            f'stroke-linecap="round" stroke-linejoin="round" '
-            f'points="{" ".join(pts)}"/></svg>')
-
-
-def _render_market_week():
-    """주간(최근 7일) 아파트 시장 — 지표별 스파크라인(A안). 일별 스냅샷을 날짜별로 재집계.
-    이력이 7일 미만이면 있는 만큼만 표시. 스냅샷 미설정/부재면 안내."""
-    from datetime import date as _date
-    rows = _load_recent_re_snapshots(7)
-    if not rows:
-        st.caption("주간 데이터가 아직 없어요. 매일 아침 자동 수집분이 하루씩 쌓이면 채워집니다.")
-        return
-
-    series = []   # [(date, summary)] 오래된→최신
-    for row in reversed(rows):
-        ad = str(row.get("asof_date") or "")[:10]
-        try:
-            y, m, d = ad.split("-")
-            asof_dt = _date(int(y), int(m), int(d))
-        except Exception:
-            continue
-        hot = (row.get("metrics") or {}).get("_hot")
-        s = _summary_core(row.get("anomalies"), hot, asof_dt)
-        if s is None:
-            s = {"hi": 0, "lo": 0, "act": 0, "avg": None}
-        tot = s["hi"] + s["lo"]
-        s["up"] = round(s["hi"] / tot * 100) if tot else 50
-        series.append((asof_dt, s))
-    if len(series) < 1:
-        st.caption("주간 데이터가 아직 없어요. 매일 아침 수집분이 쌓이면 채워집니다.")
-        return
-
-    ups = [s["up"] for _, s in series]
-    his = [s["hi"] for _, s in series]
-    los = [s["lo"] for _, s in series]
-    acts = [s["act"] for _, s in series]
-    avgs = [(s["avg"] if s["avg"] is not None else 0.0) for _, s in series]
-    d0, d1 = series[0][0], series[-1][0]
-
-    def _delta(vals, dec=0):
-        d = vals[-1] - vals[0]
-        d = round(d, dec) if dec else int(round(d))
-        return d
-
-    def _row(name, vals, last_str, delta, color_cls, spark_col, hero=False):
-        if delta > 0:
-            dcls, dsym, dv = "wk-up", "▲", f"+{delta}"
-        elif delta < 0:
-            dcls, dsym, dv = "wk-dn", "▼", f"{delta}"
-        else:
-            dcls, dsym, dv = "wk-mut", "–", "0"
-        return (
-            f'<div class="wk-row{" hero" if hero else ""}"><span class="k">{name}</span>'
-            f'{_wk_spark(vals, spark_col)}'
-            f'<span class="r"><b class="{color_cls}">{last_str}</b>'
-            f'<span class="d {dcls}">{dsym} {dv}</span></span></div>')
-
-    up_last = ups[-1]
-    up_cls = "wk-up" if up_last >= 60 else ("wk-dn" if up_last <= 40 else "wk-sg")
-    up_col = "#B65F5A" if up_last >= 60 else ("#5A7CA0" if up_last <= 40 else "#7E9A83")
-    avg_last = avgs[-1]
-    avg_cls = "wk-up" if avg_last >= 0 else "wk-dn"
-    avg_str = f'{"+" if avg_last >= 0 else ""}{round(avg_last, 1)}%'
-
-    body = (
-        _row("상승 우세", ups, f"{up_last}%", _delta(ups), up_cls, up_col, hero=True)
-        + _row("신고가", his, f"{his[-1]}건", _delta(his), "wk-up", "#B65F5A")
-        + _row("신저가", los, f"{los[-1]}건", _delta(los), "wk-dn", "#5A7CA0")
-        + _row("거래활발", acts, f"{acts[-1]}단지", _delta(acts), "wk-sg", "#7E9A83")
-        + _row("평균 상승률", avgs, avg_str, _delta(avgs, 1), avg_cls, "#B65F5A"))
-    st.markdown(f'<div class="wk-wrap">{body}</div>', unsafe_allow_html=True)
-    st.markdown(foot_row(
-        f"주간 {d0.month}.{d0.day}→{d1.month}.{d1.day} · {len(series)}일",
-        "각 지표를 일별 스냅샷에서 재집계(표준 민감도·직거래 제외) · "
-        "주간Δ=마지막−처음 · 상승우세=신고가÷(신고가+신저가)"), unsafe_allow_html=True)
+        "주간 신고가·신저가=최신 거래일 기준 7일 창 합산(일별 합산 중복 없음) · "
+        "거래활발·평균 상승률(주간)=최근 7일 스냅샷 평균 · "
+        "거래활발=주목단지 랭킹 단지수 · 평균 상승률=주목단지 평균"),
+        unsafe_allow_html=True)
 
 
 # ── 메인 ────────────────────────────────────────────────────────
@@ -3722,42 +3888,19 @@ def render_realestate():
 
     elif _re_maintab == "실거래":
         tab_header("아파트 실거래",
-                   caption="아파트 단지·실거래 종합 — 시장 방향·지역 급지·시총·주목단지 · "
+                   caption="아파트 단지·실거래 종합 — 시장 방향(주간·오늘)·지역 급지·주목단지 · "
                            "국토부 실거래 기준 · 직거래 기본 제외",
                    css=_RE_CSS)
-        _band_view = st.segmented_control(
-            "기간", ["오늘", "주간"], default="오늘", key="re_band_view",
-            label_visibility="collapsed")
-        if _band_view == "주간":
-            _render_market_week()
-        else:
-            _render_market_band()
-        st_rg, st_cap, st_hot = st.tabs(["지역", "시총", "주목 단지"])
+        # 오늘|주간 토글 통합 — 같은 '오늘' 양식 밴드를 2단 스택(위=주간, 아래=오늘).
+        _render_market_week_band()
+        _render_market_band()
+        st_rg, st_hot = st.tabs(["지역", "주목 단지"])
         with st_rg:
             st.markdown('<div class="re-grp">지역 급지별 매매 현황'
                         '<span class="sub">평당가 10급지 동적 배정 · 여의도·목동·성수·'
                         '이촌·잠실 분리 · 티어당 시총 TOP20 + 신고가·괴리 알림</span></div>',
                         unsafe_allow_html=True)
             _render_region_board()
-        with st_cap:
-            cap_view = st.segmented_control(
-                "보기", ["시가총액", "상승률", "모멘텀"], default="시가총액",
-                key="re_cap_view", label_visibility="collapsed")
-            if cap_view == "상승률":
-                st.markdown('<div class="re-grp">작년말 대비 시총 상승률'
-                            '<span class="sub">전년 12월 대비 평단가(YTD 누적) · 상승률 = 시총 상승률</span></div>',
-                            unsafe_allow_html=True)
-                _render_cap_gainers("ytd")
-            elif cap_view == "모멘텀":
-                st.markdown('<div class="re-grp">최근 3개월 모멘텀'
-                            '<span class="sub">3개월 전 대비 평단가 · 최근 가속/감속 선행신호</span></div>',
-                            unsafe_allow_html=True)
-                _render_cap_gainers("mom")
-            else:
-                st.markdown('<div class="re-grp">구별 시가총액 상위 단지'
-                            '<span class="sub">최근 실거래가 × 세대수 · 강남3구 등 그룹 합산</span></div>',
-                            unsafe_allow_html=True)
-                _render_cap_leaders()
         with st_hot:
             _render_hot_complexes()
 
