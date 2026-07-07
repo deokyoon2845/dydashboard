@@ -991,8 +991,27 @@ _RB_CSS = """<style>
 .rb-note{font-size:9.5px;color:#B7B8B0;font-weight:600;margin-top:7px}
 .rb-wrap{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:2px 0 10px}
 @media(max-width:680px){.rb-wrap{grid-template-columns:1fr}}
-.rb-gt{background:#fff;border:1px solid #ECEDE7;border-radius:13px;padding:11px 13px}
+.rb-gt{background:#fff;border:1px solid #ECEDE7;border-radius:13px;padding:11px 13px;
+ position:relative;transition:border-color .15s ease,box-shadow .15s ease}
 .rb-gt.on{border-color:#7E9A83;box-shadow:inset 0 0 0 1.5px #7E9A83}
+.rb-gt.click{cursor:pointer}
+.rb-gt.click:hover{border-color:#A7BBA9;box-shadow:0 2px 10px rgba(126,154,131,.14)}
+/* 급지 타일 클릭 = 각 셀 컨테이너(.st-key-re_tcell_*) 안에서 타일 markdown 위에
+   투명 st.button을 겹쳐 클릭 영역을 타일 전체로 만든다. 컨테이너를 기준 위치로
+   삼고, 버튼 요소를 절대배치해 타일 전체를 덮는다(디자인 100% 유지). */
+div[class*="st-key-re_tcell_"]{position:relative}
+div[class*="st-key-re_tcell_"] div[data-testid="stButton"]{position:absolute;inset:0;
+ margin:0;z-index:3;display:flex}
+div[class*="st-key-re_tcell_"] div[data-testid="stButton"] button{width:100%;height:100%;
+ min-height:0;padding:0;margin:0;border:none !important;background:transparent !important;
+ box-shadow:none !important;opacity:0;cursor:pointer}
+div[class*="st-key-re_tcell_"] div[data-testid="stButton"] button:hover,
+div[class*="st-key-re_tcell_"] div[data-testid="stButton"] button:focus{
+ outline:none !important;box-shadow:none !important;background:transparent !important}
+/* 타일에 hover 강조를 주기 위해 버튼 hover를 형제 타일로 전파(버튼이 위에 있으므로
+   컨테이너 hover로 대체) */
+div[class*="st-key-re_tcell_"]:hover .rb-gt.click{border-color:#A7BBA9;
+ box-shadow:0 2px 10px rgba(126,154,131,.14)}
 .rb-gtop{display:flex;align-items:baseline;justify-content:space-between;gap:6px}
 .rb-gnm{font-size:13px;font-weight:800;letter-spacing:-.01em;color:#34352f}
 .rb-grng{font-size:9px;font-weight:700;color:#9a9b92;white-space:nowrap}
@@ -1102,7 +1121,7 @@ def _rb_tile_html(g, on):
     bar = (f'<div class="rb-gbar"><span class="u" style="width:{g["up"] / tot * 100:.1f}%">'
            f'</span><span class="d" style="width:{g["dn"] / tot * 100:.1f}%"></span></div>')
     return (
-        f'<div class="rb-gt{" on" if on else ""}">'
+        f'<div class="rb-gt click{" on" if on else ""}">'
         f'<div class="rb-gtop"><span class="rb-gnm">{g["nm"]}</span>'
         f'<span class="rb-grng">{g["rng"]}</span></div>'
         f'<div class="rb-grg" title="{rgs}">{rgs}</div>{chg}{bar}'
@@ -1159,10 +1178,10 @@ def _rb_row_html(i, c):
 
 def _render_region_board():
     """'지역' 서브탭 — Streamlit 네이티브 렌더(단일 iframe 폐기).
-    구조: [급지 선택 세그먼트] → [지도+정보 카드] → [섹션 헤더] → [10급지 타일 그리드]
+    구조: [지도+정보 카드] → [섹션 헤더] → [10급지 타일 그리드(클릭 선택)]
     → [선택 티어 시총 TOP20 리스트]. 전부 st.markdown 흐름이라 동적 높이/겹침 문제가
-    구조적으로 없음(구 iframe은 _fit 리사이즈가 Streamlit 래퍼 높이와 충돌해 아래
-    요소('자동 갱신 현황' 등)와 겹쳤음). 급지 선택은 타일 클릭 대신 세그먼트 컨트롤."""
+    구조적으로 없음. 급지 선택은 타일 클릭(각 타일 위에 투명 st.button 오버레이 —
+    상단 가로 세그먼트 탭은 제거). 클릭 시 세션에 티어명을 저장하고 rerun."""
     groups, live = _region_board_payload()
     if not any(g["n"] for g in groups):
         st.caption("지역 보드 데이터가 아직 없어요. 매일 아침 자동 수집 후 표시됩니다.")
@@ -1170,22 +1189,34 @@ def _render_region_board():
     st.markdown(_RB_CSS, unsafe_allow_html=True)
     names = [g["nm"] for g in groups]
     default = next((g["nm"] for g in groups if g["n"]), names[0])
-    sel = st.segmented_control(
-        "급지 선택", names, default=default,
-        key="re_tier", label_visibility="collapsed",
-    ) or default
+    # 선택 상태는 세션에 보관(타일 클릭 콜백이 갱신). 유효하지 않으면 기본값.
+    sel = st.session_state.get("re_tier_sel")
+    if sel not in names:
+        sel = default
     g = next((x for x in groups if x["nm"] == sel), groups[0])
     # 1) 지도+정보 — 최상단('지역 급지별 매매 현황' 헤더 위)
     st.markdown(_rb_map_html(g), unsafe_allow_html=True)
     # 2) 섹션 헤더
     st.markdown('<div class="re-grp">지역 급지별 매매 현황'
                 '<span class="sub">평당가 10급지 동적 배정 · 여의도·목동·성수·이촌·잠실 '
-                '분리 · 티어당 시총 TOP20 + 신고가·괴리 알림 · 급지 선택은 상단 버튼</span></div>',
+                '분리 · 티어당 시총 TOP20 + 신고가·괴리 알림 · 타일을 누르면 아래에 주요 '
+                '단지</span></div>',
                 unsafe_allow_html=True)
-    # 3) 급지 타일 그리드(1~10 · 선택 강조 · 기타 제외)
-    st.markdown('<div class="rb-wrap">'
-                + "".join(_rb_tile_html(x, x["nm"] == sel) for x in groups)
-                + "</div>", unsafe_allow_html=True)
+    # 3) 급지 타일 그리드(1~10 · 2열 · 각 타일 위 투명 버튼으로 클릭 선택)
+    #    각 셀을 st.container(key=)로 감싸면 .st-key-… 래퍼가 생겨, 그 안의
+    #    [타일 markdown + 투명 button]을 CSS로 정확히 겹칠 수 있다(구조 안정).
+    cols = st.columns(2, gap="small")
+    for idx, x in enumerate(groups):
+        with cols[idx % 2]:
+            cell = st.container(key=f"re_tcell_{x['k']}")
+            with cell:
+                st.markdown(_rb_tile_html(x, x["nm"] == sel),
+                            unsafe_allow_html=True)
+                if st.button(x["nm"], key=f"re_tier_btn_{x['k']}",
+                             help=f"{x['nm']} 주요 단지 보기",
+                             use_container_width=True):
+                    st.session_state["re_tier_sel"] = x["nm"]
+                    st.rerun()
     # 4) 선택 티어 리스트
     cap_s = f' · 티어 시총 {g["cap"]}' if g["cap"] else ""
     rows = ("".join(_rb_row_html(i, c) for i, c in enumerate(g["rows"]))
