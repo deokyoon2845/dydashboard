@@ -761,199 +761,9 @@ def _cx_pyeong(c):
         return None
 
 
-_REGION_BOARD_HTML = r'''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><style>
-@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
-:root{--bg:#FCFCFA;--card:#fff;--ink:#34352f;--muted:#9a9b92;--line:#ECEDE7;--line2:#DEDED7;
- --sage:#A7BBA9;--sage2:#7E9A83;--up:#B65F5A;--dn:#5A7CA0;--sum:#F6F7F2;
- --kf:'Pretendard',-apple-system,sans-serif;}
-*{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);font-size:14px;
- -webkit-font-smoothing:antialiased}
-.box{padding:2px 1px 8px}
-.up{color:var(--up)}.dn{color:var(--dn)}
-.bd-h{font-size:15px;font-weight:800;color:var(--ink);margin:14px 2px 9px;letter-spacing:-.01em}
-.bd-h .sub{font-weight:600;color:var(--muted);font-size:11px;margin-left:7px;letter-spacing:0}
-.gt-wrap{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px}
-.gt-col{display:flex;flex-direction:column;gap:9px}
-@media(max-width:680px){.gt-wrap{grid-template-columns:1fr}}
-.dt{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:12px 14px;margin-bottom:12px}
-.dt-map svg{width:100%;height:auto;display:block}
-.dt-map text{pointer-events:none;fill:#2f302a;font-family:var(--kf);font-weight:700}
-.dt-info{margin-top:10px}
-.dt-map path{fill:#EFF0EA;stroke:#fff;stroke-width:1.2}
-.dt-map path.sh{fill:var(--sage)}
-.dt-h{font-size:13px;font-weight:800}
-.dt-h em{font-style:normal;font-size:10.5px;font-weight:700;color:var(--muted);margin-left:7px}
-.dt-rgs{font-size:10.5px;font-weight:600;color:#6f7068;margin-top:5px;line-height:1.55}
-.dt-rgs b{color:#5d6258}
-.dt-top3{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
-.dt-top3 span{font-size:11px;font-weight:700;color:var(--ink);background:#F7F8F4;
- border:1px solid var(--line);border-radius:7px;padding:4px 9px;white-space:nowrap}
-.dt-top3 span i{font-style:normal;color:var(--sage2);font-weight:800;margin-right:5px}
-.dt-top3 span b{font-weight:800}
-.dt-note{font-size:9.5px;color:#B7B8B0;font-weight:600;margin-top:7px}
-.gt{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:11px 13px;
- cursor:pointer;transition:transform .14s,box-shadow .14s,border-color .14s}
-.gt:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(52,53,47,.08);border-color:var(--sage)}
-.gt.on{border-color:var(--sage2);box-shadow:inset 0 0 0 1.5px var(--sage2)}
-.gt-top{display:flex;align-items:baseline;justify-content:space-between;gap:6px}
-.gt-nm{font-size:13px;font-weight:800;letter-spacing:-.01em}
-.gt-rng{font-size:9px;font-weight:700;color:var(--muted);white-space:nowrap}
-.gt-rg{font-size:9.5px;font-weight:600;color:#6f7068;margin-top:3px;line-height:1.45;
- display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:27px}
-.gt-chg{font-size:16px;font-weight:800;letter-spacing:-.02em;margin-top:6px}
-.gt-chg.fl{color:var(--muted);font-size:13px}
-.gt-bar{display:flex;height:5px;border-radius:3px;overflow:hidden;background:#EFF0EA;margin-top:6px}
-.gt-bar .u{background:var(--up)}.gt-bar .d{background:var(--dn)}
-.gt-ud{font-size:9.5px;font-weight:700;color:var(--muted);margin-top:4px;display:flex;justify-content:space-between}
-.cx-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:4px 2px 8px;flex-wrap:wrap}
-.cx-title{font-size:13px;font-weight:800}
-.cx-title em{font-style:normal;font-size:11px;font-weight:600;color:var(--muted);margin-left:7px}
-.cx-rgs{font-size:10.5px;font-weight:600;color:var(--muted);width:100%;margin-top:2px;line-height:1.5}
-.cx-rgs b{color:#5d6258;font-weight:700}
-.cx-cap{font-size:10.5px;color:var(--muted);font-weight:700;white-space:nowrap}
-.cx{background:var(--card);border:1px solid var(--line);border-radius:13px;overflow:hidden}
-.cx-row{display:grid;grid-template-columns:26px 1fr auto;align-items:flex-start;gap:11px;
- padding:11px 14px;border-bottom:1px solid var(--line)}
-.cx-row:last-child{border-bottom:none}
-.cx-row:hover{background:var(--sum)}
-.rank{font-size:13.5px;font-weight:800;color:var(--sage2);text-align:center;margin-top:1px}
-.cx-row.top1 .rank{color:var(--up)}
-.rg-bdg{display:inline-block;font-size:9.5px;font-weight:800;color:var(--sage2);background:#EEF3EF;
- border-radius:5px;padding:1px 6px;margin-right:6px;vertical-align:1px}
-.cx-nm{font-size:13px;font-weight:700;line-height:1.3;min-width:0}
-.cx-nm .nv{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;
- border-radius:4px;background:#03C75A;color:#fff;font-size:9.5px;font-weight:900;line-height:1;
- margin-left:5px;vertical-align:1px;text-decoration:none}
-.cx-nm .nv:hover{filter:brightness(.92)}
-.cx-nm small{display:block;font-size:10.5px;font-weight:600;color:var(--muted);margin-top:2px}
-.pv{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
-.pv span{font-size:11px;font-weight:800;color:var(--ink);background:#F7F8F4;
- border:1px solid var(--line);border-radius:7px;padding:3px 8px;white-space:nowrap}
-.pv span i{font-style:normal;font-weight:700;color:var(--muted);font-size:9.5px;margin-right:4px}
-.pv span small{font-weight:600;color:#B7B8B0;font-size:9px;margin-left:3px}
-.pv .none{color:#B7B8B0;background:#FAFAF7;font-weight:700}
-.al{margin-top:8px;display:flex;flex-direction:column;gap:4px;border-top:1px dashed #EDEEE7;padding-top:8px}
-.al-i{font-size:11px;font-weight:700;color:#5d6258;display:flex;gap:7px;align-items:baseline;flex-wrap:wrap}
-.al-i .b{font-size:9.5px;font-weight:800;border-radius:5px;padding:1.5px 7px;white-space:nowrap}
-.al-i .b.hi{background:var(--up);color:#fff}
-.al-i .b.up{background:#FBEEED;color:var(--up);border:1px solid #EFD3D0}
-.al-i .b.dn{background:#EAF0F7;color:var(--dn);border:1px solid #D3DEEC}
-.al-i .dt{color:var(--muted);font-weight:600;font-size:10.5px}
-.al-i b.p{font-weight:800;color:var(--ink)}
-.al-more{font-size:10px;font-weight:700;color:var(--muted)}
-.cx-r{text-align:right;white-space:nowrap}
-.cx-chg b{font-size:13.5px;font-weight:800}
-.cx-chg .stale{color:#B7B8B0;font-weight:800}
-.cx-r small{display:block;font-size:9.5px;font-weight:700;color:var(--muted);margin-top:2px}
-.empty{font-size:12px;color:var(--muted);padding:18px 14px}
-@media(max-width:680px){.cx-row{grid-template-columns:22px 1fr auto;gap:8px;padding:10px 11px}}
-</style></head><body><div class="box">
-  <div class="dt"><div class="dt-map" id="dtMap"></div>
-    <div class="dt-info"><div class="dt-h" id="dtH"></div><div class="dt-rgs" id="dtRgs"></div>
-      <div class="dt-top3" id="dtT3"></div>
-      <div class="dt-note">지도 음영 = 시·군·구 단위 근사 · 인천 포함(송도=연수구·청라=서구)</div></div></div>
-  <div class="bd-h">지역 급지별 매매 현황<span class="sub">평당가 10급지 동적 배정 ·
-    여의도·목동·성수·이촌·잠실 분리 · 티어당 시총 TOP20 + 신고가·괴리 알림</span></div>
-  <div class="gt-wrap"><div class="gt-col" id="gtColL"></div><div class="gt-col" id="gtColR"></div></div>
-  <div class="cx-head"><span class="cx-title" id="cxTitle"></span>
-    <span class="cx-cap">시총 TOP 20 · 평형 3개월 평균 · 🔺신고가·▲▼±5% 알림</span></div>
-  <div class="cx" id="cxList"></div>
-</div>
-<script>
-const G=__G__,GEO=__GEO__,TG=__TG__;
-document.getElementById("dtMap").innerHTML=
- '<svg viewBox="-115 215 1210 865" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="\uae09\uc9c0 \uc9c0\uc5ed \uc9c0\ub3c4">'
- +GEO.map(function(s){return '<path data-n="'+s.n+'" d="'+s.d+'"/>';}).join("")
- +'<g id="mapLb"></g></svg>';
-const GIDX={};GEO.forEach(function(s){GIDX[s.n]=s;});
-let sel=null;
-for(const g of G){if(g.n){sel=g.k;break;}}
-const pct=c=>(c>=0?"+":"")+c.toFixed(1)+"%";
-const pyf=p=>p>=10000?(p/10000).toFixed(1).replace(/\.0$/,"")+"억":Math.round(p/1000)/10+"천만";
-function bar(g){const t=(g.up+g.dn+g.fl)||1;
- return '<div class="gt-bar"><span class="u" style="width:'+(g.up/t*100)+'%"></span>'
-  +'<span class="d" style="width:'+(g.dn/t*100)+'%"></span></div>';}
-function pvHTML(c){
- if(!c.pavg||!c.pavg.length)
-  return '<div class="pv"><span class="none">\ucd5c\uadfc 3\uac1c\uc6d4 \uac70\ub798 \uc5c6\uc74c \u00b7 \ub300\ud45c\uac00 '+(c.p||"\u2014")+'</span></div>';
- return '<div class="pv">'+c.pavg.map(function(b){
-  return '<span><i>'+b.area+'\u33a1</i>'+b.avg+'\uc5b5<small>'+b.n+'\uac74</small></span>';}).join("")+'</div>';}
-function chgHTML(c){
- if(c.chg==null)return '<span class="cx-chg"><b class="stale">\u2014</b></span><small>\uac70\ub798 \ub738</small>';
- var cls=c.chg>=0?"up":"dn";
- return '<span class="cx-chg"><b class="'+cls+'">'+pct(c.chg)+'</b></span><small>30\uc77c\u6bd4</small>';}
-function alHTML(c){
- if(!c.al||!c.al.length)return "";
- var items=c.al.slice(0,3).map(function(a){
-  var bdg=a.t==="hi"
-   ?'<span class="b hi">\ud83d\udd3a \uc2e0\uace0\uac00'+(a.v!=null?" +"+a.v+"%":"")+'</span>'
-   :(a.t==="up"?'<span class="b up">\u25b2 \ud3c9\uade0+'+a.v+'%</span>'
-               :'<span class="b dn">\u25bc \ud3c9\uade0'+a.v+'%</span>');
-  return '<div class="al-i">'+bdg+'<span class="dt">'+a.d+'</span>'
-   +'<span>'+a.area+'\u33a1</span><b class="p">'+a.p+'</b></div>';}).join("");
- var more=c.al.length>3?'<div class="al-more">+'+(c.al.length-3)+'\uac74 \ub354</div>':"";
- return '<div class="al">'+items+more+'</div>';}
-function nv(c){var q=encodeURIComponent(((c.dong?c.gu+" "+c.dong:c.gu)+" "+c.apt).trim());
- return '<a class="nv" href="https://search.naver.com/search.naver?query='+q
-  +'" target="_blank" rel="noopener" onclick="event.stopPropagation()">N</a>';}
-function card(g){
- var chg=(g.chg==null)?'<div class="gt-chg fl">\u2014</div>'
-  :'<div class="gt-chg '+(g.chg>=0?"up":"dn")+'">'+pct(g.chg)+'</div>';
- var rgs=g.regions.length?g.regions.map(function(r){return r.nm;}).join("\u00b7"):"\u2014";
- return '<div class="gt '+(g.k===sel?"on":"")+'" data-k="'+g.k+'">'
-  +'<div class="gt-top"><span class="gt-nm">'+g.nm+'</span><span class="gt-rng">'+g.rng+'</span></div>'
-  +'<div class="gt-rg" title="'+rgs+'">'+rgs+'</div>'+chg+bar(g)
-  +'<div class="gt-ud"><span class="up">\u25b2'+g.up+'</span><span>'+g.n+'\ub2e8\uc9c0</span>'
-  +'<span class="dn">\u25bc'+g.dn+'</span></div></div>';}
-function draw(){
- var main=G.filter(function(x){return x.k!=="etc";});
- document.getElementById("gtColL").innerHTML=main.slice(0,5).map(card).join("");
- document.getElementById("gtColR").innerHTML=main.slice(5,10).map(card).join("");
- document.querySelectorAll(".gt").forEach(function(el){el.onclick=function(){sel=el.dataset.k;draw();};});
- var g=G.find(function(x){return x.k===sel;});if(!g)return;
- // 상세 패널 — 미니지도 음영 + 음영 지역 라벨('지도' 탭 스타일) + 구성 + TOP3
- var shade={};
- if(g.k!=="etc")g.regions.forEach(function(r){(TG[r.nm]||[r.nm]).forEach(function(n){shade[n]=1;});});
- document.querySelectorAll("#dtMap path").forEach(function(p){
-  p.classList.toggle("sh",!!shade[p.dataset.n]);});
- document.getElementById("mapLb").innerHTML=Object.keys(shade).map(function(n){
-  var s=GIDX[n];if(!s||s.cx==null||s.cy==null)return "";
-  var fs=s.sl.length>3?21:26;
-  return '<text x="'+s.cx+'" y="'+s.cy+'" text-anchor="middle" dominant-baseline="middle"'
-   +' font-size="'+fs+'" paint-order="stroke" stroke="#FCFCFA" stroke-width="'
-   +(fs*0.22).toFixed(1)+'" stroke-linejoin="round">'+s.sl+'</text>';}).join("");
- document.getElementById("dtH").innerHTML=g.nm+'<em>'+g.rng
-  +(g.cap?' \u00b7 \ud2f0\uc5b4 \uc2dc\ucd1d '+g.cap:'')+'</em>';
- document.getElementById("dtRgs").innerHTML=g.regions.length
-  ?'\uad6c\uc131: '+g.regions.map(function(r){return '<b>'+r.nm+'</b> '+pyf(r.py);}).join(' \u00b7 ')
-  :'\uad6c\uc131 \uc9c0\uc5ed \uc5c6\uc74c';
- document.getElementById("dtT3").innerHTML=g.rows.length
-  ?g.rows.slice(0,3).map(function(c,i){
-    return '<span><i>'+(i+1)+'</i>'+c.apt+' <b>'+(c.p?c.p+'\uc5b5':c.cap)+'</b></span>';}).join("")
-  :'<span class="none">\ub2e8\uc9c0 \uc5c6\uc74c</span>';
- document.getElementById("cxTitle").innerHTML=g.nm+' \uc8fc\uc694 \ub2e8\uc9c0<em>'+g.rng
-  +(g.cap?' \u00b7 \ud2f0\uc5b4 \uc2dc\ucd1d '+g.cap:'')+'</em>';
- document.getElementById("cxList").innerHTML=g.rows.length?g.rows.map(function(c,i){
-  return '<div class="cx-row'+(i===0?" top1":"")+'"><div class="rank">'+(i+1)+'</div>'
-   +'<div class="cx-nm"><span class="rg-bdg">'+c.rg+'</span>'+c.apt+nv(c)
-   +'<small>'+c.gu+(c.dong?" "+c.dong:"")+' \u00b7 '+c.units.toLocaleString()+'\uc138\ub300'
-   +(c.py?' \u00b7 \ud3c9\ub2f9 '+pyf(c.py):'')
-   +' \u00b7 \uc2dc\ucd1d '+c.cap+'</small>'+pvHTML(c)+alHTML(c)+'</div>'
-   +'<div class="cx-r">'+chgHTML(c)
-   +(c.dd?'<small>\ucd5c\uadfc '+c.dd+'</small>':'')+'</div></div>';}).join("")
-  :'<div class="empty">\uc774 \ud2f0\uc5b4\uc5d0 \ubc30\uc815\ub41c \ub2e8\uc9c0\uac00 \uc5c6\uc5b4\uc694.</div>';
- _fit();}
-draw();
-function _fit(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;
- var fe=window.frameElement;if(!fe)return;fe.style.height=h+"px";fe.setAttribute("height",h);
- var p=fe.parentElement;for(var i=0;i<3&&p&&p!==document.body;i++){
-  if(p.style&&p.style.height&&p.style.height!=="auto")p.style.height="auto";p=p.parentElement;}}catch(e){}}
-window.addEventListener("load",_fit);setTimeout(_fit,150);setTimeout(_fit,600);setTimeout(_fit,1500);
-window.addEventListener("resize",_fit);try{new ResizeObserver(_fit).observe(document.body);}catch(e){}
-setInterval(_fit,2000);
-</script></body></html>'''
+# (구 _REGION_BOARD_HTML iframe 템플릿 제거 — 지역 보드는 Streamlit 네이티브 렌더로 전환.
+#  iframe 동적 리사이즈(_fit)가 Streamlit 래퍼/탭 높이 캐시와 충돌해 아래 요소 겹침을
+#  유발했음. 네이티브 st.markdown 흐름은 높이 문제가 구조적으로 없음.)
 
 
 def _eok_s(manwon):
@@ -1150,20 +960,240 @@ def _fmt_cap(manwon):
     return f"{round(manwon / 1e4):,}억"
 
 
+def _rb_pyf(py):
+    """평당가(만원) → '1.3억'/'8.5천만' — 구 iframe pyf() 동일 규칙."""
+    if py >= 10000:
+        v = f"{py / 10000:.1f}".rstrip("0").rstrip(".")
+        return f"{v}억"
+    return f"{round(py / 1000) / 10}천만"
+
+
+def _rb_pct(c):
+    return f"{'+' if c >= 0 else ''}{c:.1f}%"
+
+
+_RB_CSS = """<style>
+.rb-dt{background:#fff;border:1px solid #ECEDE7;border-radius:13px;padding:12px 14px;margin-bottom:4px}
+.rb-map svg{width:100%;height:auto;display:block}
+.rb-map path{fill:#EFF0EA;stroke:#fff;stroke-width:1.2}
+.rb-map path.sh{fill:#A7BBA9}
+.rb-map text{pointer-events:none;fill:#2f302a;font-weight:700}
+.rb-info{margin-top:10px}
+.rb-h{font-size:13px;font-weight:800;color:#34352f}
+.rb-h em{font-style:normal;font-size:10.5px;font-weight:700;color:#9a9b92;margin-left:7px}
+.rb-rgs{font-size:10.5px;font-weight:600;color:#6f7068;margin-top:5px;line-height:1.55}
+.rb-rgs b{color:#5d6258}
+.rb-top3{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.rb-top3 span{font-size:11px;font-weight:700;color:#34352f;background:#F7F8F4;
+ border:1px solid #ECEDE7;border-radius:7px;padding:4px 9px;white-space:nowrap}
+.rb-top3 span i{font-style:normal;color:#7E9A83;font-weight:800;margin-right:5px}
+.rb-top3 span b{font-weight:800}
+.rb-note{font-size:9.5px;color:#B7B8B0;font-weight:600;margin-top:7px}
+.rb-wrap{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:2px 0 10px}
+@media(max-width:680px){.rb-wrap{grid-template-columns:1fr}}
+.rb-gt{background:#fff;border:1px solid #ECEDE7;border-radius:13px;padding:11px 13px}
+.rb-gt.on{border-color:#7E9A83;box-shadow:inset 0 0 0 1.5px #7E9A83}
+.rb-gtop{display:flex;align-items:baseline;justify-content:space-between;gap:6px}
+.rb-gnm{font-size:13px;font-weight:800;letter-spacing:-.01em;color:#34352f}
+.rb-grng{font-size:9px;font-weight:700;color:#9a9b92;white-space:nowrap}
+.rb-grg{font-size:9.5px;font-weight:600;color:#6f7068;margin-top:3px;line-height:1.45;
+ display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:27px}
+.rb-gchg{font-size:16px;font-weight:800;letter-spacing:-.02em;margin-top:6px}
+.rb-gchg.fl{color:#9a9b92;font-size:13px}
+.rb-up{color:#B65F5A}.rb-dn{color:#5A7CA0}
+.rb-gbar{display:flex;height:5px;border-radius:3px;overflow:hidden;background:#EFF0EA;margin-top:6px}
+.rb-gbar .u{background:#B65F5A}.rb-gbar .d{background:#5A7CA0}
+.rb-gud{font-size:9.5px;font-weight:700;color:#9a9b92;margin-top:4px;display:flex;justify-content:space-between}
+.rb-cxh{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:4px 2px 8px;flex-wrap:wrap}
+.rb-cxt{font-size:13px;font-weight:800;color:#34352f}
+.rb-cxt em{font-style:normal;font-size:11px;font-weight:600;color:#9a9b92;margin-left:7px}
+.rb-cap{font-size:10.5px;color:#9a9b92;font-weight:700;white-space:nowrap}
+.rb-cx{background:#fff;border:1px solid #ECEDE7;border-radius:13px;overflow:hidden;margin-bottom:6px}
+.rb-row{display:grid;grid-template-columns:26px 1fr auto;align-items:flex-start;gap:11px;
+ padding:11px 14px;border-bottom:1px solid #ECEDE7}
+.rb-row:last-child{border-bottom:none}
+.rb-row:hover{background:#F6F7F2}
+.rb-rank{font-size:13.5px;font-weight:800;color:#7E9A83;text-align:center;margin-top:1px}
+.rb-row.top1 .rb-rank{color:#B65F5A}
+.rb-bdg{display:inline-block;font-size:9.5px;font-weight:800;color:#7E9A83;background:#EEF3EF;
+ border-radius:5px;padding:1px 6px;margin-right:6px;vertical-align:1px}
+.rb-nm{font-size:13px;font-weight:700;line-height:1.3;min-width:0;color:#34352f}
+.rb-nm .nv{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;
+ border-radius:4px;background:#03C75A;color:#fff;font-size:9.5px;font-weight:900;line-height:1;
+ margin-left:5px;vertical-align:1px;text-decoration:none}
+.rb-nm .nv:hover{filter:brightness(.92)}
+.rb-nm small{display:block;font-size:10.5px;font-weight:600;color:#9a9b92;margin-top:2px}
+.rb-pv{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.rb-pv span{font-size:11px;font-weight:800;color:#34352f;background:#F7F8F4;
+ border:1px solid #ECEDE7;border-radius:7px;padding:3px 8px;white-space:nowrap}
+.rb-pv span i{font-style:normal;font-weight:700;color:#9a9b92;font-size:9.5px;margin-right:4px}
+.rb-pv span small{font-weight:600;color:#B7B8B0;font-size:9px;margin-left:3px}
+.rb-pv .none{color:#B7B8B0;background:#FAFAF7;font-weight:700}
+.rb-al{margin-top:8px;display:flex;flex-direction:column;gap:4px;border-top:1px dashed #EDEEE7;padding-top:8px}
+.rb-ali{font-size:11px;font-weight:700;color:#5d6258;display:flex;gap:7px;align-items:baseline;flex-wrap:wrap}
+.rb-ali .b{font-size:9.5px;font-weight:800;border-radius:5px;padding:1.5px 7px;white-space:nowrap}
+.rb-ali .b.hi{background:#B65F5A;color:#fff}
+.rb-ali .b.up{background:#FBEEED;color:#B65F5A;border:1px solid #EFD3D0}
+.rb-ali .b.dn{background:#EAF0F7;color:#5A7CA0;border:1px solid #D3DEEC}
+.rb-ali .dt{color:#9a9b92;font-weight:600;font-size:10.5px}
+.rb-ali b.p{font-weight:800;color:#34352f}
+.rb-almore{font-size:10px;font-weight:700;color:#9a9b92}
+.rb-r{text-align:right;white-space:nowrap}
+.rb-chg b{font-size:13.5px;font-weight:800}
+.rb-chg .stale{color:#B7B8B0;font-weight:800}
+.rb-r small{display:block;font-size:9.5px;font-weight:700;color:#9a9b92;margin-top:2px}
+.rb-empty{font-size:12px;color:#9a9b92;padding:18px 14px}
+@media(max-width:680px){.rb-row{grid-template-columns:22px 1fr auto;gap:8px;padding:10px 11px}}
+</style>"""
+
+
+def _rb_map_html(g):
+    """선택 급지 지도+정보 카드 HTML — 음영(시·군·구 근사) + 음영 지역 라벨('지도' 탭
+    스타일: 잉크색 + 흰 후광) + 구성 리전 평당가 + TOP3. iframe 없이 st.markdown 렌더."""
+    shade = set()
+    for r in g["regions"]:
+        for n in (_TIER_GEO_MAP.get(r["nm"]) or [r["nm"]]):
+            shade.add(n)
+    paths = "".join(
+        f'<path class="{"sh" if s["n"] in shade else ""}" d="{s["d"]}"/>'
+        for s in _BOARD_GEO)
+    labels = ""
+    for s in _BOARD_GEO:
+        if s["n"] not in shade or s.get("cx") is None or s.get("cy") is None:
+            continue
+        fs = 21 if len(s["sl"]) > 3 else 26
+        labels += (
+            f'<text x="{s["cx"]}" y="{s["cy"]}" text-anchor="middle" '
+            f'dominant-baseline="middle" font-size="{fs}" paint-order="stroke" '
+            f'stroke="#FCFCFA" stroke-width="{fs * 0.22:.1f}" '
+            f'stroke-linejoin="round">{s["sl"]}</text>')
+    cap_s = f' · 티어 시총 {g["cap"]}' if g["cap"] else ""
+    rgs = ("구성: " + " · ".join(
+        f'<b>{r["nm"]}</b> {_rb_pyf(r["py"])}' for r in g["regions"])
+        if g["regions"] else "구성 지역 없음")
+    if g["rows"]:
+        top3 = "".join(
+            f'<span><i>{i + 1}</i>{c["apt"]} '
+            f'<b>{(c["p"] + "억") if c["p"] else c["cap"]}</b></span>'
+            for i, c in enumerate(g["rows"][:3]))
+    else:
+        top3 = '<span class="none">단지 없음</span>'
+    return (
+        f'<div class="rb-dt"><div class="rb-map">'
+        f'<svg viewBox="-115 215 1210 865" xmlns="http://www.w3.org/2000/svg" '
+        f'role="img" aria-label="급지 지역 지도">{paths}{labels}</svg></div>'
+        f'<div class="rb-info"><div class="rb-h">{g["nm"]}<em>{g["rng"]}{cap_s}</em></div>'
+        f'<div class="rb-rgs">{rgs}</div>'
+        f'<div class="rb-top3">{top3}</div>'
+        f'<div class="rb-note">지도 음영 = 시·군·구 단위 근사 · '
+        f'인천 포함(송도=연수구·청라=서구)</div></div></div>')
+
+
+def _rb_tile_html(g, on):
+    """급지 요약 타일 1장 — 선택 티어는 강조 테두리(선택은 상단 세그먼트 컨트롤에서)."""
+    if g["chg"] is None:
+        chg = '<div class="rb-gchg fl">—</div>'
+    else:
+        cls = "rb-up" if g["chg"] >= 0 else "rb-dn"
+        chg = f'<div class="rb-gchg {cls}">{_rb_pct(g["chg"])}</div>'
+    rgs = "·".join(r["nm"] for r in g["regions"]) or "—"
+    tot = (g["up"] + g["dn"] + g["fl"]) or 1
+    bar = (f'<div class="rb-gbar"><span class="u" style="width:{g["up"] / tot * 100:.1f}%">'
+           f'</span><span class="d" style="width:{g["dn"] / tot * 100:.1f}%"></span></div>')
+    return (
+        f'<div class="rb-gt{" on" if on else ""}">'
+        f'<div class="rb-gtop"><span class="rb-gnm">{g["nm"]}</span>'
+        f'<span class="rb-grng">{g["rng"]}</span></div>'
+        f'<div class="rb-grg" title="{rgs}">{rgs}</div>{chg}{bar}'
+        f'<div class="rb-gud"><span class="rb-up">▲{g["up"]}</span>'
+        f'<span>{g["n"]}단지</span><span class="rb-dn">▼{g["dn"]}</span></div></div>')
+
+
+def _rb_row_html(i, c):
+    """티어 단지 리스트 행 1개 — 리전 배지·평당가·평형칩·신고가/괴리 알림·30일比."""
+    if not c.get("pavg"):
+        pv = (f'<div class="rb-pv"><span class="none">최근 3개월 거래 없음 · '
+              f'대표가 {c["p"] or "—"}</span></div>')
+    else:
+        pv = '<div class="rb-pv">' + "".join(
+            f'<span><i>{b["area"]}㎡</i>{b["avg"]}억<small>{b["n"]}건</small></span>'
+            for b in c["pavg"]) + "</div>"
+    if c["chg"] is None:
+        chg = '<span class="rb-chg"><b class="stale">—</b></span><small>거래 뜸</small>'
+    else:
+        cls = "rb-up" if c["chg"] >= 0 else "rb-dn"
+        chg = (f'<span class="rb-chg"><b class="{cls}">{_rb_pct(c["chg"])}</b></span>'
+               f'<small>30일比</small>')
+    al = ""
+    if c.get("al"):
+        items = ""
+        for a in c["al"][:3]:
+            if a["t"] == "hi":
+                bdg = ('<span class="b hi">🔺 신고가'
+                       + (f' +{a["v"]}%' if a.get("v") is not None else "") + "</span>")
+            elif a["t"] == "up":
+                bdg = f'<span class="b up">▲ 평균+{a["v"]}%</span>'
+            else:
+                bdg = f'<span class="b dn">▼ 평균{a["v"]}%</span>'
+            items += (f'<div class="rb-ali">{bdg}<span class="dt">{a["d"]}</span>'
+                      f'<span>{a["area"]}㎡</span><b class="p">{a["p"]}</b></div>')
+        more = (f'<div class="rb-almore">+{len(c["al"]) - 3}건 더</div>'
+                if len(c["al"]) > 3 else "")
+        al = f'<div class="rb-al">{items}{more}</div>'
+    import urllib.parse as _up
+    q = _up.quote(((c["gu"] + " " + c["dong"]).strip() + " " + c["apt"]).strip())
+    nv = (f'<a class="nv" href="https://search.naver.com/search.naver?query={q}" '
+          f'target="_blank" rel="noopener">N</a>')
+    py_s = f' · 평당 {_rb_pyf(c["py"])}' if c.get("py") else ""
+    dd_s = f'<small>최근 {c["dd"]}</small>' if c.get("dd") else ""
+    dong_s = f' {c["dong"]}' if c["dong"] else ""
+    return (
+        f'<div class="rb-row{" top1" if i == 0 else ""}">'
+        f'<div class="rb-rank">{i + 1}</div>'
+        f'<div class="rb-nm"><span class="rb-bdg">{c["rg"]}</span>{c["apt"]}{nv}'
+        f'<small>{c["gu"]}{dong_s} · {c["units"]:,}세대{py_s} · 시총 {c["cap"]}</small>'
+        f'{pv}{al}</div>'
+        f'<div class="rb-r">{chg}{dd_s}</div></div>')
+
+
 def _render_region_board():
-    """'지역' 서브탭 — 평당가 6급지 타일(구성 리전·평균 등락·▲▼비율) + 선택 티어
-    시총 TOP20 (리전 배지 · 평형 3개월 평균가 칩 · 30일 등락 · 최근 거래일)."""
-    import json as _json
+    """'지역' 서브탭 — Streamlit 네이티브 렌더(단일 iframe 폐기).
+    구조: [급지 선택 세그먼트] → [지도+정보 카드] → [섹션 헤더] → [10급지 타일 그리드]
+    → [선택 티어 시총 TOP20 리스트]. 전부 st.markdown 흐름이라 동적 높이/겹침 문제가
+    구조적으로 없음(구 iframe은 _fit 리사이즈가 Streamlit 래퍼 높이와 충돌해 아래
+    요소('자동 갱신 현황' 등)와 겹쳤음). 급지 선택은 타일 클릭 대신 세그먼트 컨트롤."""
     groups, live = _region_board_payload()
     if not any(g["n"] for g in groups):
         st.caption("지역 보드 데이터가 아직 없어요. 매일 아침 자동 수집 후 표시됩니다.")
         return
-    html = (_REGION_BOARD_HTML
-            .replace("__G__", _json.dumps(groups, ensure_ascii=False))
-            .replace("__GEO__", _json.dumps(_BOARD_GEO, ensure_ascii=False))
-            .replace("__TG__", _json.dumps(_TIER_GEO_MAP, ensure_ascii=False)))
-    # 높이: 좌우 5단 타일 + 상세 패널(지도) + 리스트 20행 — iframe 내 _fit이 실측 보정
-    components.html(html, height=2600, scrolling=False)
+    st.markdown(_RB_CSS, unsafe_allow_html=True)
+    names = [g["nm"] for g in groups]
+    default = next((g["nm"] for g in groups if g["n"]), names[0])
+    sel = st.segmented_control(
+        "급지 선택", names, default=default,
+        key="re_tier", label_visibility="collapsed",
+    ) or default
+    g = next((x for x in groups if x["nm"] == sel), groups[0])
+    # 1) 지도+정보 — 최상단('지역 급지별 매매 현황' 헤더 위)
+    st.markdown(_rb_map_html(g), unsafe_allow_html=True)
+    # 2) 섹션 헤더
+    st.markdown('<div class="re-grp">지역 급지별 매매 현황'
+                '<span class="sub">평당가 10급지 동적 배정 · 여의도·목동·성수·이촌·잠실 '
+                '분리 · 티어당 시총 TOP20 + 신고가·괴리 알림 · 급지 선택은 상단 버튼</span></div>',
+                unsafe_allow_html=True)
+    # 3) 급지 타일 그리드(1~10 · 선택 강조 · 기타 제외)
+    st.markdown('<div class="rb-wrap">'
+                + "".join(_rb_tile_html(x, x["nm"] == sel) for x in groups)
+                + "</div>", unsafe_allow_html=True)
+    # 4) 선택 티어 리스트
+    cap_s = f' · 티어 시총 {g["cap"]}' if g["cap"] else ""
+    rows = ("".join(_rb_row_html(i, c) for i, c in enumerate(g["rows"]))
+            if g["rows"] else '<div class="rb-empty">이 티어에 배정된 단지가 없어요.</div>')
+    st.markdown(
+        f'<div class="rb-cxh"><span class="rb-cxt">{g["nm"]} 주요 단지'
+        f'<em>{g["rng"]}{cap_s}</em></span>'
+        f'<span class="rb-cap">시총 TOP 20 · 평형 3개월 평균 · 🔺신고가·▲▼±5% 알림</span>'
+        f'</div><div class="rb-cx">{rows}</div>', unsafe_allow_html=True)
     src = ("국토부 실거래 × 유니버스" if live
            else "샘플 · 아침 수집 후 실데이터로 교체")
     st.markdown(foot_row(
@@ -1173,7 +1203,7 @@ def _render_region_board():
              "경계 9천/6천/5천/4천/3천만원 고정 · 대표가는 유니버스 월 리빌드 주기로 갱신 · "
              "리전=서울 자치구 + 판교·위례·광교·수지·동탄·평촌·일산·다산·별내·송도·청라 등 "
              "법정동 분리(위례=성남 창곡+하남 학암, 송파 장지동은 송파구 유지 · "
-             "광교=수원 3개동, 상현동은 수지) · 미열거 지역=기타 · "
+             "광교=수원 3개동, 상현동은 수지) · 미분류 지역은 미표시(1~10급지만) · "
              "그룹 등락=3개월 내 거래 단지의 30일比 평균 · 단지=티어 내 시총 TOP20 · "
              "평형칩=평형별 3개월 평균(건수) · 알림=🔺평형별 신고가(직전 6개월 최고 "
              "초과·마진%)와 ▲▼평형 3개월 평균 대비 ±5% 이상 괴리 거래(최근 30일·"
