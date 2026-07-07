@@ -772,12 +772,14 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);f
  -webkit-font-smoothing:antialiased}
 .box{padding:2px 1px 8px}
 .up{color:var(--up)}.dn{color:var(--dn)}
+.bd-h{font-size:15px;font-weight:800;color:var(--ink);margin:14px 2px 9px;letter-spacing:-.01em}
+.bd-h .sub{font-weight:600;color:var(--muted);font-size:11px;margin-left:7px;letter-spacing:0}
 .gt-wrap{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px}
 .gt-col{display:flex;flex-direction:column;gap:9px}
-#gtEtc{margin-bottom:12px}
 @media(max-width:680px){.gt-wrap{grid-template-columns:1fr}}
 .dt{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:12px 14px;margin-bottom:12px}
 .dt-map svg{width:100%;height:auto;display:block}
+.dt-map text{pointer-events:none;fill:#2f302a;font-family:var(--kf);font-weight:700}
 .dt-info{margin-top:10px}
 .dt-map path{fill:#EFF0EA;stroke:#fff;stroke-width:1.2}
 .dt-map path.sh{fill:var(--sage)}
@@ -848,12 +850,13 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);f
 .empty{font-size:12px;color:var(--muted);padding:18px 14px}
 @media(max-width:680px){.cx-row{grid-template-columns:22px 1fr auto;gap:8px;padding:10px 11px}}
 </style></head><body><div class="box">
-  <div class="gt-wrap"><div class="gt-col" id="gtColL"></div><div class="gt-col" id="gtColR"></div></div>
-  <div id="gtEtc"></div>
   <div class="dt"><div class="dt-map" id="dtMap"></div>
     <div class="dt-info"><div class="dt-h" id="dtH"></div><div class="dt-rgs" id="dtRgs"></div>
       <div class="dt-top3" id="dtT3"></div>
       <div class="dt-note">지도 음영 = 시·군·구 단위 근사 · 인천 포함(송도=연수구·청라=서구)</div></div></div>
+  <div class="bd-h">지역 급지별 매매 현황<span class="sub">평당가 10급지 동적 배정 ·
+    여의도·목동·성수·이촌·잠실 분리 · 티어당 시총 TOP20 + 신고가·괴리 알림</span></div>
+  <div class="gt-wrap"><div class="gt-col" id="gtColL"></div><div class="gt-col" id="gtColR"></div></div>
   <div class="cx-head"><span class="cx-title" id="cxTitle"></span>
     <span class="cx-cap">시총 TOP 20 · 평형 3개월 평균 · 🔺신고가·▲▼±5% 알림</span></div>
   <div class="cx" id="cxList"></div>
@@ -862,7 +865,9 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);f
 const G=__G__,GEO=__GEO__,TG=__TG__;
 document.getElementById("dtMap").innerHTML=
  '<svg viewBox="-115 215 1210 865" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="\uae09\uc9c0 \uc9c0\uc5ed \uc9c0\ub3c4">'
- +GEO.map(function(s){return '<path data-n="'+s.n+'" d="'+s.d+'"/>';}).join("")+'</svg>';
+ +GEO.map(function(s){return '<path data-n="'+s.n+'" d="'+s.d+'"/>';}).join("")
+ +'<g id="mapLb"></g></svg>';
+const GIDX={};GEO.forEach(function(s){GIDX[s.n]=s;});
 let sel=null;
 for(const g of G){if(g.n){sel=g.k;break;}}
 const pct=c=>(c>=0?"+":"")+c.toFixed(1)+"%";
@@ -904,17 +909,21 @@ function card(g){
   +'<span class="dn">\u25bc'+g.dn+'</span></div></div>';}
 function draw(){
  var main=G.filter(function(x){return x.k!=="etc";});
- var etc=G.find(function(x){return x.k==="etc";});
  document.getElementById("gtColL").innerHTML=main.slice(0,5).map(card).join("");
  document.getElementById("gtColR").innerHTML=main.slice(5,10).map(card).join("");
- document.getElementById("gtEtc").innerHTML=etc?card(etc):"";
  document.querySelectorAll(".gt").forEach(function(el){el.onclick=function(){sel=el.dataset.k;draw();};});
  var g=G.find(function(x){return x.k===sel;});if(!g)return;
- // 상세 패널 — 미니지도 음영 + 구성 + TOP3
+ // 상세 패널 — 미니지도 음영 + 음영 지역 라벨('지도' 탭 스타일) + 구성 + TOP3
  var shade={};
  if(g.k!=="etc")g.regions.forEach(function(r){(TG[r.nm]||[r.nm]).forEach(function(n){shade[n]=1;});});
  document.querySelectorAll("#dtMap path").forEach(function(p){
   p.classList.toggle("sh",!!shade[p.dataset.n]);});
+ document.getElementById("mapLb").innerHTML=Object.keys(shade).map(function(n){
+  var s=GIDX[n];if(!s||s.cx==null||s.cy==null)return "";
+  var fs=s.sl.length>3?21:26;
+  return '<text x="'+s.cx+'" y="'+s.cy+'" text-anchor="middle" dominant-baseline="middle"'
+   +' font-size="'+fs+'" paint-order="stroke" stroke="#FCFCFA" stroke-width="'
+   +(fs*0.22).toFixed(1)+'" stroke-linejoin="round">'+s.sl+'</text>';}).join("");
  document.getElementById("dtH").innerHTML=g.nm+'<em>'+g.rng
   +(g.cap?' \u00b7 \ud2f0\uc5b4 \uc2dc\ucd1d '+g.cap:'')+'</em>';
  document.getElementById("dtRgs").innerHTML=g.regions.length
@@ -943,6 +952,7 @@ function _fit(){try{var h=Math.ceil(document.body.getBoundingClientRect().height
   if(p.style&&p.style.height&&p.style.height!=="auto")p.style.height="auto";p=p.parentElement;}}catch(e){}}
 window.addEventListener("load",_fit);setTimeout(_fit,150);setTimeout(_fit,600);setTimeout(_fit,1500);
 window.addEventListener("resize",_fit);try{new ResizeObserver(_fit).observe(document.body);}catch(e){}
+setInterval(_fit,2000);
 </script></body></html>'''
 
 
@@ -1012,7 +1022,8 @@ def _build_board_geo():
     인천 로컬 도형(_LOCAL_GEO['incheon'])은 드릴다운용 별도 좌표계라, 실제 위경도 앵커
     (계양·부평·연수)로 산출한 affine(scale 0.47, offset −431.6/−76.7)을 적용해 경기
     좌표계에 정합시킨다(부천·시흥 서쪽·김포 남쪽 실제 위치와 일치 검증됨).
-    이름은 서울 중구 등과 충돌하지 않게 '인천' 접두(예: 인천연수구·인천서구)."""
+    이름은 서울 중구 등과 충돌하지 않게 '인천' 접두(예: 인천연수구·인천서구).
+    sl·cx·cy는 지도 라벨(선택 급지 음영 위 지역명) 재료 — 인천 cx·cy도 같은 변환."""
     import re as _re
     S, TX, TY = 0.47, -431.6, -76.7
 
@@ -1022,9 +1033,17 @@ def _build_board_geo():
             lambda m: (f"{float(m.group(1)) * S + TX:.1f},"
                        f"{float(m.group(2)) * S + TY:.1f}"), d)
 
-    out = [{"n": s["n"], "d": s["d"]} for s in _GEO]
+    out = [{"n": s["n"], "d": s["d"], "sl": s.get("sl") or s["n"],
+            "cx": s.get("cx"), "cy": s.get("cy")} for s in _GEO]
     for s in (_LOCAL_GEO.get("incheon") or []):
-        out.append({"n": "인천" + s["n"], "d": _xf(s["d"])})
+        sl = s.get("sl") or s["n"]
+        if len(sl) < 2:                      # '서'·'중'·'동' 단독 라벨 방지
+            sl = sl + "구"
+        out.append({"n": "인천" + s["n"], "d": _xf(s["d"]), "sl": sl,
+                    "cx": (round(s["cx"] * S + TX, 1)
+                           if isinstance(s.get("cx"), (int, float)) else None),
+                    "cy": (round(s["cy"] * S + TY, 1)
+                           if isinstance(s.get("cy"), (int, float)) else None)})
     return out
 
 
@@ -1083,9 +1102,11 @@ def _region_board_payload():
         buckets[tk].extend(lst)
         if rg != "__etc__":
             tier_regions[tk].append({"nm": rg, "py": round(region_py.get(rg, 0))})
-    # 3) 티어별 요약 + 시총 TOP20
+    # 3) 티어별 요약 + 시총 TOP20 — 기타(etc·미분류 유니버스)는 표시 대상에서 제외(1~10급지만)
     out = []
     for k, nm, rng in _TIER_META:
+        if k == "etc":
+            continue
         lst = buckets[k]
         chgs = [c["chg"] for c in lst if isinstance(c.get("chg"), (int, float))]
         up = sum(1 for v in chgs if v > 0)
