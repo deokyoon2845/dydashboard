@@ -66,16 +66,14 @@ def render_realestate():
 
     elif _re_maintab == "실거래":
         from modules.realestate_deals import (_render_hot_complexes,
-                                              _render_market_band,
-                                              _render_market_week_band,
+                                              _render_market_bands,
                                               _render_region_board)
         tab_header("아파트 실거래",
-                   caption="아파트 단지·실거래 종합 — 시장 방향(주간·오늘)·지역 급지·주목단지 · "
+                   caption="아파트 단지·실거래 종합 — 시장 방향(월간·주간·오늘)·지역 급지·주목단지 · "
                            "국토부 실거래 기준 · 직거래 기본 제외",
                    css=_RE_CSS)
-        # 오늘|주간 토글 통합 — 같은 '오늘' 양식 밴드를 2단 스택(위=주간, 아래=오늘).
-        _render_market_week_band()
-        _render_market_band()
+        # 월간|주간|오늘 3단 통합 — 같은 양식 밴드를 단일 iframe에 스택(단 간격 10px).
+        _render_market_bands()
         st_rg, st_hot = st.tabs(["지역", "주목 단지"])
         with st_rg:
             st.markdown('<div class="re-grp">지역 급지별 매매 현황'
