@@ -33,6 +33,7 @@ self-contained(별도 DB 누적 불필요):
 import os
 import re
 import statistics
+import time
 from datetime import date, timedelta
  
 import requests
@@ -1340,7 +1341,7 @@ def _dgo_reset_stats():
                        "http": {}, "last_err": ""})
 
 
-def _dgo_json(host_path, params, timeout=12):
+def _dgo_json(host_path, params, timeout=12, minimal=False, retries=0):
     """data.go.kr GET → response.body dict 반환, 실패 None.
 
     [2026-07 개편] 세대수 API 전멸 사고 대응 — RTMS(_request)와 동일 수준으로 강화:
@@ -1351,52 +1352,64 @@ def _dgo_json(host_path, params, timeout=12):
         (OpenAPI_ServiceResponse)로 온다 — r.json() 실패 시 xmltodict로 파싱해
         returnAuthMsg를 진단에 남긴다(원인 후보 2 = 활용신청 미승인 판별 가능).
       · 무진단 금지: 모든 실패를 _DGO_STATS에 집계 — 호출부가 요약 한 줄을 출력한다.
-    인증류 오류(AUTH/resultCode≠00)는 scheme 폴백해도 동일하므로 즉시 None."""
+      · minimal=True: serviceKey + params만 전송(type/numOfRows/pageNo 미첨부).
+        프로브(2026-07)에서 목록(getSigunguAptList3)은 type=json 정상인데
+        기본정보(getAphusBassInfoV3)는 HTTP 500 'Unexpected errors' —
+        단건 조회 오퍼레이션이 여분 파라미터에 500을 던지는 K-apt 백엔드 대응.
+        응답이 XML이어도 아래 폴백이 그대로 파싱한다(V1 예제도 kaptCode+키만 사용).
+      · retries: 5xx/네트워크 오류에 한해 짧은 대기 후 재시도(일시 장애 흡수).
+        인증류 오류(AUTH/resultCode≠00)는 재시도·scheme 폴백 모두 무의미 → 즉시 None."""
     key = _get_key()
     if not key:
         _DGO_STATS["last_err"] = "KEY_MISSING"
         return None
     skey = requests.utils.unquote(key)   # _request(RTMS)와 동일 — 재인코딩은 requests가
-    q = {"serviceKey": skey, "type": "json", "numOfRows": 1000, "pageNo": 1, **params}
-    for scheme in ("https", "http"):
-        try:
-            r = requests.get(f"{scheme}://{host_path}", params=q, timeout=timeout)
-        except Exception as e:
-            _DGO_STATS["neterr"] += 1
-            _DGO_STATS["last_err"] = f"NET: {str(e)[:80]}"
-            continue
-        if r.status_code != 200:
-            _DGO_STATS["http"][r.status_code] = \
-                _DGO_STATS["http"].get(r.status_code, 0) + 1
-            _DGO_STATS["last_err"] = f"HTTP {r.status_code}"
-            continue
-        try:
-            data = r.json()
-        except ValueError:
-            # JSON 아님 → XML(게이트웨이 오류 또는 XML 고정 응답) 폴백
+    if minimal:
+        q = {"serviceKey": skey, **params}
+    else:
+        q = {"serviceKey": skey, "type": "json", "numOfRows": 1000, "pageNo": 1, **params}
+    for attempt in range(retries + 1):
+        if attempt:
+            time.sleep(0.5)
+        for scheme in ("https", "http"):
             try:
-                import xmltodict
-                x = xmltodict.parse(r.text)
+                r = requests.get(f"{scheme}://{host_path}", params=q, timeout=timeout)
             except Exception as e:
-                _DGO_STATS["parse"] += 1
-                _DGO_STATS["last_err"] = f"PARSE: {str(e)[:80]}"
+                _DGO_STATS["neterr"] += 1
+                _DGO_STATS["last_err"] = f"NET: {str(e)[:80]}"
                 continue
-            if "OpenAPI_ServiceResponse" in x:   # 키 미등록/미승인/쿼터초과 등
-                h = (x["OpenAPI_ServiceResponse"] or {}).get("cmmMsgHeader") or {}
+            if r.status_code != 200:
+                _DGO_STATS["http"][r.status_code] = \
+                    _DGO_STATS["http"].get(r.status_code, 0) + 1
+                _DGO_STATS["last_err"] = f"HTTP {r.status_code}"
+                continue
+            try:
+                data = r.json()
+            except ValueError:
+                # JSON 아님 → XML(게이트웨이 오류 또는 XML 고정 응답) 폴백
+                try:
+                    import xmltodict
+                    x = xmltodict.parse(r.text)
+                except Exception as e:
+                    _DGO_STATS["parse"] += 1
+                    _DGO_STATS["last_err"] = f"PARSE: {str(e)[:80]}"
+                    continue
+                if "OpenAPI_ServiceResponse" in x:   # 키 미등록/미승인/쿼터초과 등
+                    h = (x["OpenAPI_ServiceResponse"] or {}).get("cmmMsgHeader") or {}
+                    _DGO_STATS["auth"] += 1
+                    _DGO_STATS["last_err"] = (f"AUTH {h.get('returnReasonCode')}: "
+                                              f"{h.get('returnAuthMsg') or h.get('errMsg')}")
+                    return None                      # scheme·재시도 무의미 → 즉시 중단
+                data = x
+            resp = (data or {}).get("response") or {}
+            hdr = resp.get("header") or {}
+            rcode = str(hdr.get("resultCode") or "").strip()
+            if rcode and rcode not in ("00", "0", "000"):
                 _DGO_STATS["auth"] += 1
-                _DGO_STATS["last_err"] = (f"AUTH {h.get('returnReasonCode')}: "
-                                          f"{h.get('returnAuthMsg') or h.get('errMsg')}")
-                return None                      # scheme 바꿔도 동일 → 즉시 중단
-            data = x
-        resp = (data or {}).get("response") or {}
-        hdr = resp.get("header") or {}
-        rcode = str(hdr.get("resultCode") or "").strip()
-        if rcode and rcode not in ("00", "0", "000"):
-            _DGO_STATS["auth"] += 1
-            _DGO_STATS["last_err"] = f"resultCode {rcode}: {hdr.get('resultMsg')}"
-            return None                          # 서비스 오류도 scheme 무관 → 즉시 중단
-        _DGO_STATS["ok"] += 1
-        return resp.get("body") or {}
+                _DGO_STATS["last_err"] = f"resultCode {rcode}: {hdr.get('resultMsg')}"
+                return None                          # 서비스 오류도 scheme 무관 → 즉시 중단
+            _DGO_STATS["ok"] += 1
+            return resp.get("body") or {}
     return None
  
  
@@ -1579,7 +1592,8 @@ def _apt_info_fetch(pairs):
             if kc:
                 matched += 1
                 if kc not in info_cache:
-                    b = None if _auth_dead() else _dgo_json(_APT_INFO, {"kaptCode": kc})
+                    b = None if _auth_dead() else _dgo_json(
+                        _APT_INFO, {"kaptCode": kc}, minimal=True, retries=1)
                     item = (b or {}).get("item") or {}
                     if isinstance(item, list):
                         item = item[0] if item else {}
