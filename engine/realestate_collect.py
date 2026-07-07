@@ -1711,6 +1711,16 @@ UNIVERSE_TOP_N = 15          # 지역별 세대수 상위 N
 UNIVERSE_MIN_UNITS = 500     # 최소 세대수 컷(소형 제외)
 UNIVERSE_CAND = 25           # 지역별 세대수 조회 후보 상한(거래빈도 상위) — 콜드빌드 비용 상한
 UNIVERSE_MIN_FREQ = 3        # 후보 최소 거래빈도(12개월) — 유령/오타 단지 컷
+# ── 캐시 무결성 가드(2026-07 추가) ─────────────────────────────
+#   배경: API 부분 실패(스로틀 등)로 소수 지역만 성공한 '오염 유니버스'(예: 20단지)가
+#   캐시에 저장되면, 시총리더·주목단지·특이거래·지역 급지보드가 30일간 그 위에서 계산돼
+#   전 탭이 껍데기가 됐다. → 스키마 버전 + 최소 커버리지를 만족하는 캐시만 유효 취급.
+#   기준 미달 캐시는 load_universe()가 None을 돌려 '유니버스 미확보' 폴백 경로로 빠지고,
+#   collect_universe()는 다음 실행에서 자동 재빌드한다(자가 복구).
+UNIVERSE_SCHEMA_V = 2        # 행 스키마 버전(price/ppa/area/jr 포함 세대) — 구버전 캐시 무효화
+UNIVERSE_MIN_REGIONS = 20    # 유효 커버리지 하한: 지역 수(정상 ≈ 37)
+UNIVERSE_MIN_FLAT = 100      # 유효 커버리지 하한: 단지 수(정상 ≈ 300~450)
+UNIVERSE_KEEP_RATIO = 0.6    # 재빌드 결과가 기존 캐시의 60% 미만이면 축소 빌드로 간주 → 기존 유지
  
 # 경기 핵심 9시(확정). 서울은 SIGUNGU_CODES의 '구'로 끝나는 이름 전부(25개구).
 UNIVERSE_GG = ["과천시", "성남시", "하남시", "광명시", "안양시",
@@ -1742,14 +1752,32 @@ def universe_scope():
     return seoul + gg + extra
  
  
+def _universe_ok(c):
+    """유니버스 dict 무결성 — 스키마 버전·커버리지·필수 필드 검사.
+
+    통과 못 하면 '미확보' 취급(폴백 경로) — 오염/구버전 캐시가 시총·주목단지·특이거래를
+    30일간 망가뜨리는 사고 방지. flat 표본 행에 price·units가 있어야 시총 계산이 성립한다."""
+    if not (isinstance(c, dict) and c.get("regions") and c.get("flat")):
+        return False
+    if c.get("v") != UNIVERSE_SCHEMA_V:
+        return False
+    if len(c["regions"]) < UNIVERSE_MIN_REGIONS or len(c["flat"]) < UNIVERSE_MIN_FLAT:
+        return False
+    smp = c["flat"][0]
+    return isinstance(smp, dict) and bool(smp.get("price")) and bool(smp.get("units"))
+
+
 def load_universe():
-    """engine_cache(re_universe)에서 유니버스 dict 반환(없거나 비면 None). 뷰어·엔진 공용 읽기."""
+    """engine_cache(re_universe)에서 '유효한' 유니버스 dict 반환(무결성 미달 시 None).
+
+    뷰어·엔진 공용 읽기. None이면 각 소비처(시총리더·주목단지·특이거래)는 기존
+    비-유니버스 폴백 로직으로 동작하고, collect_universe()는 재빌드를 시도한다."""
     try:
         from modules.db import cache_get
         c = cache_get(UNIVERSE_CACHE_KEY)
     except Exception:
         return None
-    return c if isinstance(c, dict) and c.get("regions") else None
+    return c if _universe_ok(c) else None
  
  
 def universe_membership(uni=None):
@@ -1887,16 +1915,26 @@ def collect_universe(asof=None, force=False):
  
     flat.sort(key=lambda d: d["units"], reverse=True)
     out = {
+        "v": UNIVERSE_SCHEMA_V,          # 스키마 버전 — load_universe 무결성 검사용
         "asof": asof.isoformat(),
         "scope": scope,
         "regions": regions,
         "flat": flat,
         "keys": [f"{d['gu']}|{_norm_apt(d['apt'])}" for d in flat],
     }
+    prev = load_universe()               # 무결성 통과한 기존 캐시(없으면 None)
     if not flat:
-        prev = load_universe()      # 세대수 전멸(보강 실패 등) → 기존 캐시 유지
-        if prev:
+        if prev:                         # 세대수 전멸(보강 실패 등) → 기존 캐시 유지
             print("[realestate] 유니버스 세대수 확보 0단지 — 기존 캐시 유지.")
+            return prev
+    elif not _universe_ok(out) or (
+            prev and len(flat) < len(prev.get("flat", [])) * UNIVERSE_KEEP_RATIO):
+        # 부분 실패 빌드(커버리지 미달/기존 대비 급감) — 캐시를 덮지 않는다.
+        #   오염 캐시가 30일간 전 탭을 망가뜨린 사고의 재발 방지. 기존 유효 캐시가 있으면
+        #   그걸 쓰고, 없으면 이번 실행 한정으로 부분 결과만 반환(미저장 → 다음 실행 재빌드).
+        print(f"[realestate] 유니버스 축소 빌드 감지({len(flat)}단지/{len(regions)}지역) "
+              f"— 캐시 미저장{' · 기존 캐시 사용' if prev else ' · 이번 실행 한정 사용'}.")
+        if prev:
             return prev
     else:
         try:
