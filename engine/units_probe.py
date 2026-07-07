@@ -2,7 +2,7 @@
 
 경위: 기본정보 API 전면 500(v2) → K-apt 벌크 XLSX는 데이터센터 IP 차단으로
 커넥션 타임아웃(v3) → 공공데이터포털 원문파일(한국부동산원 '공동주택 단지
-식별정보_기본정보', data.go.kr/15106861 · 전국 44,628행)을 odcloud 자동변환
+식별정보_기본정보', data.go.kr/15106861 · 전국 30만여 행)을 odcloud 자동변환
 API로 조회하는 방식으로 전환. data.go.kr 인프라라 Actions에서 접근 가능하다.
 
   ★ 사전 1회: data.go.kr 로그인 → 15106861 파일데이터 페이지 → '오픈API' 탭
@@ -67,9 +67,9 @@ def main():
                              ("주소", "단지명_공시가격", "세대수") if k in rows[0]})
 
     print("\n[2] 전 페이지 순회 — 수도권 파싱")
-    per, page, regions, samples = 5000, 0, {}, {}
+    per, page, regions, samples = 5000, 0, {}, {}   # 307,407행 ≈ 62페이지
     targets = [("강남구", "은마"), ("송파구", "파크리오"), ("송파구", "리센츠")]
-    while page < 12:
+    while page < 70:
         page += 1
         rr = requests.get(_ODCLOUD, params={"page": page, "perPage": per,
                                             "serviceKey": uq,
@@ -95,6 +95,8 @@ def main():
             for gu, nm in targets:
                 if gu in addr and nm in names and (gu, nm) not in samples:
                     samples[(gu, nm)] = u
+        if page % 10 == 0:
+            print(f"   … p{page} 진행(누적 수도권 {sum(regions.values())}단지)")
         if len(rows) < per:
             break
     print(f"   → 수도권 {sum(regions.values())}단지(세대수 100+) · "
