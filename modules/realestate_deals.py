@@ -1080,7 +1080,8 @@ def _rb_map_html(g):
         top3 = '<span class="none">단지 없음</span>'
     return (
         f'<div class="rb-dt"><div class="rb-map">'
-        f'<svg viewBox="-115 215 1210 865" xmlns="http://www.w3.org/2000/svg" '
+        f'<svg viewBox="-115 215 1210 865" width="1210" height="865" '
+        f'xmlns="http://www.w3.org/2000/svg" '
         f'role="img" aria-label="급지 지역 지도">{paths}{labels}</svg></div>'
         f'<div class="rb-info"><div class="rb-h">{g["nm"]}<em>{g["rng"]}{cap_s}</em></div>'
         f'<div class="rb-rgs">{rgs}</div>'
@@ -1679,16 +1680,76 @@ def _render_market_band():
         unsafe_allow_html=True)
 
 
+_MB_CSS = """<style>
+.mb-stack{display:flex;flex-direction:column;gap:10px;margin-bottom:6px}
+.mb-band{background:#FCFCFA;border:1px solid #E4E5DE;border-radius:12px;padding:16px 20px;display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+.mb-hero{min-width:188px}
+.mb-cap{font-size:11px;font-weight:700;letter-spacing:.04em;color:#9a9b92;text-transform:uppercase;margin-bottom:7px}
+.mb-cap b{color:#7E9A83}
+.mb-dir{display:flex;align-items:baseline;gap:8px;margin-bottom:9px}
+.mb-dir .ar{font-size:15px}
+.mb-dir .t{font-size:19px;font-weight:800;letter-spacing:-.02em;color:#34352f}
+.mb-dir .p{font-size:14px;font-weight:800}
+.mb-pbar{height:9px;border-radius:5px;background:#DCE2EA;overflow:hidden}
+.mb-pbar .up{display:block;height:100%;background:#B65F5A}
+.mb-nums{font-size:11px;font-weight:700;margin-top:6px;display:flex;justify-content:space-between}
+.mb-nums .hi{color:#B65F5A}.mb-nums .lo{color:#5A7CA0}
+.mb-grid{flex:1;display:grid;grid-template-columns:repeat(4,1fr);gap:14px;min-width:258px}
+.mb-kl{font-size:11px;font-weight:700;color:#9a9b92;margin-bottom:4px}
+.mb-kl small{font-size:9.5px;font-weight:700;color:#b6b7ae;margin-left:2px}
+.mb-kv{font-size:18px;font-weight:800;color:#34352f;letter-spacing:-.02em}
+.mb-kv small{font-size:11px;font-weight:700;color:#9a9b92;margin-left:2px}
+</style>"""
+
+
+def _band_div_native(caption, hi, lo, act, avg,
+                     kl=("신고가", "신저가", "거래활발", "평균 상승률")):
+    """요약 밴드 1단 — 네이티브 st.markdown용(mb- 접두 클래스 · 색상 리터럴).
+    구 iframe _band_div와 동일 규칙(방향 배지·상승압력 바·4지표 그리드)."""
+    tot = hi + lo
+    pct = round(hi / tot * 100) if tot else 50
+    if pct >= 60:
+        dlabel, arrow, dcol = "상승 우세", "▲", "#B65F5A"
+    elif pct <= 40:
+        dlabel, arrow, dcol = "하락 우세", "▼", "#5A7CA0"
+    else:
+        dlabel, arrow, dcol = "혼조", "◆", "#7E9A83"
+    if avg is None:
+        gain, gcol = "–", "#9a9b92"
+    else:
+        gcol = "#B65F5A" if avg >= 0 else "#5A7CA0"
+        gain = f'{"+" if avg >= 0 else ""}{avg}<small>%</small>'
+    return (
+        f'<div class="mb-band"><div class="mb-hero">'
+        f'<div class="mb-cap">{caption}</div>'
+        f'<div class="mb-dir"><span class="ar" style="color:{dcol}">{arrow}</span>'
+        f'<span class="t">{dlabel}</span>'
+        f'<span class="p" style="color:{dcol}">{pct}%</span></div>'
+        f'<div class="mb-pbar"><span class="up" style="width:{pct}%"></span></div>'
+        f'<div class="mb-nums"><span class="hi">신고가 {hi}</span>'
+        f'<span class="lo">신저가 {lo}</span></div></div>'
+        f'<div class="mb-grid">'
+        f'<div><div class="mb-kl">{kl[0]}</div>'
+        f'<div class="mb-kv" style="color:#B65F5A">{hi}<small>건</small></div></div>'
+        f'<div><div class="mb-kl">{kl[1]}</div>'
+        f'<div class="mb-kv" style="color:#5A7CA0">{lo}<small>건</small></div></div>'
+        f'<div><div class="mb-kl">{kl[2]}</div>'
+        f'<div class="mb-kv">{act}<small>단지</small></div></div>'
+        f'<div><div class="mb-kl">{kl[3]}</div>'
+        f'<div class="mb-kv" style="color:{gcol}">{gain}</div></div>'
+        f'</div></div>')
+
+
 def _render_market_bands():
-    """월간·주간·오늘 시장 밴드 3단 통합 렌더 — 단일 iframe(단 간격 10px).
-    개별 iframe 3장으로 쌓으면 Streamlit 요소 기본 여백 때문에 밴드 사이가 벌어져
-    한 문서로 합쳤다(주간·오늘 사이 여백 축소 + 월간 신설). 표본 없는 단은 생략,
-    전부 없으면 아무것도 그리지 않는다. foot는 여기서 한 번만(3단 공통 설명)."""
+    """월간·주간·오늘 시장 밴드 3단 — Streamlit 네이티브 렌더(st.markdown 단일 블록).
+    구 버전은 단일 iframe 스택이었으나, 이 환경에서 iframe 동적/고정 높이가 페이지
+    흐름·인쇄 레이아웃과 어긋나는 문제가 있어 실거래 탭에서 iframe을 완전히 제거했다.
+    표본 없는 단은 생략, 전부 없으면 아무것도 그리지 않는다. foot는 한 번만."""
     divs = []
     m = _market_month_summary()
     if m:
         d0, d1 = m["start"], m["latest"]
-        divs.append(_band_div(
+        divs.append(_band_div_native(
             f'<b>월간</b> 아파트 시장 · {d0.month}.{d0.day}→{d1.month}.{d1.day} · '
             '최신거래일 기준 30일',
             m["hi"], m["lo"], m["act"], m["avg"],
@@ -1697,7 +1758,7 @@ def _render_market_bands():
     w = _market_week_summary()
     if w:
         d0, d1 = w["start"], w["latest"]
-        divs.append(_band_div(
+        divs.append(_band_div_native(
             f'<b>주간</b> 아파트 시장 · {d0.month}.{d0.day}→{d1.month}.{d1.day} · '
             '최신거래일 기준 7일',
             w["hi"], w["lo"], w["act"], w["avg"],
@@ -1708,13 +1769,12 @@ def _render_market_bands():
         _ref = t.get("latest")
         datestr = (f'{_ref.month}.{_ref.day} 최신거래 기준' if _ref
                    else f'{t["today"].month}.{t["today"].day} 기준')
-        divs.append(_band_div(f'오늘의 아파트 시장 · {datestr}',
-                              t["hi"], t["lo"], t["act"], t["avg"]))
+        divs.append(_band_div_native(f'오늘의 아파트 시장 · {datestr}',
+                                     t["hi"], t["lo"], t["act"], t["avg"]))
     if not divs:
         return
-    html = _MARKET_BAND_HTML.replace("__BANDS__", "".join(divs))
-    # 초기 높이=단수×150+여백 — iframe 내 _fit이 실측 보정(부모 래퍼 높이까지 해제)
-    components.html(html, height=len(divs) * 155 + 20, scrolling=False)
+    st.markdown(_MB_CSS + '<div class="mb-stack">' + "".join(divs) + "</div>",
+                unsafe_allow_html=True)
     st.markdown(foot_row(
         "특이거래 기준과 동일 집계",
         "상승압력=신고가÷(신고가+신저가) · 표준 민감도·직거래 제외 · "
