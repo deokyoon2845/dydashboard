@@ -74,14 +74,17 @@ def render_realestate():
                    css=_RE_CSS)
         # 월간|주간|오늘 3단 통합 — 같은 양식 밴드를 단일 iframe에 스택(단 간격 10px).
         _render_market_bands()
-        st_rg, st_hot = st.tabs(["지역", "주목 단지"])
-        with st_rg:
-            st.markdown('<div class="re-grp">지역 급지별 매매 현황'
-                        '<span class="sub">평당가 10급지 동적 배정 · 여의도·목동·성수·'
-                        '이촌·잠실 분리 · 티어당 시총 TOP20 + 신고가·괴리 알림</span></div>',
-                        unsafe_allow_html=True)
+        # 지역|주목 단지 — st.tabs는 패널 높이를 마운트 시점에 고정해 iframe이 나중에
+        # 커지면(급지 보드 _fit) 아래 요소와 겹치는 문제가 있어 segmented_control
+        # 조건부 렌더로 교체(다른 탭들과 동일 패턴 · 미선택 탭 실행 부담도 제거).
+        _re_dealtab = st.segmented_control(
+            "실거래 보기", ["지역", "주목 단지"], default="지역",
+            key="re_dealtab", label_visibility="collapsed",
+        ) or "지역"
+        if _re_dealtab == "지역":
+            # 섹션 헤더('지역 급지별 매매 현황')는 보드 iframe 내부(지도 아래)로 이동
             _render_region_board()
-        with st_hot:
+        else:
             _render_hot_complexes()
 
     elif _re_maintab == "분양":
