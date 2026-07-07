@@ -1331,20 +1331,72 @@ _KNOWN_UNITS = {
 _KNOWN_UNITS = {_norm_apt(k): v for k, v in _KNOWN_UNITS.items() if v >= 1000}
  
  
+_DGO_STATS = {"ok": 0, "auth": 0, "parse": 0, "neterr": 0, "http": {}, "last_err": ""}
+
+
+def _dgo_reset_stats():
+    """세대수 API 호출 통계 리셋(요약 로그 구간 구분용)."""
+    _DGO_STATS.update({"ok": 0, "auth": 0, "parse": 0, "neterr": 0,
+                       "http": {}, "last_err": ""})
+
+
 def _dgo_json(host_path, params, timeout=12):
-    """data.go.kr GET(JSON, https→http 폴백). response.body dict 반환, 실패 None."""
+    """data.go.kr GET → response.body dict 반환, 실패 None.
+
+    [2026-07 개편] 세대수 API 전멸 사고 대응 — RTMS(_request)와 동일 수준으로 강화:
+      · 키 unquote: Encoding/Decoding 키 모두 대응(기존엔 raw 그대로 → Encoding형 키가
+        requests에 의해 이중 인코딩되어 게이트웨이 인증 거부 = 유니버스가 _KNOWN_UNITS
+        폴백만으로 지어지던 근본 원인 후보 1).
+      · XML 폴백: 게이트웨이 오류(키 미등록/미승인/쿼터)는 type=json이어도 XML
+        (OpenAPI_ServiceResponse)로 온다 — r.json() 실패 시 xmltodict로 파싱해
+        returnAuthMsg를 진단에 남긴다(원인 후보 2 = 활용신청 미승인 판별 가능).
+      · 무진단 금지: 모든 실패를 _DGO_STATS에 집계 — 호출부가 요약 한 줄을 출력한다.
+    인증류 오류(AUTH/resultCode≠00)는 scheme 폴백해도 동일하므로 즉시 None."""
     key = _get_key()
     if not key:
+        _DGO_STATS["last_err"] = "KEY_MISSING"
         return None
-    q = {"serviceKey": key, "type": "json", "numOfRows": 1000, "pageNo": 1, **params}
+    skey = requests.utils.unquote(key)   # _request(RTMS)와 동일 — 재인코딩은 requests가
+    q = {"serviceKey": skey, "type": "json", "numOfRows": 1000, "pageNo": 1, **params}
     for scheme in ("https", "http"):
         try:
             r = requests.get(f"{scheme}://{host_path}", params=q, timeout=timeout)
-            r.raise_for_status()
-            data = r.json()
-        except Exception:
+        except Exception as e:
+            _DGO_STATS["neterr"] += 1
+            _DGO_STATS["last_err"] = f"NET: {str(e)[:80]}"
             continue
-        return (((data or {}).get("response") or {}).get("body")) or {}
+        if r.status_code != 200:
+            _DGO_STATS["http"][r.status_code] = \
+                _DGO_STATS["http"].get(r.status_code, 0) + 1
+            _DGO_STATS["last_err"] = f"HTTP {r.status_code}"
+            continue
+        try:
+            data = r.json()
+        except ValueError:
+            # JSON 아님 → XML(게이트웨이 오류 또는 XML 고정 응답) 폴백
+            try:
+                import xmltodict
+                x = xmltodict.parse(r.text)
+            except Exception as e:
+                _DGO_STATS["parse"] += 1
+                _DGO_STATS["last_err"] = f"PARSE: {str(e)[:80]}"
+                continue
+            if "OpenAPI_ServiceResponse" in x:   # 키 미등록/미승인/쿼터초과 등
+                h = (x["OpenAPI_ServiceResponse"] or {}).get("cmmMsgHeader") or {}
+                _DGO_STATS["auth"] += 1
+                _DGO_STATS["last_err"] = (f"AUTH {h.get('returnReasonCode')}: "
+                                          f"{h.get('returnAuthMsg') or h.get('errMsg')}")
+                return None                      # scheme 바꿔도 동일 → 즉시 중단
+            data = x
+        resp = (data or {}).get("response") or {}
+        hdr = resp.get("header") or {}
+        rcode = str(hdr.get("resultCode") or "").strip()
+        if rcode and rcode not in ("00", "0", "000"):
+            _DGO_STATS["auth"] += 1
+            _DGO_STATS["last_err"] = f"resultCode {rcode}: {hdr.get('resultMsg')}"
+            return None                          # 서비스 오류도 scheme 무관 → 즉시 중단
+        _DGO_STATS["ok"] += 1
+        return resp.get("body") or {}
     return None
  
  
@@ -1450,13 +1502,19 @@ def _apt_units_map(pairs):
  
 def _apt_info_map(pairs):
     """{(시군구,단지명): {'units','builder'}}. engine_cache(apt_info) 7일 TTL —
-    신선한 항목은 캐시에서, 미스/만료만 data.go.kr 재조회 후 캐시에 머지(비용 절감)."""
+    신선한 항목은 캐시에서, 미스/만료만 data.go.kr 재조회 후 캐시에 머지(비용 절감).
+
+    [2026-07] 네거티브 캐시 금지: units가 None인 캐시 항목은 '조회 실패'였을 수
+    있으므로 히트로 취급하지 않고 재조회하며, None 결과는 캐시에 저장하지 않는다.
+    (세대수 API 전멸 실행이 None ~900건을 캐시에 박아 → 복구 후에도 7일간
+    유니버스가 _KNOWN_UNITS 폴백만으로 지어지던 2차 오염의 재발 방지 + 자가 복구.)"""
     cache = _units_cache_load()
     out, misses = {}, []
     for sgg, apt in pairs:
         ck = f"{sgg}|{_norm_apt(apt)}"
         c = cache.get(ck)
-        if isinstance(c, dict) and _fresh(c.get("ts"), _UNITS_TTL_DAYS):
+        if (isinstance(c, dict) and c.get("u") is not None
+                and _fresh(c.get("ts"), _UNITS_TTL_DAYS)):
             out[(sgg, apt)] = {"units": c.get("u"), "builder": c.get("b")}
         else:
             misses.append((sgg, apt))
@@ -1466,6 +1524,8 @@ def _apt_info_map(pairs):
         changed = False
         for k, v in fetched.items():
             out[k] = v
+            if v.get("units") is None:      # 실패/미확보 결과는 캐시 오염 방지 위해 미저장
+                continue
             cache[f"{k[0]}|{_norm_apt(k[1])}"] = {
                 "u": v.get("units"), "b": v.get("builder"), "ts": today}
             changed = True
@@ -1477,13 +1537,29 @@ def _apt_info_map(pairs):
 def _apt_info_fetch(pairs):
     """{(시군구,단지명): {'units':세대수|None,'builder':시공사|None}} — 실제 API 조회.
     공동주택 목록(getSigunguAptList3)→기본정보(getAphusBassInfoV3, kaptdaCnt·kaptBcompany).
-    매칭 실패 시 세대수만 _KNOWN_UNITS 폴백."""
+    매칭 실패 시 세대수만 _KNOWN_UNITS 폴백.
+
+    [2026-07] 진단 요약 로그 + 인증실패 조기중단:
+      세대수 API가 통째로 죽어도 조용히 _KNOWN_UNITS만 남던 사고 재발 방지 —
+      끝에 '대상/매칭/확보/오류' 한 줄을 반드시 찍고, 인증류 오류가 연속되면
+      나머지 호출을 생략한다(수백 콜 낭비 + 3시간대 실행시간 방지)."""
+    _dgo_reset_stats()
     out = {}
     by_sgg = {}
     for sgg, apt in pairs:
         by_sgg.setdefault(sgg, set()).add(apt)
     info_cache = {}
+    matched = got = known = 0
+    aborted = False
+
+    def _auth_dead():
+        # 성공 0에 인증류 오류만 3회+ → 키/승인 문제 확정(더 던져봐야 동일)
+        return _DGO_STATS["ok"] == 0 and _DGO_STATS["auth"] >= 3
+
     for sgg, apts in by_sgg.items():
+        if _auth_dead():
+            aborted = True
+            break
         codes = _region_codes(sgg) or None
         name2code = {}
         if codes:
@@ -1501,8 +1577,9 @@ def _apt_info_fetch(pairs):
                 (c for n, c in name2code.items() if na and (na in n or n in na)), None)
             units = builder = None
             if kc:
+                matched += 1
                 if kc not in info_cache:
-                    b = _dgo_json(_APT_INFO, {"kaptCode": kc})
+                    b = None if _auth_dead() else _dgo_json(_APT_INFO, {"kaptCode": kc})
                     item = (b or {}).get("item") or {}
                     if isinstance(item, list):
                         item = item[0] if item else {}
@@ -1514,9 +1591,26 @@ def _apt_info_fetch(pairs):
                     info_cache[kc] = {"units": u, "builder": bc}
                 units = info_cache[kc].get("units")
                 builder = info_cache[kc].get("builder")
-            if units is None:
+            if units is not None:
+                got += 1
+            else:
                 units = _known_lookup(na)
+                if units is not None:
+                    known += 1
             out[(sgg, apt)] = {"units": units, "builder": builder}
+
+    s = _DGO_STATS
+    print(f"[realestate] 세대수 API: 대상 {len(pairs)}건 · 목록매칭 {matched} · "
+          f"API확보 {got} · KNOWN폴백 {known} · "
+          f"호출 ok {s['ok']}/auth {s['auth']}/http {s['http'] or 0}/"
+          f"parse {s['parse']}/net {s['neterr']}"
+          + (" · 인증실패 확정으로 조기중단" if aborted else "")
+          + (f" · 마지막 오류: {s['last_err']}" if s["last_err"] else ""))
+    if aborted or (len(pairs) >= 20 and got == 0):
+        print("[realestate] ⚠ 세대수 API 전멸 — 유니버스는 _KNOWN_UNITS 폴백만으로 "
+              "지어집니다. data.go.kr에서 '공동주택 단지 목록제공(AptListService3)'과 "
+              "'공동주택 기본정보(AptBasisInfoServiceV3)' 활용신청 승인 여부를 확인하세요 "
+              "(위 '마지막 오류' 문구가 판별 근거).")
     return out
  
  
