@@ -1,0 +1,40 @@
+name: units 세대수 API 프로브 (수동)
+
+# ──────────────────────────────────────────────────────────────────────────
+#  유니버스 세대수 API(공동주택 목록·기본정보) 사망 원인 판별용 — 수동 실행 전용.
+#  Actions → 이 워크플로 → Run workflow → 로그의 [1]~[3] 결과를 확인.
+#  판독법은 engine/units_probe.py 독스트링에 있음:
+#    · [1] OK + [2] AUTH → 키 이중 인코딩(엔진 수정으로 해결 완료, 추가 조치 불필요)
+#    · [1] AUTH NOT_REGISTERED/DENIED → data.go.kr에서 AptListService3 ·
+#      AptBasisInfoServiceV3 두 서비스 활용신청 필요
+#    · [1] AUTH LIMITED_NUMBER → 일일 쿼터 초과(내일 재시도)
+# ──────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v5
+
+      - name: 파이썬 설정
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: 라이브러리 설치 (프로브 전용 — 가볍게)
+        run: pip install requests xmltodict
+
+      - name: 세대수 API 프로브 실행
+        env:
+          MOLIT_API_KEY: ${{ secrets.MOLIT_API_KEY }}
+          PUBLIC_DATA_API_KEY: ${{ secrets.PUBLIC_DATA_API_KEY }}
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
+        run: python -m engine.units_probe
