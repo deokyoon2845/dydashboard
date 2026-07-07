@@ -1430,102 +1430,117 @@ def _known_lookup(na):
     return next((u for n, u in _KNOWN_UNITS.items() if na in n or n in na), None)
 
 
-# ── K-apt 단지 기본정보 '벌크 XLSX' — 세대수 1순위 소스(2026-07 도입) ──────
-#   배경: 기본정보 API(getAphusBassInfoV3)가 파라미터·단지 무관 전면 HTTP 500
-#   (프로브 v2로 확정) → 단지당 개별 조회 대신 국토부 공개 파일데이터
-#   (data.go.kr/15073271, 전국 18,000여 단지 · 주간 갱신 · 세대수+시공사 포함)를
-#   k-apt.go.kr에서 XLSX 1회 다운로드해 지역별 맵으로 캐시한다.
-#   활용신청·API키 불필요 · 900여 콜 → 1콜 · 죽은 API를 아예 우회.
-#   세대수는 사실상 정적이라 30일 캐시로 충분(파일 자체는 주간 추출본).
-_KAPT_XLSX_URL = "https://www.k-apt.go.kr/web/board/goKaptBasicExcelDownload.do"
-_BULK_CACHE_KEY = "kapt_units_bulk"
+# ── 세대수 '벌크' 소스 — REB 공동주택 단지 식별정보(odcloud) (2026-07 v2) ────
+#   경위: ① 기본정보 API(getAphusBassInfoV3)가 전면 HTTP 500(프로브 v2 확정)
+#         ② 대체하려던 K-apt 벌크 XLSX(k-apt.go.kr)는 데이터센터 IP 차단 —
+#            GitHub Actions에서 커넥션 타임아웃(프로브 v3 확정).
+#   → 한국부동산원 '공동주택 단지 식별정보_기본정보'(data.go.kr/15106861,
+#     전국 44,628행 CSV · 주소/단지명 3종/세대수 포함)를 공공데이터포털의
+#     odcloud 자동변환 API로 페이징 조회한다. data.go.kr 인프라라 Actions에서
+#     접근 가능(RTMS로 검증된 통로) · 자동승인 · 개별 조회 900여 콜 → 10콜 내외.
+#   전제: data.go.kr에서 해당 파일데이터의 '오픈API' 활용신청(자동승인) 1회.
+#   세대수는 사실상 정적이라 30일 캐시로 충분(파일 자체는 연간 갱신).
+#   한계: 시공사 컬럼이 없어 builder는 None(개별 API가 살아나면 자동 보충).
+_BULK_ODCLOUD_URL = ("https://api.odcloud.kr/api/15106861/v1/"
+                     "uddi:46a20910-19aa-462e-ba09-e897b77d0e76")
+_BULK_CACHE_KEY = "units_bulk"
 _BULK_TTL_DAYS = 30
 _BULK_MIN_UNITS = 100          # 캐시 슬림화 컷(유니버스 컷 500보다 넉넉히)
-_KAPT_BULK_MEMO = None
+_BULK_PER_PAGE = 5000
+_BULK_MAX_PAGES = 12           # 44,628행 ÷ 5,000 ≈ 9페이지 + 여유
+_UNITS_BULK_MEMO = None
 
 
 def _bulk_region_of(sido, sgg):
-    """XLSX (시도, 시군구) → 엔진 지역명. 스코프 밖(지방 등)은 None.
+    """(시도, 시군구) → 엔진 지역명. 스코프 밖(지방 등)은 None.
 
-    서울=구명 그대로 · 경기=시군구 첫 토큰(예: '성남시 분당구'→'성남시') ·
-    인천=연수구/서구만(서구는 서울 서구와 구분 위해 '인천서구' 표기)."""
+    서울=구명 그대로 · 경기=첫 토큰(예: '성남시 분당구'→'성남시', 붙어 쓴
+    '성남시분당구'도 접두 매칭으로 흡수) · 인천=연수구/서구만(서구는 서울
+    서구와 구분 위해 '인천서구' 표기)."""
     sido, sgg = str(sido or "").strip(), str(sgg or "").strip()
+    tok = sgg.split()[0] if sgg else ""
     if sido.startswith("서울"):
-        return sgg if sgg in SIGUNGU_CODES else None
+        return tok if tok in SIGUNGU_CODES else None
     if sido.startswith("경기"):
-        si = sgg.split()[0] if sgg else ""
-        return si if si in SIGUNGU_CODES else None
+        if tok in SIGUNGU_CODES:
+            return tok
+        return next((n for n in SIGUNGU_CODES if tok.startswith(n)), None)
     if sido.startswith("인천"):
-        if "연수" in sgg:
+        if "연수" in tok:
             return "연수구"
-        if sgg == "서구" or sgg.startswith("서구"):
+        if tok == "서구" or tok.startswith("서구"):
             return "인천서구"
     return None
 
 
-def _kapt_bulk_download():
-    """k-apt XLSX 다운로드·파싱 → {지역명: {norm단지명: [세대수, 시공사]}} (실패 {})."""
-    try:
-        r = requests.get(_KAPT_XLSX_URL, timeout=300, verify=False,
-                         headers={"User-Agent": "Mozilla/5.0"})
-        if r.status_code != 200 or len(r.content) < 10000:
-            print(f"[realestate] K-apt 벌크 다운로드 실패: HTTP {r.status_code} "
-                  f"({len(r.content)}B) — API 경로로 폴백")
-            return {}
-        import io
-        import pandas as pd
-        df = pd.read_excel(io.BytesIO(r.content), header=None, dtype=str)
-    except Exception as e:
-        print(f"[realestate] K-apt 벌크 파싱 실패: {str(e)[:120]} — API 경로로 폴백")
+def _units_bulk_download():
+    """odcloud 페이징 조회·파싱 → {지역명: {norm단지명: [세대수, None]}} (실패 {}).
+
+    행 스키마(REB CSV): 주소(법정동) · 단지명_공시가격/건축물대장/도로명주소 ·
+    단지종류 · 동수 · 세대수 · 사용승인일. 단지명 3종을 모두 키로 등록해
+    RTMS 표기와의 매칭률을 높인다. 지역은 주소 앞 두 토큰에서 유도."""
+    key = _get_key()
+    if not key:
+        print("[realestate] 벌크(odcloud) 생략: 데이터포털 키 없음")
         return {}
-    # 헤더 행 탐지(상단 안내문 대비) → 필요 컬럼 인덱스 확정
-    hdr_i = cols = None
-    for i in range(min(8, len(df))):
-        row = [str(v or "").strip() for v in df.iloc[i].tolist()]
-        if any("단지명" in v for v in row) and any("세대수" in v for v in row):
-            def _find(*keys):
-                for j, v in enumerate(row):
-                    if any(k == v or k in v for k in keys):
-                        return j
-                return None
-            cols = {"sido": _find("시도"), "sgg": _find("시군구"),
-                    "name": _find("단지명"), "units": _find("세대수"),
-                    "builder": _find("시공사")}
-            hdr_i = i
-            break
-    if hdr_i is None or None in (cols["sido"], cols["sgg"],
-                                 cols["name"], cols["units"]):
-        print(f"[realestate] K-apt 벌크 헤더 인식 실패(cols={cols}) — API 경로로 폴백")
-        return {}
-    out, nrows = {}, 0
-    for _, row in df.iloc[hdr_i + 1:].iterrows():
-        reg = _bulk_region_of(row.iloc[cols["sido"]], row.iloc[cols["sgg"]])
-        if not reg:
-            continue
-        na = _norm_apt(row.iloc[cols["name"]])
+    skey = requests.utils.unquote(key)
+    out, total = {}, 0
+    for page in range(1, _BULK_MAX_PAGES + 1):
         try:
-            u = int(float(str(row.iloc[cols["units"]]).replace(",", "").strip()))
-        except (ValueError, TypeError):
-            continue
-        if not na or u < _BULK_MIN_UNITS:
-            continue
-        b = None
-        if cols["builder"] is not None:
-            b = str(row.iloc[cols["builder"]] or "").strip() or None
-            if b and b.lower() in ("nan", "none", "-"):
-                b = None
-        out.setdefault(reg, {})[na] = [u, b]
-        nrows += 1
-    print(f"[realestate] K-apt 벌크 확보: {nrows}단지 / {len(out)}지역 "
-          f"(원본 {len(df)}행)")
+            r = requests.get(_BULK_ODCLOUD_URL,
+                             params={"page": page, "perPage": _BULK_PER_PAGE,
+                                     "serviceKey": skey, "returnType": "JSON"},
+                             timeout=90)
+        except Exception as e:
+            print(f"[realestate] 벌크(odcloud) p{page} 요청 실패: {str(e)[:100]}")
+            break
+        if r.status_code in (401, 403):
+            print("[realestate] 벌크(odcloud) 인증 실패 — data.go.kr에서 "
+                  "'공동주택 단지 식별정보_기본정보'(15106861) 파일데이터의 "
+                  "오픈API 활용신청(자동승인)이 필요합니다. 본문: "
+                  + (r.text or "")[:120])
+            return {}
+        if r.status_code != 200:
+            print(f"[realestate] 벌크(odcloud) p{page} HTTP {r.status_code}: "
+                  + (r.text or "")[:120])
+            break
+        try:
+            rows = (r.json() or {}).get("data") or []
+        except ValueError:
+            print(f"[realestate] 벌크(odcloud) p{page} JSON 파싱 실패: "
+                  + (r.text or "")[:120])
+            break
+        for row in rows:
+            addr = str(row.get("주소") or "").split()
+            if len(addr) < 2:
+                continue
+            reg = _bulk_region_of(addr[0], " ".join(addr[1:3]))
+            if not reg:
+                continue
+            try:
+                u = int(float(str(row.get("세대수") or "").replace(",", "") or 0))
+            except (ValueError, TypeError):
+                continue
+            if u < _BULK_MIN_UNITS:
+                continue
+            for k in ("단지명_공시가격", "단지명_건축물대장", "단지명_도로명주소"):
+                na = _norm_apt(row.get(k))
+                if na:
+                    out.setdefault(reg, {}).setdefault(na, [u, None])
+            total += 1
+        if len(rows) < _BULK_PER_PAGE:
+            break
+    if out:
+        print(f"[realestate] 벌크(odcloud) 확보: 수도권 {total}단지 / "
+              f"{len(out)}지역 · {page}페이지")
     return out
 
 
-def _kapt_bulk_map():
+def _units_bulk_map():
     """벌크 맵 반환(메모 → engine_cache 30일 → 다운로드 → 만료캐시 재활용 → {})."""
-    global _KAPT_BULK_MEMO
-    if _KAPT_BULK_MEMO is not None:
-        return _KAPT_BULK_MEMO
+    global _UNITS_BULK_MEMO
+    if _UNITS_BULK_MEMO is not None:
+        return _UNITS_BULK_MEMO
     cached = None
     try:
         from modules.db import cache_get
@@ -1535,20 +1550,20 @@ def _kapt_bulk_map():
     except Exception:
         cached = None
     if cached and _fresh(cached.get("_updated"), _BULK_TTL_DAYS):
-        _KAPT_BULK_MEMO = cached["m"]
-        return _KAPT_BULK_MEMO
-    m = _kapt_bulk_download()
+        _UNITS_BULK_MEMO = cached["m"]
+        return _UNITS_BULK_MEMO
+    m = _units_bulk_download()
     if m:
         try:
             from modules.db import cache_set
             cache_set(_BULK_CACHE_KEY, {"_updated": date.today().isoformat(), "m": m})
         except Exception as e:
-            print(f"[realestate] K-apt 벌크 캐시 저장 실패(무시): {e}")
-        _KAPT_BULK_MEMO = m
+            print(f"[realestate] 벌크 캐시 저장 실패(무시): {e}")
+        _UNITS_BULK_MEMO = m
     else:
         # 다운로드 실패 시 만료된 캐시라도 재활용(세대수는 정적 — 없는 것보단 낫다)
-        _KAPT_BULK_MEMO = cached["m"] if cached else {}
-    return _KAPT_BULK_MEMO
+        _UNITS_BULK_MEMO = cached["m"] if cached else {}
+    return _UNITS_BULK_MEMO
 
 
 def _bulk_lookup(bulk, sgg, apt):
@@ -1683,16 +1698,16 @@ def _apt_info_map(pairs):
 def _apt_info_fetch(pairs):
     """{(시군구,단지명): {'units':세대수|None,'builder':시공사|None}}.
 
-    [2026-07 v2] 3단 폴백 — ① K-apt 벌크 XLSX(주간 전수 파일, 1콜, 키 불필요)
+    [2026-07 v2] 3단 폴백 — ① 벌크(REB 식별정보 odcloud — 페이지 10콜 내외)
     ② K-apt 개별 API(목록→기본정보 — 기본정보가 전면 500이라 현재 사실상 예비)
-    ③ _KNOWN_UNITS 하드코딩. 벌크가 1순위라 정상 시 API 콜 0으로 끝난다.
+    ③ _KNOWN_UNITS 하드코딩. 벌크가 1순위라 정상 시 개별 API 콜 0으로 끝난다.
     진단 요약 로그 + 인증실패 조기중단은 v1과 동일하게 유지."""
     _dgo_reset_stats()
     out = {}
     bulk_got = 0
 
     # ① 벌크 XLSX — 지역·단지명 매칭(정확→부분일치, 기존 API 매칭과 동일 규칙)
-    bulk = _kapt_bulk_map()
+    bulk = _units_bulk_map()
     remain = []
     for sgg, apt in pairs:
         hit = _bulk_lookup(bulk, sgg, apt) if bulk else None
@@ -1772,7 +1787,7 @@ def _apt_info_fetch(pairs):
           + (f" · 마지막 오류: {s['last_err']}" if s["last_err"] else ""))
     if bulk_got == 0 and got == 0 and len(pairs) >= 20:
         print("[realestate] ⚠ 세대수 전 소스 실패 — 유니버스는 _KNOWN_UNITS 폴백만으로 "
-              "지어집니다. ①k-apt.go.kr 벌크 XLSX 접근 차단 여부와 ②기본정보 API "
+              "지어집니다. ①벌크(odcloud 15106861) 활용신청·응답과 ②기본정보 API "
               "(getAphusBassInfoV3) 상태를 units_probe로 확인하세요.")
     return out
  
