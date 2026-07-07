@@ -43,6 +43,20 @@ def main():
     except Exception as e:
         print(f"[realestate] 지역 지표 수집 실패: {e}")
 
+    # 주요 단지 유니버스(지역별 세대수 TOP-N) — engine_cache(re_universe) 30일 TTL, 월1회 실질 재빌드.
+    #   시총·주목단지가 이 위에서 계산되므로 반드시 '먼저' 확보한다(순서 중요 — 뒤에 두면
+    #   재빌드된 유니버스가 그날 스냅샷의 시총리더에 반영되지 않는 하루 지연이 생긴다).
+    #   metrics 페이로드에 _universe로 실어 뷰어가 같은 스냅샷에서 읽게 함.
+    uni = None
+    try:
+        from engine.realestate_collect import collect_universe
+        uni = collect_universe()
+        if isinstance(metrics, dict) and isinstance(uni, dict):
+            metrics["_universe"] = uni
+        print(f"[realestate] 유니버스 {len(uni.get('flat', []))}단지 확보")
+    except Exception as e:
+        print(f"[realestate] 유니버스 확보 실패(생략): {e}")
+
     # 주목 단지(거래 활발·상승 + 검색관심도) — metrics 페이로드에 '_hot'으로 실어 보냄(스키마 무변경)
     if isinstance(metrics, dict):
         try:
@@ -54,18 +68,6 @@ def main():
             print(f"[realestate] 주목 단지 {len(hot)}개 · 시총리더 {len(cap)}개 · 상승률리더 {len(gain)}개 수집")
         except Exception as e:
             print(f"[realestate] 주목 단지 수집 실패(생략): {e}")
-
-    # 주요 단지 유니버스(지역별 세대수 TOP-N) — engine_cache(re_universe) 30일 TTL, 월1회 실질 재빌드.
-    #   시총·주목단지·특이거래가 이 위에서 계산되도록 먼저 '확보·적재'한다(현재 단계: 확보만,
-    #   기존 탭 계산은 무변경). metrics 페이로드에 _universe로 실어 뷰어가 같은 스냅샷에서 읽게 함.
-    try:
-        from engine.realestate_collect import collect_universe
-        uni = collect_universe()
-        if isinstance(metrics, dict) and isinstance(uni, dict):
-            metrics["_universe"] = uni
-        print(f"[realestate] 유니버스 {len(uni.get('flat', []))}단지 확보")
-    except Exception as e:
-        print(f"[realestate] 유니버스 확보 실패(생략): {e}")
 
     try:
         indicators = collect_indicators()
