@@ -1387,6 +1387,6 @@ else:  # 부동산
     render_realestate()
  
  
-# ── 수집 상태 패널: 페이지 최하단(모든 탭 콘텐츠 아래)에 배치 ──
-# 탭 블록 바깥 최상위에 두어, 어느 탭을 보든 본문 맨 아래에 접힌 채로 표시된다.
-_render_status_panel()
+# ── 수집 상태 패널(자동 갱신 현황) 제거 ──
+# 접힌 expander가 하위 iframe/컴포넌트 위에 오버레이되어 리스트와 겹치는 문제가 있어
+# 전역에서 렌더를 중단한다(_render_status_panel/_collect_status 등 정의는 미호출로 잔존).
