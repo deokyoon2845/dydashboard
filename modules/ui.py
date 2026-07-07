@@ -75,7 +75,9 @@ FOOT_CSS = """
 .ui-foot .b{margin-top:8px;font-family:'Hanken Grotesk','Noto Sans KR',sans-serif;font-size:11.5px;font-weight:400;
   color:var(--muted,#9a9b92);line-height:1.62;letter-spacing:0;background:var(--summary-bg,#F6F7F2);
   border-radius:9px;padding:9px 13px;text-align:left;}
-.ui-foot-row{display:flex;justify-content:flex-end;margin:2px 0 6px;}
+.ui-foot-row{display:flex;justify-content:flex-end;margin:2px 0 10px;position:relative;z-index:1;}
+/* details 본문은 항상 정상 문서 흐름으로 아래를 밀어낸다(오버레이 방지) */
+.ui-foot,.ui-foot .b{position:static;}
 </style>"""
 
 
