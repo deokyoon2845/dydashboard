@@ -1,4 +1,4 @@
-"""부동산 '실거래' 탭 — 주간·오늘 시장 밴드 · 지역 급지 보드 · 주목 단지.
+"""부동산 '실거래' 탭 — 월간·주간·오늘 시장 밴드 · 지역 급지 보드 · 주목 단지.
 
 국토부 실거래(직거래 기본 제외) 스냅샷을 읽어 시장 방향 요약(주간/오늘),
 평당가 10급지 동적 보드(티어 시총 TOP20 + 신고가·괴리 알림), 주목단지 카드를 그린다.
@@ -10,7 +10,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from modules.ui import foot_row
-from modules.realestate_geo import _GEO
+from modules.realestate_geo import _GEO, _LOCAL_GEO
 from modules.realestate_common import (_load_re_snapshot, _load_recent_re_snapshots,
                                         _resolved_metrics, _naver_n)
 
@@ -449,7 +449,7 @@ function flat(){
    +'<div class="nm"><span class="gu-badge">'+c.gu+'</span>'+c.apt+'<small>'+meta+'</small></div>'
    +'<div class="yoy"><b class="'+(pos?'up':'dn')+'">'+(pos?'+':'')+c.val.toFixed(1)+'%</b><small>'+sub+'</small>'+mapLink(c)+'</div></div>';}).join("");}
 flat();
-(function(){function f(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;if(window.frameElement){window.frameElement.style.height=h+"px";window.frameElement.setAttribute("height",h);}}catch(e){}}window.addEventListener("load",f);setTimeout(f,150);setTimeout(f,600);setTimeout(f,1500);window.addEventListener("resize",f);try{new ResizeObserver(f).observe(document.body);}catch(e){}})();
+(function(){function f(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;var fe=window.frameElement;if(!fe)return;fe.style.height=h+"px";fe.setAttribute("height",h);var p=fe.parentElement;for(var i=0;i<3&&p&&p!==document.body;i++){if(p.style&&p.style.height&&p.style.height!=="auto")p.style.height="auto";p=p.parentElement;}}catch(e){}}window.addEventListener("load",f);setTimeout(f,150);setTimeout(f,600);setTimeout(f,1500);window.addEventListener("resize",f);try{new ResizeObserver(f).observe(document.body);}catch(e){}})();
 </script></body></html>'''
 
 
@@ -586,7 +586,7 @@ function flat(){var all=CAP.slice().sort(function(a,b){return b.cap-a.cap;}).sli
  var h='<optgroup label="그룹">'+Object.keys(GROUPS).map(function(g){return '<option>'+g+'</option>';}).join("")+'</optgroup>';
  h+='<optgroup label="자치구·시">'+GUS.map(function(g){return '<option>'+g+'</option>';}).join("")+'</optgroup>';
  sel.innerHTML=h;sel.value=GROUPS["강남3구"]?"강남3구":(GUS[0]||"");flat();fill();})();
-(function(){function f(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;if(window.frameElement){window.frameElement.style.height=h+"px";window.frameElement.setAttribute("height",h);}}catch(e){}}window.addEventListener("load",f);setTimeout(f,150);setTimeout(f,600);setTimeout(f,1500);window.addEventListener("resize",f);try{new ResizeObserver(f).observe(document.body);}catch(e){}})();
+(function(){function f(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;var fe=window.frameElement;if(!fe)return;fe.style.height=h+"px";fe.setAttribute("height",h);var p=fe.parentElement;for(var i=0;i<3&&p&&p!==document.body;i++){if(p.style&&p.style.height&&p.style.height!=="auto")p.style.height="auto";p=p.parentElement;}}catch(e){}}window.addEventListener("load",f);setTimeout(f,150);setTimeout(f,600);setTimeout(f,1500);window.addEventListener("resize",f);try{new ResizeObserver(f).observe(document.body);}catch(e){}})();
 </script></body></html>'''
 
 
@@ -776,10 +776,9 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);f
 .gt-col{display:flex;flex-direction:column;gap:9px}
 #gtEtc{margin-bottom:12px}
 @media(max-width:680px){.gt-wrap{grid-template-columns:1fr}}
-.dt{display:grid;grid-template-columns:minmax(190px,300px) 1fr;gap:16px;align-items:center;
- background:var(--card);border:1px solid var(--line);border-radius:13px;padding:12px 15px;margin-bottom:12px}
-@media(max-width:680px){.dt{grid-template-columns:1fr}}
+.dt{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:12px 14px;margin-bottom:12px}
 .dt-map svg{width:100%;height:auto;display:block}
+.dt-info{margin-top:10px}
 .dt-map path{fill:#EFF0EA;stroke:#fff;stroke-width:1.2}
 .dt-map path.sh{fill:var(--sage)}
 .dt-h{font-size:13px;font-weight:800}
@@ -852,9 +851,9 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);f
   <div class="gt-wrap"><div class="gt-col" id="gtColL"></div><div class="gt-col" id="gtColR"></div></div>
   <div id="gtEtc"></div>
   <div class="dt"><div class="dt-map" id="dtMap"></div>
-    <div><div class="dt-h" id="dtH"></div><div class="dt-rgs" id="dtRgs"></div>
+    <div class="dt-info"><div class="dt-h" id="dtH"></div><div class="dt-rgs" id="dtRgs"></div>
       <div class="dt-top3" id="dtT3"></div>
-      <div class="dt-note">지도 음영 = 시·군·구 단위 근사 · 송도·청라는 지도 범위 밖(구성에만 표시)</div></div></div>
+      <div class="dt-note">지도 음영 = 시·군·구 단위 근사 · 인천 포함(송도=연수구·청라=서구)</div></div></div>
   <div class="cx-head"><span class="cx-title" id="cxTitle"></span>
     <span class="cx-cap">시총 TOP 20 · 평형 3개월 평균 · 🔺신고가·▲▼±5% 알림</span></div>
   <div class="cx" id="cxList"></div>
@@ -862,7 +861,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);f
 <script>
 const G=__G__,GEO=__GEO__,TG=__TG__;
 document.getElementById("dtMap").innerHTML=
- '<svg viewBox="0 210 1100 875" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="\uae09\uc9c0 \uc9c0\uc5ed \uc9c0\ub3c4">'
+ '<svg viewBox="-115 215 1210 865" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="\uae09\uc9c0 \uc9c0\uc5ed \uc9c0\ub3c4">'
  +GEO.map(function(s){return '<path data-n="'+s.n+'" d="'+s.d+'"/>';}).join("")+'</svg>';
 let sel=null;
 for(const g of G){if(g.n){sel=g.k;break;}}
@@ -931,6 +930,7 @@ function draw(){
   return '<div class="cx-row'+(i===0?" top1":"")+'"><div class="rank">'+(i+1)+'</div>'
    +'<div class="cx-nm"><span class="rg-bdg">'+c.rg+'</span>'+c.apt+nv(c)
    +'<small>'+c.gu+(c.dong?" "+c.dong:"")+' \u00b7 '+c.units.toLocaleString()+'\uc138\ub300'
+   +(c.py?' \u00b7 \ud3c9\ub2f9 '+pyf(c.py):'')
    +' \u00b7 \uc2dc\ucd1d '+c.cap+'</small>'+pvHTML(c)+alHTML(c)+'</div>'
    +'<div class="cx-r">'+chgHTML(c)
    +(c.dd?'<small>\ucd5c\uadfc '+c.dd+'</small>':'')+'</div></div>';}).join("")
@@ -938,7 +938,9 @@ function draw(){
  _fit();}
 draw();
 function _fit(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;
- if(window.frameElement){window.frameElement.style.height=h+"px";window.frameElement.setAttribute("height",h);}}catch(e){}}
+ var fe=window.frameElement;if(!fe)return;fe.style.height=h+"px";fe.setAttribute("height",h);
+ var p=fe.parentElement;for(var i=0;i<3&&p&&p!==document.body;i++){
+  if(p.style&&p.style.height&&p.style.height!=="auto")p.style.height="auto";p=p.parentElement;}}catch(e){}}
 window.addEventListener("load",_fit);setTimeout(_fit,150);setTimeout(_fit,600);setTimeout(_fit,1500);
 window.addEventListener("resize",_fit);try{new ResizeObserver(_fit).observe(document.body);}catch(e){}
 </script></body></html>'''
@@ -992,8 +994,8 @@ def _cx_alerts(c, hi_idx):
     return als or None
 
 
-# 지역 보드 미니지도 — 리전명 → _GEO 도형명(시·군·구 근사). 미열거 리전은 이름 그대로 조회.
-# 송도·청라는 _GEO(서울+경기)에 인천 지오메트리가 없어 음영 제외(정보 패널에는 표시).
+# 지역 보드 미니지도 — 리전명 → 도형명(시·군·구 근사). 미열거 리전은 이름 그대로 조회.
+# 인천(송도=연수구·청라=서구)은 _LOCAL_GEO['incheon']을 경기 좌표계로 변환해 병합(_BOARD_GEO).
 _TIER_GEO_MAP = {
     "강남3구": ["강남구", "서초구", "송파구"],
     "여의도": ["영등포구"], "목동": ["양천구"], "성수": ["성동구"], "이촌": ["용산구"],
@@ -1001,7 +1003,32 @@ _TIER_GEO_MAP = {
     "수지": ["용인시"], "용인": ["용인시"], "광교": ["수원시"], "동탄": ["화성시"],
     "평촌": ["안양시"], "일산": ["고양시"], "다산": ["남양주시"], "별내": ["남양주시"],
     "과천": ["과천시"], "광명": ["광명시"],
+    "송도": ["인천연수구"], "청라": ["인천서구"],
 }
+
+
+def _build_board_geo():
+    """급지 미니지도 도형 = _GEO(서울+경기) + 인천 8개 구.
+    인천 로컬 도형(_LOCAL_GEO['incheon'])은 드릴다운용 별도 좌표계라, 실제 위경도 앵커
+    (계양·부평·연수)로 산출한 affine(scale 0.47, offset −431.6/−76.7)을 적용해 경기
+    좌표계에 정합시킨다(부천·시흥 서쪽·김포 남쪽 실제 위치와 일치 검증됨).
+    이름은 서울 중구 등과 충돌하지 않게 '인천' 접두(예: 인천연수구·인천서구)."""
+    import re as _re
+    S, TX, TY = 0.47, -431.6, -76.7
+
+    def _xf(d):
+        return _re.sub(
+            r"(-?\d+\.?\d*),(-?\d+\.?\d*)",
+            lambda m: (f"{float(m.group(1)) * S + TX:.1f},"
+                       f"{float(m.group(2)) * S + TY:.1f}"), d)
+
+    out = [{"n": s["n"], "d": s["d"]} for s in _GEO]
+    for s in (_LOCAL_GEO.get("incheon") or []):
+        out.append({"n": "인천" + s["n"], "d": _xf(s["d"])})
+    return out
+
+
+_BOARD_GEO = _build_board_geo()
 
 
 def _tier_of(py):
@@ -1070,10 +1097,12 @@ def _region_board_payload():
                         or (x.get("cap_eok") or 0) * 1e4, reverse=True)[:20]:
             dd = str(c.get("last_deal") or "")[5:10].replace("-", ".")
             gu_disp = "인천 서구" if c["gu"] == "인천서구" else c["gu"]
+            _py = _cx_pyeong(c)
             rows.append({
                 "apt": c["apt"], "gu": gu_disp, "dong": c.get("dong") or "",
                 "rg": c.get("_rg") or gu_disp,
                 "units": int(c["units"]), "cap": c.get("cap_fmt") or "",
+                "py": round(_py) if _py else None,
                 "p": c.get("price_eok") or "", "pavg": c.get("pavg"),
                 "chg": (c["chg"] if isinstance(c.get("chg"), (int, float))
                         else None),
@@ -1110,8 +1139,7 @@ def _render_region_board():
         return
     html = (_REGION_BOARD_HTML
             .replace("__G__", _json.dumps(groups, ensure_ascii=False))
-            .replace("__GEO__", _json.dumps(
-                [{"n": s["n"], "d": s["d"]} for s in _GEO], ensure_ascii=False))
+            .replace("__GEO__", _json.dumps(_BOARD_GEO, ensure_ascii=False))
             .replace("__TG__", _json.dumps(_TIER_GEO_MAP, ensure_ascii=False)))
     # 높이: 좌우 5단 타일 + 상세 패널(지도) + 리스트 20행 — iframe 내 _fit이 실측 보정
     components.html(html, height=2600, scrolling=False)
@@ -1237,6 +1265,7 @@ _MARKET_BAND_HTML = r'''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-
  --up:#B65F5A;--dn:#5A7CA0;--kf:'Pretendard',-apple-system,sans-serif;}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);-webkit-font-smoothing:antialiased}
+.stack{display:flex;flex-direction:column;gap:10px}
 .band{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:16px 20px;display:flex;align-items:center;gap:24px;flex-wrap:wrap}
 .hero{min-width:188px}
 .cap{font-size:11px;font-weight:700;letter-spacing:.04em;color:var(--muted);text-transform:uppercase;margin-bottom:7px}
@@ -1253,7 +1282,14 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);-
 .cap b{color:#7E9A83}
 .kl small{font-size:9.5px;font-weight:700;color:#b6b7ae;margin-left:2px}
 </style></head><body>
-<div class="band">
+<div class="stack">__BANDS__</div>
+<script>
+(function(){function _fit(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;var fe=window.frameElement;if(!fe)return;fe.style.height=h+"px";fe.setAttribute("height",h);var p=fe.parentElement;for(var i=0;i<3&&p&&p!==document.body;i++){if(p.style&&p.style.height&&p.style.height!=="auto")p.style.height="auto";p=p.parentElement;}}catch(e){}}window.addEventListener("load",_fit);setTimeout(_fit,150);setTimeout(_fit,600);setTimeout(_fit,1500);window.addEventListener("resize",_fit);try{new ResizeObserver(_fit).observe(document.body);}catch(e){}})();
+</script>
+</body></html>'''
+
+
+_BAND_DIV = r'''<div class="band">
   <div class="hero">
     <div class="cap">__CAPTION__</div>
     <div class="dir"><span class="ar" style="color:__DCOL__">__ARROW__</span><span class="t">__DLABEL__</span><span class="p" style="color:__DCOL__">__PCT__%</span></div>
@@ -1266,11 +1302,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kf);-
     <div><div class="kl">__KL3__</div><div class="kv">__ACT__<small>단지</small></div></div>
     <div><div class="kl">__KL4__</div><div class="kv" style="color:__GCOL__">__GAIN__</div></div>
   </div>
-</div>
-<script>
-(function(){function _fit(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;if(window.frameElement){window.frameElement.style.height=h+"px";window.frameElement.setAttribute("height",h);}}catch(e){}}window.addEventListener("load",_fit);setTimeout(_fit,150);setTimeout(_fit,600);setTimeout(_fit,1500);window.addEventListener("resize",_fit);try{new ResizeObserver(_fit).observe(document.body);}catch(e){}})();
-</script>
-</body></html>'''
+</div>'''
 
 
 def _summary_core(anoms_raw, hot_raw, asof_dt):
@@ -1321,9 +1353,9 @@ def _market_summary():
     return s
 
 
-def _band_fill(caption, hi, lo, act, avg,
-               kl=("신고가", "신저가", "거래활발", "평균 상승률")):
-    """요약 밴드 HTML 채우기 — 오늘/주간 공용. 방향(상승우세) 배지·색은 hi/lo에서 계산."""
+def _band_div(caption, hi, lo, act, avg,
+              kl=("신고가", "신저가", "거래활발", "평균 상승률")):
+    """요약 밴드 1단(div) 채우기 — 월간/주간/오늘 공용. 방향 배지·색은 hi/lo에서 계산."""
     tot = hi + lo
     pct = round(hi / tot * 100) if tot else 50
     if pct >= 60:
@@ -1337,7 +1369,7 @@ def _band_fill(caption, hi, lo, act, avg,
     else:
         gcol = "#B65F5A" if avg >= 0 else "#5A7CA0"
         gain = f'{"+" if avg >= 0 else ""}{avg}<small>%</small>'
-    return (_MARKET_BAND_HTML
+    return (_BAND_DIV
             .replace("__CAPTION__", caption)
             .replace("__KL1__", kl[0]).replace("__KL2__", kl[1])
             .replace("__KL3__", kl[2]).replace("__KL4__", kl[3])
@@ -1352,11 +1384,19 @@ def _band_fill(caption, hi, lo, act, avg,
             .replace("__GAIN__", gain))
 
 
-def _market_week_summary():
-    """주간 요약 밴드 집계 — 최신 스냅샷의 특이거래를 '최신 거래일 기준 최근 7일' 창으로
-    재집계해 신고가·신저가 주간 합을 만든다(일별 스냅샷 hi/lo를 그냥 더하면 같은 거래가
-    여러 날 반복 계산되므로 사용하지 않음). 거래활발·평균 상승률은 최근 7일 일별
-    스냅샷의 주간 평균(이력 없으면 현재 스냅샷 값 폴백). 반환 dict 또는 None."""
+def _band_fill(caption, hi, lo, act, avg,
+               kl=("신고가", "신저가", "거래활발", "평균 상승률")):
+    """단일 밴드 문서 HTML(구 인터페이스 호환) — _band_div 1단을 문서 틀에 실어 반환."""
+    return _MARKET_BAND_HTML.replace(
+        "__BANDS__", _band_div(caption, hi, lo, act, avg, kl))
+
+
+def _market_window_summary(win_days):
+    """N일 창 요약 밴드 집계(주간=7·월간=30 공용) — 최신 스냅샷의 특이거래를
+    '최신 거래일 기준 최근 N일' 창으로 재집계해 신고가·신저가 합을 만든다(일별 스냅샷
+    hi/lo를 그냥 더하면 같은 거래가 여러 날 반복 계산되므로 사용하지 않음).
+    거래활발·평균 상승률은 최근 N일 일별 스냅샷 평균(이력 없으면 현재 스냅샷 값 폴백).
+    반환 dict 또는 None. ※월간(30일)은 엔진 특이거래 표시창(45일) 안이라 커버 가능."""
     from datetime import timedelta as _td
     P = _ANOM_PRESETS["표준"]
 
@@ -1379,13 +1419,13 @@ def _market_week_summary():
     if not pool:
         return None
     latest = max(dt for _, dt in pool)
-    start = latest - _td(days=6)
+    start = latest - _td(days=win_days - 1)
     wk = [r for r, dt in pool if dt >= start]
     hi = sum(1 for r in wk if r[0] == "신고가")
     lo = sum(1 for r in wk if r[0] == "신저가")
 
     acts, avgs = [], []
-    for row in (_load_recent_re_snapshots(7) or []):
+    for row in (_load_recent_re_snapshots(win_days) or []):
         hot = [h for h in ((row.get("metrics") or {}).get("_hot") or [])
                if isinstance(h, dict)]
         if not hot:
@@ -1411,9 +1451,19 @@ def _market_week_summary():
             "start": start, "latest": latest, "ndays": len(acts)}
 
 
+def _market_week_summary():
+    """주간(7일 창) 요약 — _market_window_summary(7) 래퍼(기존 인터페이스 유지)."""
+    return _market_window_summary(7)
+
+
+def _market_month_summary():
+    """월간(30일 창) 요약 — _market_window_summary(30) 래퍼."""
+    return _market_window_summary(30)
+
+
 def _render_market_week_band():
-    """주간 요약 밴드 — '오늘' 밴드와 같은 양식·집계 항목으로 위에 쌓인다(스택 1단).
-    데이터 없으면 조용히 생략(아래 '오늘' 밴드는 독립 렌더)."""
+    """(구) 주간 요약 밴드 단독 렌더 — 통합 렌더러(_render_market_bands) 도입 후 미사용
+    호환 유지용. 데이터 없으면 조용히 생략."""
     s = _market_week_summary()
     if not s:
         return
@@ -1444,5 +1494,50 @@ def _render_market_band():
         "상승압력=신고가÷(신고가+신저가) · 표준 민감도·직거래 제외 · "
         "주간 신고가·신저가=최신 거래일 기준 7일 창 합산(일별 합산 중복 없음) · "
         "거래활발·평균 상승률(주간)=최근 7일 스냅샷 평균 · "
+        "거래활발=주목단지 랭킹 단지수 · 평균 상승률=주목단지 평균"),
+        unsafe_allow_html=True)
+
+
+def _render_market_bands():
+    """월간·주간·오늘 시장 밴드 3단 통합 렌더 — 단일 iframe(단 간격 10px).
+    개별 iframe 3장으로 쌓으면 Streamlit 요소 기본 여백 때문에 밴드 사이가 벌어져
+    한 문서로 합쳤다(주간·오늘 사이 여백 축소 + 월간 신설). 표본 없는 단은 생략,
+    전부 없으면 아무것도 그리지 않는다. foot는 여기서 한 번만(3단 공통 설명)."""
+    divs = []
+    m = _market_month_summary()
+    if m:
+        d0, d1 = m["start"], m["latest"]
+        divs.append(_band_div(
+            f'<b>월간</b> 아파트 시장 · {d0.month}.{d0.day}→{d1.month}.{d1.day} · '
+            '최신거래일 기준 30일',
+            m["hi"], m["lo"], m["act"], m["avg"],
+            kl=("신고가 <small>30일 합</small>", "신저가 <small>30일 합</small>",
+                "거래활발 <small>월간 평균</small>", "평균 상승률 <small>월간 평균</small>")))
+    w = _market_week_summary()
+    if w:
+        d0, d1 = w["start"], w["latest"]
+        divs.append(_band_div(
+            f'<b>주간</b> 아파트 시장 · {d0.month}.{d0.day}→{d1.month}.{d1.day} · '
+            '최신거래일 기준 7일',
+            w["hi"], w["lo"], w["act"], w["avg"],
+            kl=("신고가 <small>7일 합</small>", "신저가 <small>7일 합</small>",
+                "거래활발 <small>주간 평균</small>", "평균 상승률 <small>주간 평균</small>")))
+    t = _market_summary()
+    if t:
+        _ref = t.get("latest")
+        datestr = (f'{_ref.month}.{_ref.day} 최신거래 기준' if _ref
+                   else f'{t["today"].month}.{t["today"].day} 기준')
+        divs.append(_band_div(f'오늘의 아파트 시장 · {datestr}',
+                              t["hi"], t["lo"], t["act"], t["avg"]))
+    if not divs:
+        return
+    html = _MARKET_BAND_HTML.replace("__BANDS__", "".join(divs))
+    # 초기 높이=단수×150+여백 — iframe 내 _fit이 실측 보정(부모 래퍼 높이까지 해제)
+    components.html(html, height=len(divs) * 155 + 20, scrolling=False)
+    st.markdown(foot_row(
+        "특이거래 기준과 동일 집계",
+        "상승압력=신고가÷(신고가+신저가) · 표준 민감도·직거래 제외 · "
+        "월간·주간 신고가·신저가=최신 거래일 기준 30일/7일 창 합산(일별 합산 중복 없음) · "
+        "거래활발·평균 상승률(월간·주간)=해당 기간 스냅샷 평균 · "
         "거래활발=주목단지 랭킹 단지수 · 평균 상승률=주목단지 평균"),
         unsafe_allow_html=True)
