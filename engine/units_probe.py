@@ -1,27 +1,28 @@
-"""세대수 소스 프로브 v3 — K-apt '벌크 XLSX' 경로 검증(엔진 세대수 1순위 소스 전환).
+"""세대수 소스 프로브 v4 — REB 식별정보 odcloud(엔진 벌크 1순위 소스) 검증.
 
-v2 결과(2026-07-07): 기본정보 API(getAphusBassInfoV3)가 파라미터·단지 무관 전면
-HTTP 500 → 개별 조회를 포기하고 국토부 파일데이터(data.go.kr/15073271,
-전국 18,000여 단지 · 주간 갱신 · 세대수+시공사)를 k-apt.go.kr에서 XLSX 1회
-다운로드하는 방식으로 전환했다. 이 프로브는 그 경로가 GitHub Actions(데이터센터
-IP)에서 실제로 동작하는지 확인한다 — 활용신청·API키 불필요.
+경위: 기본정보 API 전면 500(v2) → K-apt 벌크 XLSX는 데이터센터 IP 차단으로
+커넥션 타임아웃(v3) → 공공데이터포털 원문파일(한국부동산원 '공동주택 단지
+식별정보_기본정보', data.go.kr/15106861 · 전국 44,628행)을 odcloud 자동변환
+API로 조회하는 방식으로 전환. data.go.kr 인프라라 Actions에서 접근 가능하다.
 
-  [1] XLSX 다운로드: HTTP 상태·크기·헤더 행 인식·수도권 파싱 건수
-  [2] 대단지 표본 조회: 은마(강남구)·파크리오(송파구)·리센츠(송파구) 세대수
+  ★ 사전 1회: data.go.kr 로그인 → 15106861 파일데이터 페이지 → '오픈API' 탭
+    → 활용신청(자동승인). 키는 기존 데이터포털 키 그대로.
+
+  [1] odcloud 1페이지 표본 — 인증·스키마(컬럼명)·주소 형식 확인
+  [2] 전 페이지 순회 — 수도권 파싱 건수·지역 수·대단지 표본(은마·파크리오·리센츠)
   [3] 기본정보 API 생존 재확인(1콜) — 살아나면 ②순위 폴백으로 자동 복귀
 
-판독: [1]에서 '수도권 N단지'(N이 수천)와 [2] 세대수가 찍히면 성공 —
-내일 크론부터 유니버스가 벌크 기반으로 정상 재빌드된다. [1]이 차단(403/타임아웃)
-이면 k-apt도 데이터센터 IP 차단 목록에 추가된 것 → 결과 공유해 주면 다음 스텝.
+판독: [2]에서 '수도권 N천 단지'와 표본 세대수가 찍히면 성공 — 내일 크론부터
+벌크 기반 재빌드. [1]이 401/403이면 활용신청 미완, 타임아웃이면 결과 공유.
 실행: Actions → 'units 세대수 API 프로브 (수동)' → Run workflow.
 """
 
-import io
 import os
 
 import requests
 
-_XLSX = "https://www.k-apt.go.kr/web/board/goKaptBasicExcelDownload.do"
+_ODCLOUD = ("https://api.odcloud.kr/api/15106861/v1/"
+            "uddi:46a20910-19aa-462e-ba09-e897b77d0e76")
 _INFO = "apis.data.go.kr/1613000/AptBasisInfoServiceV3/getAphusBassInfoV3"
 
 
@@ -34,77 +35,80 @@ def _key():
 
 
 def main():
-    print("[1] K-apt 벌크 XLSX 다운로드")
+    key = _key()
+    if not key:
+        print("::error::데이터포털 키가 비어 있어요.")
+        return
+    uq = requests.utils.unquote(key)
+
+    print("[1] odcloud 1페이지 표본(perPage=3)")
     try:
-        r = requests.get(_XLSX, timeout=300, verify=False,
-                         headers={"User-Agent": "Mozilla/5.0"})
+        r = requests.get(_ODCLOUD, params={"page": 1, "perPage": 3,
+                                           "serviceKey": uq,
+                                           "returnType": "JSON"}, timeout=60)
     except Exception as e:
         print(f"   → 요청 실패: {e}")
         return
-    ctype = r.headers.get("Content-Type", "?")
-    print(f"   → HTTP {r.status_code} · {len(r.content):,}B · Content-Type={ctype}")
-    if r.status_code != 200 or len(r.content) < 10000:
-        print("   본문 머리:", (r.text or "")[:200].replace("\n", " "))
-        print("   ⛔ 다운로드 실패 — 차단/변경 여부 확인 필요")
+    print(f"   → HTTP {r.status_code} · 본문 머리: "
+          + (r.text or "")[:180].replace("\n", " "))
+    if r.status_code in (401, 403):
+        print("   ⛔ 인증 실패 — data.go.kr에서 15106861 파일데이터의 "
+              "'오픈API' 활용신청(자동승인) 후 재실행하세요.")
         return
-
-    import pandas as pd
-    try:
-        df = pd.read_excel(io.BytesIO(r.content), header=None, dtype=str)
-    except Exception as e:
-        print(f"   ⛔ XLSX 파싱 실패: {e}")
+    if r.status_code != 200:
+        print("   ⛔ 예상 밖 응답 — 결과를 공유해 주세요.")
         return
-    print(f"   → 파싱 OK: {len(df)}행 × {df.shape[1]}열")
+    data = r.json()
+    rows = data.get("data") or []
+    print(f"   → totalCount={data.get('totalCount')} · 표본 {len(rows)}행")
+    if rows:
+        print("   → 컬럼:", sorted(rows[0].keys()))
+        print("   → 표본:", {k: rows[0].get(k) for k in
+                             ("주소", "단지명_공시가격", "세대수") if k in rows[0]})
 
-    hdr_i = cols = None
-    for i in range(min(8, len(df))):
-        row = [str(v or "").strip() for v in df.iloc[i].tolist()]
-        if any("단지명" in v for v in row) and any("세대수" in v for v in row):
-            def _find(*keys):
-                for j, v in enumerate(row):
-                    if any(k == v or k in v for k in keys):
-                        return j
-                return None
-            cols = {"sido": _find("시도"), "sgg": _find("시군구"),
-                    "name": _find("단지명"), "units": _find("세대수"),
-                    "builder": _find("시공사")}
-            hdr_i = i
-            print(f"   → 헤더 행 {i}: cols={cols}")
-            print("   → 헤더 원문(앞 12열):", row[:12])
+    print("\n[2] 전 페이지 순회 — 수도권 파싱")
+    per, page, regions, samples = 5000, 0, {}, {}
+    targets = [("강남구", "은마"), ("송파구", "파크리오"), ("송파구", "리센츠")]
+    while page < 12:
+        page += 1
+        rr = requests.get(_ODCLOUD, params={"page": page, "perPage": per,
+                                            "serviceKey": uq,
+                                            "returnType": "JSON"}, timeout=90)
+        if rr.status_code != 200:
+            print(f"   p{page} HTTP {rr.status_code} — 중단")
             break
-    if hdr_i is None:
-        print("   ⛔ 헤더 인식 실패 — 상위 3행:")
-        for i in range(min(3, len(df))):
-            print("     ", [str(v)[:14] for v in df.iloc[i].tolist()[:10]])
-        return
-
-    body = df.iloc[hdr_i + 1:]
-    seoul = body[body.iloc[:, cols["sido"]].astype(str).str.startswith("서울", na=False)]
-    gg = body[body.iloc[:, cols["sido"]].astype(str).str.startswith("경기", na=False)]
-    ic = body[body.iloc[:, cols["sido"]].astype(str).str.startswith("인천", na=False)]
-    print(f"   → 서울 {len(seoul)} · 경기 {len(gg)} · 인천 {len(ic)} / 전체 {len(body)}단지")
-
-    print("\n[2] 대단지 표본 조회")
-    for gu, name in [("강남구", "은마"), ("송파구", "파크리오"), ("송파구", "리센츠")]:
-        sub = body[(body.iloc[:, cols["sgg"]].astype(str).str.contains(gu, na=False))
-                   & (body.iloc[:, cols["name"]].astype(str).str.contains(name, na=False))]
-        if len(sub):
-            row = sub.iloc[0]
-            b = row.iloc[cols["builder"]] if cols["builder"] is not None else "?"
-            print(f"   {gu} {name} → 세대수 {row.iloc[cols['units']]} · 시공사 {b}")
-        else:
-            print(f"   {gu} {name} → 미발견(명칭 확인 필요)")
+        rows = (rr.json() or {}).get("data") or []
+        for row in rows:
+            addr = str(row.get("주소") or "")
+            t = addr.split()
+            if len(t) < 2 or t[0][:2] not in ("서울", "경기", "인천"):
+                continue
+            try:
+                u = int(float(str(row.get("세대수") or 0)))
+            except (ValueError, TypeError):
+                continue
+            if u < 100:
+                continue
+            regions[t[1]] = regions.get(t[1], 0) + 1
+            names = " ".join(str(row.get(k) or "") for k in
+                             ("단지명_공시가격", "단지명_건축물대장", "단지명_도로명주소"))
+            for gu, nm in targets:
+                if gu in addr and nm in names and (gu, nm) not in samples:
+                    samples[(gu, nm)] = u
+        if len(rows) < per:
+            break
+    print(f"   → 수도권 {sum(regions.values())}단지(세대수 100+) · "
+          f"{len(regions)}개 시군구 · {page}페이지")
+    top = sorted(regions.items(), key=lambda x: -x[1])[:6]
+    print("   → 상위 시군구:", ", ".join(f"{k} {v}" for k, v in top))
+    for (gu, nm) in [t for t in targets]:
+        print(f"   {gu} {nm} → 세대수 {samples.get((gu, nm), '미발견')}")
 
     print("\n[3] 기본정보 API 생존 재확인(1콜)")
-    key = _key()
-    if not key:
-        print("   → 키 없음(생략)")
-        return
-    uq = requests.utils.unquote(key)
     rr = requests.get(f"https://{_INFO}",
                       params={"serviceKey": uq, "kaptCode": "A13805002"}, timeout=15)
     print(f"   → HTTP {rr.status_code} · 본문: {(rr.text or '')[:120]}")
-    print("\n프로브 끝 — [1][2] 정상이면 내일 크론에서 벌크 기반 유니버스 재빌드 완료.")
+    print("\n프로브 끝 — [2] 정상이면 내일 크론에서 벌크 기반 유니버스 재빌드 완료.")
 
 
 if __name__ == "__main__":
