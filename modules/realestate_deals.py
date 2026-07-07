@@ -1161,11 +1161,135 @@ def _render_region_board():
         unsafe_allow_html=True)
 
 
+def _hi_month_groups(days=30):
+    """최근 N일 신고가 경신 단지 그룹 — anomalies(엔진 신고가 스캔)를 (지역,단지)로 묶는다.
+    직거래 제외 · 기록은 최신순. 반환 [{gu,apt,units,freq,recs:[{iso,d,area,p,v}]}]
+    (최신 신고가 일자 내림차순 → 마진 내림차순). '주목 단지' 탭의 월간 신고가 전수
+    표시(랭킹 배지 + 별도 섹션) 재료 — 뷰어 전용, 엔진/스키마 무변경."""
+    from datetime import date as _date, timedelta as _td
+    cut = _date.today() - _td(days=days)
+    grp = {}
+    for r in fetch_anomalies() or []:
+        na = _anom_norm(r)
+        if not na or na[0] != "신고가" or na[9]:       # 신고가만 · 직거래 제외
+            continue
+        dt = _anom_date(na[10])
+        if not dt or dt < cut:
+            continue
+        g = grp.setdefault((na[4], na[3]), {
+            "gu": na[4], "apt": na[3], "units": None, "freq": None, "recs": []})
+        if isinstance(na[11], (int, float)) and na[11]:
+            g["units"] = int(na[11])
+        if isinstance(na[12], (int, float)):
+            g["freq"] = max(g["freq"] or 0, int(na[12]))
+        g["recs"].append({
+            "iso": dt.isoformat(), "d": f"{dt.month:02d}.{dt.day:02d}",
+            "area": _area_int(na[5]), "p": na[6],
+            "v": (round(na[13], 1) if isinstance(na[13], (int, float)) else None),
+        })
+    out = []
+    for g in grp.values():
+        g["recs"].sort(key=lambda x: (x["iso"], x["v"] or 0), reverse=True)
+        out.append(g)
+    out.sort(key=lambda g: (g["recs"][0]["iso"], g["recs"][0]["v"] or 0),
+             reverse=True)
+    return out
+
+
+_HI_BADGE = ('<span style="font-size:9.5px;font-weight:800;background:#B65F5A;'
+             'color:#fff;border-radius:5px;padding:1.5px 7px;white-space:nowrap">'
+             '🔺 신고가</span>')
+
+
+def _render_hi_month_section(groups, skip_keys):
+    """'월간 신고가 경신' 섹션 — 주목 랭킹 밖 신고가 단지 전부를 컴팩트 카드로.
+    카드 재료는 유니버스(fetch_cap_leaders)에서 보강(세대수·시공사·평형가·전세가율·30일比),
+    유니버스 밖 단지는 특이거래 데이터만으로 최소 카드(누락 없음). 거래량 조건 무관."""
+    rest = [g for g in groups if (g["gu"], g["apt"]) not in skip_keys]
+    if not rest:
+        return
+    cl_idx = {(c.get("gu"), c.get("apt")): c
+              for c in (fetch_cap_leaders() or []) if isinstance(c, dict)}
+    st.markdown('<div class="re-grp">월간 신고가 경신'
+                f'<span class="sub">최근 30일 신고가 전 단지 · 직거래 제외 · '
+                f'주목 랭킹 외 {len(rest)}단지 · 국토부 실거래</span></div>',
+                unsafe_allow_html=True)
+
+    def _pp(lbl, val):
+        if val:
+            return f'<span class="re-hc-pp"><i>{lbl}</i>{val}</span>'
+        return ""
+
+    body = ""
+    for g in rest:
+        c = cl_idx.get((g["gu"], g["apt"])) or {}
+        r0 = g["recs"][0]
+        n_more = len(g["recs"]) - 1
+        apt = g["apt"]
+        addr = (c.get("addr") or g["gu"]).strip()
+        units = c.get("units") or g["units"]
+        meta = [addr]
+        if isinstance(units, (int, float)) and units:
+            meta.append(f"{int(units):,}세대")
+        if c.get("builder"):
+            meta.append(str(c["builder"]))
+        meta_s = " · ".join(m for m in meta if m)
+        marg = f' +{r0["v"]}%' if r0.get("v") is not None else ""
+        chg = c.get("chg")
+        chg_s = ""
+        if isinstance(chg, (int, float)):
+            ccls = "up" if chg >= 0 else "dn"
+            chg_s = (f' · 30일比 <span class="{ccls}">'
+                     f'{"+" if chg >= 0 else ""}{chg}%</span>')
+        more_s = f' · <span class="mut">+{n_more}건 더</span>' if n_more > 0 else ""
+        area_s = f'{r0["area"]}㎡ ' if r0.get("area") else ""
+        prices = (_pp("59㎡", c.get("p59_eok")) + _pp("84㎡", c.get("p84_eok"))
+                  or _pp("대표", c.get("price_eok")))
+        jr = c.get("jr")
+        if isinstance(jr, (int, float)):
+            gap = c.get("gap_eok")
+            gap_s = (f'<span class="re-hc-gap">갭 <b>{gap}억</b></span>'
+                     if isinstance(gap, (int, float)) else "")
+            jbox = (
+                f'<div class="re-hc-jbox">'
+                f'<div class="re-hc-jg"><div class="re-hc-jlab">'
+                f'<span>전세가율</span><b>{int(round(jr))}%</b></div>'
+                f'<div class="re-hc-jbar"><i style="width:{min(int(round(jr)), 100)}%">'
+                f'</i></div></div>{gap_s}</div>')
+        else:
+            jbox = ""
+        mq = (addr + " " + apt).strip() if addr else apt
+        body += (
+            f'<div class="re-hc"><span class="re-hc-rk" '
+            f'style="background:#FCEBEB;color:#A32D2D">🔺</span>'
+            f'<div class="re-hc-main">'
+            f'<div class="re-hc-top"><span class="re-hc-nm">{apt}</span>'
+            f'<span class="re-hc-chg up">신고가{marg}</span></div>'
+            f'<div class="re-hc-meta">{meta_s}</div>'
+            f'<div class="re-hc-stat">최근 신고가 {r0["d"]} · {area_s}'
+            f'<b>{r0["p"]}</b>{more_s}{chg_s}</div>'
+            f'<div class="re-hc-prices">{prices}</div>{jbox}</div>'
+            f'{_naver_n(mq)}</div>')
+    st.markdown(f'<div class="re-hcwrap">{body}</div>', unsafe_allow_html=True)
+    st.markdown(foot_row(
+        "국토부 실거래 · 직거래 제외",
+        "최근 30일 신고가(직전 6개월 최고 초과) 단지 전수 — 위 주목 랭킹에 이미 있는 "
+        "단지는 랭킹 카드의 🔺신고가 배지로 표시 · 마진%=직전 최고 대비 초과율 · "
+        "세대수·평형가·전세가율·30일比는 주요 단지 유니버스 보강(유니버스 밖 단지는 "
+        "실거래 정보만) · 거래량 조건 무관 전수 표시"), unsafe_allow_html=True)
+
+
 def _render_hot_complexes():
     """주목 단지 보드 — 최근 거래 활발·상승(국토부 실거래) + 단지정보(세대수·시공사·소재지)
-    + 면적별(59·84㎡) 최근 실거래가 + '네이버페이부동산' 링크."""
+    + 면적별(59·84㎡) 최근 실거래가 + '네이버페이부동산' 링크.
+    월간(30일) 신고가 경신 단지는 전수 표시: 랭킹 내 단지는 🔺배지, 랭킹 밖 단지는
+    하단 '월간 신고가 경신' 섹션(거래량 조건 무관)."""
     hot = [h for h in (fetch_hot_complexes() or []) if isinstance(h, dict)]
+    hi_groups = _hi_month_groups(30)
+    hi_keys = {(g["gu"], g["apt"]) for g in hi_groups}
     if not hot:
+        if hi_groups:
+            _render_hi_month_section(hi_groups, set())
         return
     st.markdown('<div class="re-grp">주목 단지'
                 '<span class="sub">주요 단지 중 가격·거래가 움직이는 대장주 · 국토부 실거래</span></div>',
@@ -1176,6 +1300,7 @@ def _render_hot_complexes():
             return f'<span class="re-hc-pp"><i>{lbl}</i>{val}</span>'
         return f'<span class="re-hc-pp dim"><i>{lbl}</i>–</span>'
 
+    shown_keys = set()
     body = ""
     for i, h in enumerate(hot[:15], 1):
         sd = "서울" if h.get("sd") == "seoul" else "경기"
@@ -1189,6 +1314,8 @@ def _render_hot_complexes():
             vol_s = '<span class="mut">신규 거래 집중</span>'
         apt = h.get("apt", "")
         addr = (h.get("addr") or f"{sd} {h.get('gu', '')}").strip()
+        shown_keys.add((h.get("gu"), apt))
+        hi_badge = _HI_BADGE if (h.get("gu"), apt) in hi_keys else ""
         meta = [addr]
         u = h.get("units")
         if isinstance(u, (int, float)) and u:
@@ -1229,7 +1356,8 @@ def _render_hot_complexes():
             f'<div class="{card_cls}"><span class="re-hc-rk">{i}</span>'
             f'<div class="re-hc-main">'
             f'<div class="re-hc-top"><span class="re-hc-nm">{apt}</span>'
-            f'<span class="re-hc-chg {chg_cls}">{"+" if chg >= 0 else ""}{chg}%</span></div>'
+            f'<span class="re-hc-chg {chg_cls}">{"+" if chg >= 0 else ""}{chg}%</span>'
+            f'{hi_badge}</div>'
             f'<div class="re-hc-meta">{meta_s}</div>'
             f'<div class="re-hc-stat">최근 {h.get("recent", 0)}건 · {vol_s} · '
             f'3개월 {h.get("freq", 0)}건</div>'
@@ -1243,7 +1371,9 @@ def _render_hot_complexes():
         "59·84㎡는 각 면적대 최근 실거래가 · 전세가율=전세 ㎡당가÷매매 ㎡당가 · "
         "갭=(매매−전세)×대표면적 · 차트=최근 3개월 건별 실거래(점 1개=1건, "
         "59㎡ 파랑·84㎡ 빨강·기타 회색 · 선=평형별 시간순 연결 · 라벨=평형별 마지막 거래가) · "
-        "N 아이콘(초록)으로 네이버 검색"), unsafe_allow_html=True)
+        "🔺신고가 배지=최근 30일 신고가 경신 · N 아이콘(초록)으로 네이버 검색"),
+        unsafe_allow_html=True)
+    _render_hi_month_section(hi_groups, shown_keys)
 
 
 def _area_int(area):
