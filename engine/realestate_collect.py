@@ -1428,6 +1428,139 @@ def _known_lookup(na):
     if na in _KNOWN_UNITS:
         return _KNOWN_UNITS[na]
     return next((u for n, u in _KNOWN_UNITS.items() if na in n or n in na), None)
+
+
+# ── K-apt 단지 기본정보 '벌크 XLSX' — 세대수 1순위 소스(2026-07 도입) ──────
+#   배경: 기본정보 API(getAphusBassInfoV3)가 파라미터·단지 무관 전면 HTTP 500
+#   (프로브 v2로 확정) → 단지당 개별 조회 대신 국토부 공개 파일데이터
+#   (data.go.kr/15073271, 전국 18,000여 단지 · 주간 갱신 · 세대수+시공사 포함)를
+#   k-apt.go.kr에서 XLSX 1회 다운로드해 지역별 맵으로 캐시한다.
+#   활용신청·API키 불필요 · 900여 콜 → 1콜 · 죽은 API를 아예 우회.
+#   세대수는 사실상 정적이라 30일 캐시로 충분(파일 자체는 주간 추출본).
+_KAPT_XLSX_URL = "https://www.k-apt.go.kr/web/board/goKaptBasicExcelDownload.do"
+_BULK_CACHE_KEY = "kapt_units_bulk"
+_BULK_TTL_DAYS = 30
+_BULK_MIN_UNITS = 100          # 캐시 슬림화 컷(유니버스 컷 500보다 넉넉히)
+_KAPT_BULK_MEMO = None
+
+
+def _bulk_region_of(sido, sgg):
+    """XLSX (시도, 시군구) → 엔진 지역명. 스코프 밖(지방 등)은 None.
+
+    서울=구명 그대로 · 경기=시군구 첫 토큰(예: '성남시 분당구'→'성남시') ·
+    인천=연수구/서구만(서구는 서울 서구와 구분 위해 '인천서구' 표기)."""
+    sido, sgg = str(sido or "").strip(), str(sgg or "").strip()
+    if sido.startswith("서울"):
+        return sgg if sgg in SIGUNGU_CODES else None
+    if sido.startswith("경기"):
+        si = sgg.split()[0] if sgg else ""
+        return si if si in SIGUNGU_CODES else None
+    if sido.startswith("인천"):
+        if "연수" in sgg:
+            return "연수구"
+        if sgg == "서구" or sgg.startswith("서구"):
+            return "인천서구"
+    return None
+
+
+def _kapt_bulk_download():
+    """k-apt XLSX 다운로드·파싱 → {지역명: {norm단지명: [세대수, 시공사]}} (실패 {})."""
+    try:
+        r = requests.get(_KAPT_XLSX_URL, timeout=300, verify=False,
+                         headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200 or len(r.content) < 10000:
+            print(f"[realestate] K-apt 벌크 다운로드 실패: HTTP {r.status_code} "
+                  f"({len(r.content)}B) — API 경로로 폴백")
+            return {}
+        import io
+        import pandas as pd
+        df = pd.read_excel(io.BytesIO(r.content), header=None, dtype=str)
+    except Exception as e:
+        print(f"[realestate] K-apt 벌크 파싱 실패: {str(e)[:120]} — API 경로로 폴백")
+        return {}
+    # 헤더 행 탐지(상단 안내문 대비) → 필요 컬럼 인덱스 확정
+    hdr_i = cols = None
+    for i in range(min(8, len(df))):
+        row = [str(v or "").strip() for v in df.iloc[i].tolist()]
+        if any("단지명" in v for v in row) and any("세대수" in v for v in row):
+            def _find(*keys):
+                for j, v in enumerate(row):
+                    if any(k == v or k in v for k in keys):
+                        return j
+                return None
+            cols = {"sido": _find("시도"), "sgg": _find("시군구"),
+                    "name": _find("단지명"), "units": _find("세대수"),
+                    "builder": _find("시공사")}
+            hdr_i = i
+            break
+    if hdr_i is None or None in (cols["sido"], cols["sgg"],
+                                 cols["name"], cols["units"]):
+        print(f"[realestate] K-apt 벌크 헤더 인식 실패(cols={cols}) — API 경로로 폴백")
+        return {}
+    out, nrows = {}, 0
+    for _, row in df.iloc[hdr_i + 1:].iterrows():
+        reg = _bulk_region_of(row.iloc[cols["sido"]], row.iloc[cols["sgg"]])
+        if not reg:
+            continue
+        na = _norm_apt(row.iloc[cols["name"]])
+        try:
+            u = int(float(str(row.iloc[cols["units"]]).replace(",", "").strip()))
+        except (ValueError, TypeError):
+            continue
+        if not na or u < _BULK_MIN_UNITS:
+            continue
+        b = None
+        if cols["builder"] is not None:
+            b = str(row.iloc[cols["builder"]] or "").strip() or None
+            if b and b.lower() in ("nan", "none", "-"):
+                b = None
+        out.setdefault(reg, {})[na] = [u, b]
+        nrows += 1
+    print(f"[realestate] K-apt 벌크 확보: {nrows}단지 / {len(out)}지역 "
+          f"(원본 {len(df)}행)")
+    return out
+
+
+def _kapt_bulk_map():
+    """벌크 맵 반환(메모 → engine_cache 30일 → 다운로드 → 만료캐시 재활용 → {})."""
+    global _KAPT_BULK_MEMO
+    if _KAPT_BULK_MEMO is not None:
+        return _KAPT_BULK_MEMO
+    cached = None
+    try:
+        from modules.db import cache_get
+        c = cache_get(_BULK_CACHE_KEY)
+        if isinstance(c, dict) and isinstance(c.get("m"), dict) and c["m"]:
+            cached = c
+    except Exception:
+        cached = None
+    if cached and _fresh(cached.get("_updated"), _BULK_TTL_DAYS):
+        _KAPT_BULK_MEMO = cached["m"]
+        return _KAPT_BULK_MEMO
+    m = _kapt_bulk_download()
+    if m:
+        try:
+            from modules.db import cache_set
+            cache_set(_BULK_CACHE_KEY, {"_updated": date.today().isoformat(), "m": m})
+        except Exception as e:
+            print(f"[realestate] K-apt 벌크 캐시 저장 실패(무시): {e}")
+        _KAPT_BULK_MEMO = m
+    else:
+        # 다운로드 실패 시 만료된 캐시라도 재활용(세대수는 정적 — 없는 것보단 낫다)
+        _KAPT_BULK_MEMO = cached["m"] if cached else {}
+    return _KAPT_BULK_MEMO
+
+
+def _bulk_lookup(bulk, sgg, apt):
+    """벌크 맵에서 (지역, 단지명) 조회 — 정확일치 → 지역 내 부분일치(기존 API 매칭과 동일)."""
+    reg = bulk.get(sgg) or {}
+    if not reg:
+        return None
+    na = _norm_apt(apt)
+    hit = reg.get(na)
+    if hit is None and na:
+        hit = next((v for n, v in reg.items() if na in n or n in na), None)
+    return hit
  
  
 # ── 세대수/시공사 맵 캐시(engine_cache:apt_info) — 7일 TTL, 미스만 재조회 ──
@@ -1548,18 +1681,30 @@ def _apt_info_map(pairs):
  
  
 def _apt_info_fetch(pairs):
-    """{(시군구,단지명): {'units':세대수|None,'builder':시공사|None}} — 실제 API 조회.
-    공동주택 목록(getSigunguAptList3)→기본정보(getAphusBassInfoV3, kaptdaCnt·kaptBcompany).
-    매칭 실패 시 세대수만 _KNOWN_UNITS 폴백.
+    """{(시군구,단지명): {'units':세대수|None,'builder':시공사|None}}.
 
-    [2026-07] 진단 요약 로그 + 인증실패 조기중단:
-      세대수 API가 통째로 죽어도 조용히 _KNOWN_UNITS만 남던 사고 재발 방지 —
-      끝에 '대상/매칭/확보/오류' 한 줄을 반드시 찍고, 인증류 오류가 연속되면
-      나머지 호출을 생략한다(수백 콜 낭비 + 3시간대 실행시간 방지)."""
+    [2026-07 v2] 3단 폴백 — ① K-apt 벌크 XLSX(주간 전수 파일, 1콜, 키 불필요)
+    ② K-apt 개별 API(목록→기본정보 — 기본정보가 전면 500이라 현재 사실상 예비)
+    ③ _KNOWN_UNITS 하드코딩. 벌크가 1순위라 정상 시 API 콜 0으로 끝난다.
+    진단 요약 로그 + 인증실패 조기중단은 v1과 동일하게 유지."""
     _dgo_reset_stats()
     out = {}
-    by_sgg = {}
+    bulk_got = 0
+
+    # ① 벌크 XLSX — 지역·단지명 매칭(정확→부분일치, 기존 API 매칭과 동일 규칙)
+    bulk = _kapt_bulk_map()
+    remain = []
     for sgg, apt in pairs:
+        hit = _bulk_lookup(bulk, sgg, apt) if bulk else None
+        if hit and hit[0]:
+            out[(sgg, apt)] = {"units": int(hit[0]), "builder": hit[1]}
+            bulk_got += 1
+        else:
+            remain.append((sgg, apt))
+
+    # ② 개별 API(잔여분만) — 기본정보 500 대비 minimal+재시도, 인증실패 조기중단
+    by_sgg = {}
+    for sgg, apt in remain:
         by_sgg.setdefault(sgg, set()).add(apt)
     info_cache = {}
     matched = got = known = 0
@@ -1569,8 +1714,13 @@ def _apt_info_fetch(pairs):
         # 성공 0에 인증류 오류만 3회+ → 키/승인 문제 확정(더 던져봐야 동일)
         return _DGO_STATS["ok"] == 0 and _DGO_STATS["auth"] >= 3
 
+    def _api_dead():
+        # 기본정보 5xx 누적 + 확보 0 → 죽은 엔드포인트(프로브 v2 상황) — 콜 낭비 방지
+        http5 = sum(v for k, v in _DGO_STATS["http"].items() if int(k) >= 500)
+        return got == 0 and http5 >= 6
+
     for sgg, apts in by_sgg.items():
-        if _auth_dead():
+        if _auth_dead() or _api_dead():
             aborted = True
             break
         codes = _region_codes(sgg) or None
@@ -1592,7 +1742,7 @@ def _apt_info_fetch(pairs):
             if kc:
                 matched += 1
                 if kc not in info_cache:
-                    b = None if _auth_dead() else _dgo_json(
+                    b = None if (_auth_dead() or _api_dead()) else _dgo_json(
                         _APT_INFO, {"kaptCode": kc}, minimal=True, retries=1)
                     item = (b or {}).get("item") or {}
                     if isinstance(item, list):
@@ -1608,23 +1758,22 @@ def _apt_info_fetch(pairs):
             if units is not None:
                 got += 1
             else:
-                units = _known_lookup(na)
+                units = _known_lookup(na)      # ③ 하드코딩 폴백
                 if units is not None:
                     known += 1
             out[(sgg, apt)] = {"units": units, "builder": builder}
 
     s = _DGO_STATS
-    print(f"[realestate] 세대수 API: 대상 {len(pairs)}건 · 목록매칭 {matched} · "
-          f"API확보 {got} · KNOWN폴백 {known} · "
+    print(f"[realestate] 세대수: 대상 {len(pairs)}건 · 벌크확보 {bulk_got} · "
+          f"API확보 {got}(매칭 {matched}) · KNOWN폴백 {known} · "
           f"호출 ok {s['ok']}/auth {s['auth']}/http {s['http'] or 0}/"
           f"parse {s['parse']}/net {s['neterr']}"
-          + (" · 인증실패 확정으로 조기중단" if aborted else "")
+          + (" · API 사망 판정으로 조기중단" if aborted else "")
           + (f" · 마지막 오류: {s['last_err']}" if s["last_err"] else ""))
-    if aborted or (len(pairs) >= 20 and got == 0):
-        print("[realestate] ⚠ 세대수 API 전멸 — 유니버스는 _KNOWN_UNITS 폴백만으로 "
-              "지어집니다. data.go.kr에서 '공동주택 단지 목록제공(AptListService3)'과 "
-              "'공동주택 기본정보(AptBasisInfoServiceV3)' 활용신청 승인 여부를 확인하세요 "
-              "(위 '마지막 오류' 문구가 판별 근거).")
+    if bulk_got == 0 and got == 0 and len(pairs) >= 20:
+        print("[realestate] ⚠ 세대수 전 소스 실패 — 유니버스는 _KNOWN_UNITS 폴백만으로 "
+              "지어집니다. ①k-apt.go.kr 벌크 XLSX 접근 차단 여부와 ②기본정보 API "
+              "(getAphusBassInfoV3) 상태를 units_probe로 확인하세요.")
     return out
  
  
