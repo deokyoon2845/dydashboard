@@ -1,13 +1,12 @@
 name: units 세대수 API 프로브 (수동)
 
 # ──────────────────────────────────────────────────────────────────────────
-#  유니버스 세대수 API(공동주택 목록·기본정보) 사망 원인 판별용 — 수동 실행 전용.
+#  세대수 소스 프로브 v3 — K-apt '벌크 XLSX'(엔진 1순위 소스) 경로 검증.
 #  Actions → 이 워크플로 → Run workflow → 로그의 [1]~[3] 결과를 확인.
 #  판독법은 engine/units_probe.py 독스트링에 있음:
-#    · [1] OK + [2] AUTH → 키 이중 인코딩(엔진 수정으로 해결 완료, 추가 조치 불필요)
-#    · [1] AUTH NOT_REGISTERED/DENIED → data.go.kr에서 AptListService3 ·
-#      AptBasisInfoServiceV3 두 서비스 활용신청 필요
-#    · [1] AUTH LIMITED_NUMBER → 일일 쿼터 초과(내일 재시도)
+#    · [1] 다운로드 OK + 수도권 수천 단지 파싱 → 성공(내일 크론부터 정상 재빌드)
+#    · [1] 403/타임아웃 → k-apt도 데이터센터 IP 차단 — 결과 공유 후 다음 스텝
+#    · [3] 기본정보 API가 살아나면 ②순위 폴백으로 자동 복귀(별도 조치 불필요)
 # ──────────────────────────────────────────────────────────────────────────
 
 on:
@@ -30,7 +29,7 @@ jobs:
           python-version: "3.12"
 
       - name: 라이브러리 설치 (프로브 전용 — 가볍게)
-        run: pip install requests xmltodict
+        run: pip install requests xmltodict pandas openpyxl
 
       - name: 세대수 API 프로브 실행
         env:
