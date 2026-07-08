@@ -723,7 +723,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kfont
 .cyc-gauge{margin-top:11px}
 .str-wrap{margin:2px 0 4px}
 .str-chart{width:100%;height:auto;display:block}
-.str-chart .sc-ax{fill:#9a9b92;font-size:7px;font-weight:700}
+.str-chart .sc-ax{fill:#b6b7ae;font-size:8px;font-weight:700}
 .str-cap{font-size:10px;color:var(--muted);margin-top:2px}
 .str-cap b{font-weight:800;color:var(--ink)}.str-cap b.up{color:var(--up)}.str-cap b.dn{color:var(--dn)}
 .cg-lab{font-size:9.5px;font-weight:700;color:var(--sage2);margin-bottom:7px}
@@ -856,30 +856,15 @@ function miniChart(m,pts){const W=280,H=64,P={l:4,r:6,t:8,b:17};
  const sp=(hi-lo)||1,y0=lo-sp*0.16,y1=hi+sp*0.16;
  const ys=v=>P.t+(1-(v-y0)/(y1-y0))*(H-P.t-P.b);
  const path=pts.map((p,i)=>(i?"L":"M")+xs(i).toFixed(1)+" "+ys(p.v).toFixed(1)).join(" ");
+ const area=path+" L"+xs(pts.length-1).toFixed(1)+" "+(H-P.b)+" L"+xs(0).toFixed(1)+" "+(H-P.b)+" Z";
+ let bl="";if(m.baseline!=null){const by=ys(m.baseline).toFixed(1);
+  bl='<line x1="'+P.l+'" y1="'+by+'" x2="'+(W-P.r)+'" y2="'+by+'" stroke="#C9CBC2" stroke-width="1" stroke-dasharray="4 4"/>';}
  const ax='<line x1="'+P.l+'" y1="'+(H-P.b)+'" x2="'+(W-P.r)+'" y2="'+(H-P.b)+'" stroke="var(--line2)" stroke-width="1"/>';
  let tk=monthTicks(pts).map(t=>{const x=xs(t.i);
   return '<line x1="'+x.toFixed(1)+'" x2="'+x.toFixed(1)+'" y1="'+(H-P.b)+'" y2="'+(H-P.b+3)+'" stroke="#C9CBC2" stroke-width="1"/>'
    +'<text class="mc-ax" x="'+x.toFixed(1)+'" y="'+(H-3)+'" text-anchor="middle">'+MON[t.mo]+'</text>';}).join("");
- let fillLayer;
- if(m.baseline!=null){
-  // 기준선(100) 위=상승색·아래=하락색으로 area를 분리 채움 → 국면이 한눈에.
-  const by=ys(m.baseline);
-  // 위/아래 area는 '기준선 높이'를 바닥/천장으로 삼아 각각 clip 없이 직접 구성.
-  const areaUp=path+" L"+xs(pts.length-1).toFixed(1)+" "+by.toFixed(1)+" L"+xs(0).toFixed(1)+" "+by.toFixed(1)+" Z";
-  const uid=(m.k||"m")+"_"+Math.round(by);
-  // 위 영역만 보이도록 baseline 위쪽(상승) / 아래쪽(하락)을 clipRect로 분리.
-  const clipUp='<clipPath id="cu_'+uid+'"><rect x="0" y="0" width="'+W+'" height="'+by.toFixed(1)+'"/></clipPath>';
-  const clipDn='<clipPath id="cd_'+uid+'"><rect x="0" y="'+by.toFixed(1)+'" width="'+W+'" height="'+(H-by).toFixed(1)+'"/></clipPath>';
-  fillLayer='<defs>'+clipUp+clipDn+'</defs>'
-   +'<path d="'+areaUp+'" fill="#B65F5A" opacity="0.13" clip-path="url(#cu_'+uid+')"/>'
-   +'<path d="'+areaUp+'" fill="#5A7CA0" opacity="0.13" clip-path="url(#cd_'+uid+')"/>'
-   +'<line x1="'+P.l+'" y1="'+by.toFixed(1)+'" x2="'+(W-P.r)+'" y2="'+by.toFixed(1)+'" stroke="#B4A26A" stroke-width="1" stroke-dasharray="4 3"/>';
- }else{
-  const area=path+" L"+xs(pts.length-1).toFixed(1)+" "+(H-P.b)+" L"+xs(0).toFixed(1)+" "+(H-P.b)+" Z";
-  fillLayer='<path d="'+area+'" fill="'+m.col+'" opacity="0.10"/>';
- }
  return '<svg class="mini" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet">'
-  +fillLayer+ax
+  +'<path d="'+area+'" fill="'+m.col+'" opacity="0.10"/>'+bl+ax
   +'<path d="'+path+'" fill="none" stroke="'+m.col+'" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"/>'
   +tk+'</svg>';}
 function deltaOf(m){const r=m.real||[];if(r.length<2)return null;
@@ -901,33 +886,48 @@ function chipSpark(m){const pts=makeSeries(m);if(pts.length<2)return "";
  const col=signal(m,pts).cls==="up"?"var(--up)":signal(m,pts).cls==="dn"?"var(--dn)":"#9a9b92";
  return '<svg class="chip-spk" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+bl
   +'<path d="'+path+'" fill="none" stroke="'+col+'" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></svg>';}
-//  (2) 종합 강도 추이 미니차트 — cycScore(mb)를 최근 n개월 돌려 만든 강도 시계열.
-//      0선 + 임계 ±T 밴드를 깔아 '모멘텀 꺾임/국면 임박'이 한눈에 보이게 한다.
+//  (2) 종합 강도 추이 미니차트(A안·다이버징) — cycScore(mb)를 최근 n개월 돌려 만든 강도 시계열.
+//      0선을 화면 중앙에 두고 위=상승존·아래=하락존으로 나눠, 라인·면을 0선 기준
+//      clip으로 분리 채운다(상승 구간=빨강, 하락 구간=파랑). 강도가 0선을 교차하면
+//      색이 바뀌어 국면 전환이 한눈에. ±T 중립대는 옅은 밴드로.
 function strengthChart(scoreAt,n,T){
  const seq=[];for(let mb=n-1;mb>=0;mb--)seq.push(scoreAt(mb));  // 과거→현재
  if(seq.length<2)return "";
- const W=280,H=58,P={l:4,r:6,t:6,b:14};
- let lo=Math.min.apply(null,seq),hi=Math.max.apply(null,seq);
- lo=Math.min(lo,-T*1.6,-0.02);hi=Math.max(hi,T*1.6,0.02);
- const sp=(hi-lo)||1,y0=lo-sp*0.10,y1=hi+sp*0.10;
+ const W=280,H=66,P={l:26,r:8,t:8,b:15};
+ // 0선을 세로 중앙 근처에 오도록 상·하한을 0 대칭으로 잡되, 데이터 범위를 담는다.
+ let amp=Math.max(Math.abs(Math.min.apply(null,seq)),Math.abs(Math.max.apply(null,seq)),T*1.6,0.03);
+ const y0=-amp*1.14,y1=amp*1.14;
  const xs=i=>P.l+i/(seq.length-1)*(W-P.l-P.r);
  const ys=v=>P.t+(1-(v-y0)/((y1-y0)||1))*(H-P.t-P.b);
  const yb=ys(0),yTp=ys(T),yTm=ys(-T);
- // 임계 ±T 밴드(회복↔둔화 중립대) + 0선
- const band='<rect x="'+P.l+'" y="'+Math.min(yTp,yTm).toFixed(1)+'" width="'+(W-P.l-P.r)+'" height="'+Math.abs(yTm-yTp).toFixed(1)+'" fill="#EBECE6" opacity="0.7"/>';
+ const uid="st_"+Math.round(yb);
+ // 상승존/하락존 배경(아주 옅게) + 중립대 ±T + 0선
+ const zoneUp='<rect x="'+P.l+'" y="'+P.t+'" width="'+(W-P.l-P.r)+'" height="'+(yb-P.t).toFixed(1)+'" fill="#B65F5A" opacity="0.045"/>';
+ const zoneDn='<rect x="'+P.l+'" y="'+yb.toFixed(1)+'" width="'+(W-P.l-P.r)+'" height="'+(H-P.b-yb).toFixed(1)+'" fill="#5A7CA0" opacity="0.045"/>';
+ const band='<rect x="'+P.l+'" y="'+Math.min(yTp,yTm).toFixed(1)+'" width="'+(W-P.l-P.r)+'" height="'+Math.abs(yTm-yTp).toFixed(1)+'" fill="#EBECE6" opacity="0.75"/>';
  const zero='<line x1="'+P.l+'" y1="'+yb.toFixed(1)+'" x2="'+(W-P.r)+'" y2="'+yb.toFixed(1)+'" stroke="#B9BBB0" stroke-width="1" stroke-dasharray="4 3"/>';
- // 상승/하락 영역에 따라 선 색: 현재값 부호
- const cur=seq[seq.length-1];const col=cur>T?"#C16C64":cur<-T?"#5A7CA0":"#8B9E86";
- const path=seq.map((v,i)=>(i?"L":"M")+xs(i).toFixed(1)+" "+ys(v).toFixed(1)).join(" ");
- const area=path+" L"+xs(seq.length-1).toFixed(1)+" "+yb.toFixed(1)+" L"+xs(0).toFixed(1)+" "+yb.toFixed(1)+" Z";
+ // clip: 0선 위(상승)·아래(하락)로 나눠 라인/면을 각기 다른 색으로.
+ const clipUp='<clipPath id="u'+uid+'"><rect x="0" y="0" width="'+W+'" height="'+yb.toFixed(1)+'"/></clipPath>';
+ const clipDn='<clipPath id="d'+uid+'"><rect x="0" y="'+yb.toFixed(1)+'" width="'+W+'" height="'+(H-yb).toFixed(1)+'"/></clipPath>';
+ const line=seq.map((v,i)=>(i?"L":"M")+xs(i).toFixed(1)+" "+ys(v).toFixed(1)).join(" ");
+ // 면: 라인을 따라가다 0선(yb)으로 닫는 폴리곤 — clip으로 위/아래를 잘라 상승/하락 각각.
+ const area=line+" L"+xs(seq.length-1).toFixed(1)+" "+yb.toFixed(1)+" L"+xs(0).toFixed(1)+" "+yb.toFixed(1)+" Z";
+ const UP="#B65F5A",DN="#5A7CA0";
+ const cur=seq[seq.length-1];const curCol=cur>=0?UP:DN;
  const dotx=xs(seq.length-1),doty=ys(cur);
- const dot='<circle cx="'+dotx.toFixed(1)+'" cy="'+doty.toFixed(1)+'" r="2.6" fill="'+col+'" stroke="#fff" stroke-width="1"/>';
- // 우측 끝 눈금 라벨(+T / 0 / −T)
- const lbl='<text class="sc-ax" x="'+(W-P.r)+'" y="'+(yb-2).toFixed(1)+'" text-anchor="end">0</text>';
+ const dot='<circle cx="'+dotx.toFixed(1)+'" cy="'+doty.toFixed(1)+'" r="3.4" fill="'+curCol+'" stroke="#FCFCFA" stroke-width="1.6"/>';
+ // 좌측 존 라벨(상승/0/하락)
+ const axU='<text class="sc-ax" x="'+(P.l-5)+'" y="'+(P.t+8).toFixed(1)+'" text-anchor="end">상승</text>';
+ const ax0='<text class="sc-ax" x="'+(P.l-5)+'" y="'+(yb+3).toFixed(1)+'" text-anchor="end" style="fill:#9a9b92">0</text>';
+ const axD='<text class="sc-ax" x="'+(P.l-5)+'" y="'+(H-P.b).toFixed(1)+'" text-anchor="end">하락</text>';
  return '<svg class="str-chart" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet">'
-  +band+zero+'<path d="'+area+'" fill="'+col+'" opacity="0.09"/>'
-  +'<path d="'+path+'" fill="none" stroke="'+col+'" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"/>'
-  +dot+lbl+'</svg>';}
+  +'<defs>'+clipUp+clipDn+'</defs>'
+  +zoneUp+zoneDn+band+zero
+  +'<path d="'+area+'" fill="'+UP+'" opacity="0.12" clip-path="url(#u'+uid+')"/>'
+  +'<path d="'+area+'" fill="'+DN+'" opacity="0.12" clip-path="url(#d'+uid+')"/>'
+  +'<path d="'+line+'" fill="none" stroke="'+UP+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" clip-path="url(#u'+uid+')"/>'
+  +'<path d="'+line+'" fill="none" stroke="'+DN+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" clip-path="url(#d'+uid+')"/>'
+  +dot+axU+ax0+axD+'</svg>';}
 function sparkSVG(m,pts){const W=200,H=38,P={l:3,r:3,t:3,b:13};
  const xs=i=>P.l+(pts.length<=1?0:i/(pts.length-1)*(W-P.l-P.r));
  const vv=pts.map(p=>p.v);let lo=Math.min.apply(null,vv),hi=Math.max.apply(null,vv);
