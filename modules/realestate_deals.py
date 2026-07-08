@@ -974,6 +974,9 @@ def _rb_pct(c):
 
 _RB_CSS = """<style>
 .rb-dt{background:#fff;border:1px solid #ECEDE7;border-radius:13px;padding:12px 14px;margin-bottom:4px}
+/* 지도 = 컨테이너의 2/3 크기로 축소, 가운데 정렬 */
+.rb-map{max-width:66%;margin:0 auto}
+@media(max-width:680px){.rb-map{max-width:100%}}
 .rb-map svg{width:100%;height:auto;display:block}
 .rb-map path{fill:#EFF0EA;stroke:#fff;stroke-width:1.2}
 .rb-map path.sh{fill:#A7BBA9}
@@ -989,46 +992,6 @@ _RB_CSS = """<style>
 .rb-top3 span i{font-style:normal;color:#7E9A83;font-weight:800;margin-right:5px}
 .rb-top3 span b{font-weight:800}
 .rb-note{font-size:9.5px;color:#B7B8B0;font-weight:600;margin-top:7px}
-.rb-wrap{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:2px 0 10px}
-@media(max-width:680px){.rb-wrap{grid-template-columns:1fr}}
-.rb-gt{background:#fff;border:1px solid #ECEDE7;border-radius:13px;padding:11px 13px;
- position:relative;transition:border-color .15s ease,box-shadow .15s ease;
- min-height:132px;box-sizing:border-box}
-/* 급지 타일 = st.button 자체를 카드로 스타일링 (B안: 클릭 100% 보장).
-   버튼 label에 마크다운(색·굵기·줄바꿈)으로 급지명/등락/지역/단지수를 담고,
-   여기서 카드 외형(테두리·패딩·정렬)을 입힌다. 선택 급지는 셀 key(re_tsel_on_)로
-   강조. 선택자는 버튼 key(re_tier_btn_)로 통일해 모든 타일에 공통 적용. */
-div[class*="st-key-re_tier_btn_"]{margin:0}
-div[class*="st-key-re_tier_btn_"] > button{
- width:100%;min-height:118px;background:#fff !important;border:1px solid #ECEDE7 !important;
- border-radius:13px !important;padding:11px 14px !important;
- display:flex;flex-direction:column;align-items:flex-start !important;justify-content:flex-start;
- text-align:left !important;box-shadow:none !important;
- transition:border-color .15s ease,box-shadow .15s ease}
-div[class*="st-key-re_tier_btn_"] > button:hover{
- border-color:#A7BBA9 !important;box-shadow:0 2px 10px rgba(126,154,131,.14) !important}
-div[class*="st-key-re_tier_btn_"] > button:focus,
-div[class*="st-key-re_tier_btn_"] > button:active{
- border-color:#7E9A83 !important;box-shadow:none !important;outline:none !important}
-/* 선택 급지 강조 — 선택된 셀(re_tsel_on_) 안의 버튼 */
-div[class*="st-key-re_tsel_on_"] div[class*="st-key-re_tier_btn_"] > button{
- border-color:#7E9A83 !important;box-shadow:inset 0 0 0 1.5px #7E9A83 !important}
-/* 버튼 내부 마크다운 타이포 — 카드 레이아웃에 맞춤 */
-div[class*="st-key-re_tier_btn_"] > button p{
- margin:0 !important;line-height:1.5;width:100%;font-weight:600;font-size:12.5px}
-div[class*="st-key-re_tier_btn_"] > button p:first-child{
- margin-bottom:2px !important;font-size:14px}
-.rb-gtop{display:flex;align-items:baseline;justify-content:space-between;gap:6px}
-.rb-gnm{font-size:13px;font-weight:800;letter-spacing:-.01em;color:#34352f}
-.rb-grng{font-size:9px;font-weight:700;color:#9a9b92;white-space:nowrap}
-.rb-grg{font-size:9.5px;font-weight:600;color:#6f7068;margin-top:3px;line-height:1.45;
- display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:27px}
-.rb-gchg{font-size:16px;font-weight:800;letter-spacing:-.02em;margin-top:6px}
-.rb-gchg.fl{color:#9a9b92;font-size:13px}
-.rb-up{color:#B65F5A}.rb-dn{color:#5A7CA0}
-.rb-gbar{display:flex;height:5px;border-radius:3px;overflow:hidden;background:#EFF0EA;margin-top:6px}
-.rb-gbar .u{background:#B65F5A}.rb-gbar .d{background:#5A7CA0}
-.rb-gud{font-size:9.5px;font-weight:700;color:#9a9b92;margin-top:4px;display:flex;justify-content:space-between}
 .rb-cxh{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:4px 2px 8px;flex-wrap:wrap}
 .rb-cxt{font-size:13px;font-weight:800;color:#34352f}
 .rb-cxt em{font-style:normal;font-size:11px;font-weight:600;color:#9a9b92;margin-left:7px}
@@ -1068,7 +1031,14 @@ div[class*="st-key-re_tier_btn_"] > button p:first-child{
 .rb-chg .stale{color:#B7B8B0;font-weight:800}
 .rb-r small{display:block;font-size:9.5px;font-weight:700;color:#9a9b92;margin-top:2px}
 .rb-empty{font-size:12px;color:#9a9b92;padding:18px 14px}
-@media(max-width:680px){.rb-row{grid-template-columns:22px 1fr auto;gap:8px;padding:10px 11px}}
+.rb-up{color:#B65F5A}.rb-dn{color:#5A7CA0}
+/* 급지 선택 버튼 바 — st.button 기본 스타일 최소 보정(오버레이 없음, 클릭 100%).
+   버튼 간격만 좁히고 라벨 줄바꿈 허용. 선택된 버튼은 type='primary'로 강조. */
+div[class*="st-key-re_tbtn_"] > button{padding:7px 4px !important;min-height:0 !important;
+ line-height:1.35 !important;border-radius:10px !important}
+div[class*="st-key-re_tbtn_"] > button p{font-size:12px !important;font-weight:700 !important;margin:0 !important}
+@media(max-width:680px){div[class*="st-key-re_tbtn_"] > button{padding:6px 2px !important}
+ div[class*="st-key-re_tbtn_"] > button p{font-size:10.5px !important}}
 </style>"""
 
 
@@ -1115,49 +1085,8 @@ def _rb_map_html(g):
         f'인천 포함(송도=연수구·청라=서구)</div></div></div>')
 
 
-def _rb_tile_html(g, on):
-    """[DEPRECATED · 미사용] 구 markdown 타일 HTML — B안 전환(_rb_tile_label + 버튼=카드)
-    이후 호출되지 않음. rb-gt 계열 CSS와 함께 참조용으로만 남긴다."""
-    if g["chg"] is None:
-        chg = '<div class="rb-gchg fl">—</div>'
-    else:
-        cls = "rb-up" if g["chg"] >= 0 else "rb-dn"
-        chg = f'<div class="rb-gchg {cls}">{_rb_pct(g["chg"])}</div>'
-    rgs = "·".join(r["nm"] for r in g["regions"]) or "—"
-    tot = (g["up"] + g["dn"] + g["fl"]) or 1
-    bar = (f'<div class="rb-gbar"><span class="u" style="width:{g["up"] / tot * 100:.1f}%">'
-           f'</span><span class="d" style="width:{g["dn"] / tot * 100:.1f}%"></span></div>')
-    return (
-        f'<div class="rb-gt click{" on" if on else ""}">'
-        f'<div class="rb-gtop"><span class="rb-gnm">{g["nm"]}</span>'
-        f'<span class="rb-grng">{g["rng"]}</span></div>'
-        f'<div class="rb-grg" title="{rgs}">{rgs}</div>{chg}{bar}'
-        f'<div class="rb-gud"><span class="rb-up">▲{g["up"]}</span>'
-        f'<span>{g["n"]}단지</span><span class="rb-dn">▼{g["dn"]}</span></div></div>')
-
-
-def _rb_tile_label(g):
-    """급지 타일을 st.button label(마크다운)로 — B안. 버튼이 곧 카드라 클릭 100% 보장.
-    Streamlit 버튼 마크다운(줄바꿈=\\n, :color[], **bold**)만 사용. 4줄 구성:
-      1) **급지명**  가격대(회색)
-      2) 구성 지역명(회색·말줄임 없이 전체)
-      3) 등락률(상승=빨강·하락=파랑·거래없음=회색)
-      4) ▲상승 · N단지 · ▼하락
-    (막대바 그래프만 생략 — 나머지 정보량은 유지)"""
-    nm, rng = g["nm"], g["rng"]
-    rgs = "·".join(r["nm"] for r in g["regions"]) or "—"
-    if g["chg"] is None:
-        chg_md = ":gray[— 거래 없음]"
-    elif g["chg"] >= 0:
-        chg_md = f":red[**+{g['chg']}%**]"
-    else:
-        chg_md = f":blue[**{g['chg']}%**]"
-    ud = f":red[▲{g['up']}] · {g['n']}단지 · :blue[▼{g['dn']}]"
-    # 줄바꿈은 마크다운 공백2+개행. 급지명만 굵게, 가격대·지역은 회색.
-    return (f"**{nm}**  :gray[{rng}]  \n"
-            f":gray[{rgs}]  \n"
-            f"{chg_md}  \n"
-            f"{ud}")
+# (구 _rb_tile_html · _rb_tile_label 제거 — 급지 선택이 순수 st.button 방식으로
+#  전환되어 타일 HTML/라벨 생성 함수는 더 이상 쓰이지 않음.)
 
 
 def _rb_row_html(i, c):
@@ -1208,11 +1137,12 @@ def _rb_row_html(i, c):
 
 
 def _render_region_board():
-    """'지역' 서브탭 — Streamlit 네이티브 렌더(단일 iframe 폐기).
-    구조: [지도+정보 카드] → [섹션 헤더] → [10급지 타일 그리드(클릭 선택)]
-    → [선택 티어 시총 TOP20 리스트]. 전부 st.markdown 흐름이라 동적 높이/겹침 문제가
-    구조적으로 없음. 급지 선택은 타일 클릭(각 타일 위에 투명 st.button 오버레이 —
-    상단 가로 세그먼트 탭은 제거). 클릭 시 세션에 티어명을 저장하고 rerun."""
+    """'지역' 서브탭 — 완전 재구성.
+    구조: [섹션 헤더] → [급지 선택 버튼 10개(2행×5열, 선택=primary)] →
+          [선택 급지 지도(2/3 축소)+정보] → [선택 급지 시총 TOP20 리스트].
+    급지 선택은 st.button 기본 동작만 사용(CSS 오버레이·음수마진 트릭 전부 제거) —
+    선택된 버튼은 type='primary'로 색 강조. 어떤 Streamlit 버전에서도 100% 클릭됨.
+    클릭 시 세션에 티어명 저장 후 rerun."""
     groups, live = _region_board_payload()
     if not any(g["n"] for g in groups):
         st.caption("지역 보드 데이터가 아직 없어요. 매일 아침 자동 수집 후 표시됩니다.")
@@ -1220,34 +1150,41 @@ def _render_region_board():
     st.markdown(_RB_CSS, unsafe_allow_html=True)
     names = [g["nm"] for g in groups]
     default = next((g["nm"] for g in groups if g["n"]), names[0])
-    # 선택 상태는 세션에 보관(타일 클릭 콜백이 갱신). 유효하지 않으면 기본값.
     sel = st.session_state.get("re_tier_sel")
     if sel not in names:
         sel = default
-    g = next((x for x in groups if x["nm"] == sel), groups[0])
-    # 1) 지도+정보 — 최상단('지역 급지별 매매 현황' 헤더 위)
-    st.markdown(_rb_map_html(g), unsafe_allow_html=True)
-    # 2) 섹션 헤더
+
+    # 1) 섹션 헤더
     st.markdown('<div class="re-grp">지역 급지별 매매 현황'
                 '<span class="sub">평당가 10급지 동적 배정 · 여의도·목동·성수·이촌·잠실 '
-                '분리 · 티어당 시총 TOP20 + 신고가·괴리 알림 · 타일을 누르면 아래에 주요 '
-                '단지</span></div>',
+                '분리 · 아래 급지 버튼을 누르면 지도·주요 단지가 바뀜</span></div>',
                 unsafe_allow_html=True)
-    # 3) 급지 타일 그리드(1~10 · 2열) — 각 타일이 st.button 자체(클릭 100% 보장).
-    #    선택된 급지의 셀 컨테이너 key에 're_tsel_on_'을 넣어 CSS로 강조 테두리를 준다.
-    cols = st.columns(2, gap="small")
-    for idx, x in enumerate(groups):
-        with cols[idx % 2]:
-            on = (x["nm"] == sel)
-            ckey = (f"re_tsel_on_{x['k']}" if on else f"re_tcell_{x['k']}")
-            cell = st.container(key=ckey)
-            with cell:
-                if st.button(_rb_tile_label(x), key=f"re_tier_btn_{x['k']}",
-                             help=f"{x['nm']} 주요 단지 보기",
-                             use_container_width=True):
+
+    # 2) 급지 선택 버튼 — 2행×5열. 선택된 급지만 primary(색 강조), 나머지 secondary.
+    #    라벨: 급지명 + 등락률(간결). 클릭 100% 보장(순수 st.button).
+    for row_start in (0, 5):
+        cols = st.columns(5, gap="small")
+        for j, x in enumerate(groups[row_start:row_start + 5]):
+            with cols[j]:
+                if x["chg"] is None:
+                    lbl = f"{x['nm']}\n\n–"
+                else:
+                    arrow = "▲" if x["chg"] >= 0 else "▼"
+                    lbl = f"{x['nm']}\n\n{arrow}{abs(x['chg'])}%"
+                is_sel = (x["nm"] == sel)
+                if st.button(lbl, key=f"re_tbtn_{x['k']}",
+                             type=("primary" if is_sel else "secondary"),
+                             use_container_width=True,
+                             help=f"{x['nm']} · {x['rng']} · {x['n']}단지"):
                     st.session_state["re_tier_sel"] = x["nm"]
                     st.rerun()
-    # 4) 선택 티어 리스트
+
+    g = next((x for x in groups if x["nm"] == sel), groups[0])
+
+    # 3) 선택 급지 지도(2/3 축소) + 정보
+    st.markdown(_rb_map_html(g), unsafe_allow_html=True)
+
+    # 4) 선택 급지 시총 TOP20 리스트
     cap_s = f' · 티어 시총 {g["cap"]}' if g["cap"] else ""
     rows = ("".join(_rb_row_html(i, c) for i, c in enumerate(g["rows"]))
             if g["rows"] else '<div class="rb-empty">이 티어에 배정된 단지가 없어요.</div>')
