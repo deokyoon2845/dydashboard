@@ -992,26 +992,32 @@ _RB_CSS = """<style>
 .rb-wrap{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:2px 0 10px}
 @media(max-width:680px){.rb-wrap{grid-template-columns:1fr}}
 .rb-gt{background:#fff;border:1px solid #ECEDE7;border-radius:13px;padding:11px 13px;
- position:relative;transition:border-color .15s ease,box-shadow .15s ease}
-.rb-gt.on{border-color:#7E9A83;box-shadow:inset 0 0 0 1.5px #7E9A83}
-.rb-gt.click{cursor:pointer}
-.rb-gt.click:hover{border-color:#A7BBA9;box-shadow:0 2px 10px rgba(126,154,131,.14)}
-/* 급지 타일 클릭 = 각 셀 컨테이너(.st-key-re_tcell_*) 안에서 타일 markdown 위에
-   투명 st.button을 겹쳐 클릭 영역을 타일 전체로 만든다. 컨테이너를 기준 위치로
-   삼고, 버튼 요소를 절대배치해 타일 전체를 덮는다(디자인 100% 유지). */
-div[class*="st-key-re_tcell_"]{position:relative}
-div[class*="st-key-re_tcell_"] div[data-testid="stButton"]{position:absolute;inset:0;
- margin:0;z-index:3;display:flex}
-div[class*="st-key-re_tcell_"] div[data-testid="stButton"] button{width:100%;height:100%;
- min-height:0;padding:0;margin:0;border:none !important;background:transparent !important;
- box-shadow:none !important;opacity:0;cursor:pointer}
-div[class*="st-key-re_tcell_"] div[data-testid="stButton"] button:hover,
-div[class*="st-key-re_tcell_"] div[data-testid="stButton"] button:focus{
- outline:none !important;box-shadow:none !important;background:transparent !important}
-/* 타일에 hover 강조를 주기 위해 버튼 hover를 형제 타일로 전파(버튼이 위에 있으므로
-   컨테이너 hover로 대체) */
-div[class*="st-key-re_tcell_"]:hover .rb-gt.click{border-color:#A7BBA9;
- box-shadow:0 2px 10px rgba(126,154,131,.14)}
+ position:relative;transition:border-color .15s ease,box-shadow .15s ease;
+ min-height:132px;box-sizing:border-box}
+/* 급지 타일 = st.button 자체를 카드로 스타일링 (B안: 클릭 100% 보장).
+   버튼 label에 마크다운(색·굵기·줄바꿈)으로 급지명/등락/지역/단지수를 담고,
+   여기서 카드 외형(테두리·패딩·정렬)을 입힌다. 선택 급지는 셀 key(re_tsel_on_)로
+   강조. 선택자는 버튼 key(re_tier_btn_)로 통일해 모든 타일에 공통 적용. */
+div[class*="st-key-re_tier_btn_"]{margin:0}
+div[class*="st-key-re_tier_btn_"] > button{
+ width:100%;min-height:118px;background:#fff !important;border:1px solid #ECEDE7 !important;
+ border-radius:13px !important;padding:11px 14px !important;
+ display:flex;flex-direction:column;align-items:flex-start !important;justify-content:flex-start;
+ text-align:left !important;box-shadow:none !important;
+ transition:border-color .15s ease,box-shadow .15s ease}
+div[class*="st-key-re_tier_btn_"] > button:hover{
+ border-color:#A7BBA9 !important;box-shadow:0 2px 10px rgba(126,154,131,.14) !important}
+div[class*="st-key-re_tier_btn_"] > button:focus,
+div[class*="st-key-re_tier_btn_"] > button:active{
+ border-color:#7E9A83 !important;box-shadow:none !important;outline:none !important}
+/* 선택 급지 강조 — 선택된 셀(re_tsel_on_) 안의 버튼 */
+div[class*="st-key-re_tsel_on_"] div[class*="st-key-re_tier_btn_"] > button{
+ border-color:#7E9A83 !important;box-shadow:inset 0 0 0 1.5px #7E9A83 !important}
+/* 버튼 내부 마크다운 타이포 — 카드 레이아웃에 맞춤 */
+div[class*="st-key-re_tier_btn_"] > button p{
+ margin:0 !important;line-height:1.5;width:100%;font-weight:600;font-size:12.5px}
+div[class*="st-key-re_tier_btn_"] > button p:first-child{
+ margin-bottom:2px !important;font-size:14px}
 .rb-gtop{display:flex;align-items:baseline;justify-content:space-between;gap:6px}
 .rb-gnm{font-size:13px;font-weight:800;letter-spacing:-.01em;color:#34352f}
 .rb-grng{font-size:9px;font-weight:700;color:#9a9b92;white-space:nowrap}
@@ -1110,7 +1116,8 @@ def _rb_map_html(g):
 
 
 def _rb_tile_html(g, on):
-    """급지 요약 타일 1장 — 선택 티어는 강조 테두리(선택은 상단 세그먼트 컨트롤에서)."""
+    """[DEPRECATED · 미사용] 구 markdown 타일 HTML — B안 전환(_rb_tile_label + 버튼=카드)
+    이후 호출되지 않음. rb-gt 계열 CSS와 함께 참조용으로만 남긴다."""
     if g["chg"] is None:
         chg = '<div class="rb-gchg fl">—</div>'
     else:
@@ -1127,6 +1134,30 @@ def _rb_tile_html(g, on):
         f'<div class="rb-grg" title="{rgs}">{rgs}</div>{chg}{bar}'
         f'<div class="rb-gud"><span class="rb-up">▲{g["up"]}</span>'
         f'<span>{g["n"]}단지</span><span class="rb-dn">▼{g["dn"]}</span></div></div>')
+
+
+def _rb_tile_label(g):
+    """급지 타일을 st.button label(마크다운)로 — B안. 버튼이 곧 카드라 클릭 100% 보장.
+    Streamlit 버튼 마크다운(줄바꿈=\\n, :color[], **bold**)만 사용. 4줄 구성:
+      1) **급지명**  가격대(회색)
+      2) 구성 지역명(회색·말줄임 없이 전체)
+      3) 등락률(상승=빨강·하락=파랑·거래없음=회색)
+      4) ▲상승 · N단지 · ▼하락
+    (막대바 그래프만 생략 — 나머지 정보량은 유지)"""
+    nm, rng = g["nm"], g["rng"]
+    rgs = "·".join(r["nm"] for r in g["regions"]) or "—"
+    if g["chg"] is None:
+        chg_md = ":gray[— 거래 없음]"
+    elif g["chg"] >= 0:
+        chg_md = f":red[**+{g['chg']}%**]"
+    else:
+        chg_md = f":blue[**{g['chg']}%**]"
+    ud = f":red[▲{g['up']}] · {g['n']}단지 · :blue[▼{g['dn']}]"
+    # 줄바꿈은 마크다운 공백2+개행. 급지명만 굵게, 가격대·지역은 회색.
+    return (f"**{nm}**  :gray[{rng}]  \n"
+            f":gray[{rgs}]  \n"
+            f"{chg_md}  \n"
+            f"{ud}")
 
 
 def _rb_row_html(i, c):
@@ -1202,17 +1233,16 @@ def _render_region_board():
                 '분리 · 티어당 시총 TOP20 + 신고가·괴리 알림 · 타일을 누르면 아래에 주요 '
                 '단지</span></div>',
                 unsafe_allow_html=True)
-    # 3) 급지 타일 그리드(1~10 · 2열 · 각 타일 위 투명 버튼으로 클릭 선택)
-    #    각 셀을 st.container(key=)로 감싸면 .st-key-… 래퍼가 생겨, 그 안의
-    #    [타일 markdown + 투명 button]을 CSS로 정확히 겹칠 수 있다(구조 안정).
+    # 3) 급지 타일 그리드(1~10 · 2열) — 각 타일이 st.button 자체(클릭 100% 보장).
+    #    선택된 급지의 셀 컨테이너 key에 're_tsel_on_'을 넣어 CSS로 강조 테두리를 준다.
     cols = st.columns(2, gap="small")
     for idx, x in enumerate(groups):
         with cols[idx % 2]:
-            cell = st.container(key=f"re_tcell_{x['k']}")
+            on = (x["nm"] == sel)
+            ckey = (f"re_tsel_on_{x['k']}" if on else f"re_tcell_{x['k']}")
+            cell = st.container(key=ckey)
             with cell:
-                st.markdown(_rb_tile_html(x, x["nm"] == sel),
-                            unsafe_allow_html=True)
-                if st.button(x["nm"], key=f"re_tier_btn_{x['k']}",
+                if st.button(_rb_tile_label(x), key=f"re_tier_btn_{x['k']}",
                              help=f"{x['nm']} 주요 단지 보기",
                              use_container_width=True):
                     st.session_state["re_tier_sel"] = x["nm"]
