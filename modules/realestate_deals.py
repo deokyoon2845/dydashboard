@@ -1032,13 +1032,24 @@ _RB_CSS = """<style>
 .rb-r small{display:block;font-size:9.5px;font-weight:700;color:#9a9b92;margin-top:2px}
 .rb-empty{font-size:12px;color:#9a9b92;padding:18px 14px}
 .rb-up{color:#B65F5A}.rb-dn{color:#5A7CA0}
-/* 급지 선택 버튼 바 — st.button 기본 스타일 최소 보정(오버레이 없음, 클릭 100%).
-   버튼 간격만 좁히고 라벨 줄바꿈 허용. 선택된 버튼은 type='primary'로 강조. */
-div[class*="st-key-re_tbtn_"] > button{padding:7px 4px !important;min-height:0 !important;
- line-height:1.35 !important;border-radius:10px !important}
-div[class*="st-key-re_tbtn_"] > button p{font-size:12px !important;font-weight:700 !important;margin:0 !important}
-@media(max-width:680px){div[class*="st-key-re_tbtn_"] > button{padding:6px 2px !important}
- div[class*="st-key-re_tbtn_"] > button p{font-size:10.5px !important}}
+/* 급지 선택 radio를 pill(알약) 버튼처럼 — 순수 시각 개선. CSS가 안 먹어도 radio 자체는
+   무조건 클릭되므로 기능은 100% 안전(라디오 동그라미가 보이더라도 선택은 동작).
+   key='re_tier_radio' → 컨테이너 .st-key-re_tier_radio 안의 stRadio를 타겟. */
+.st-key-re_tier_radio div[role="radiogroup"]{flex-wrap:wrap;gap:6px}
+.st-key-re_tier_radio div[role="radiogroup"] > label{
+ background:#fff;border:1px solid #ECEDE7;border-radius:10px;padding:6px 12px;margin:0;
+ cursor:pointer;transition:border-color .15s ease,background .15s ease}
+.st-key-re_tier_radio div[role="radiogroup"] > label:hover{border-color:#A7BBA9;background:#F7F8F4}
+/* 라디오 동그라미 숨기고 라벨 텍스트만 pill로 */
+.st-key-re_tier_radio div[role="radiogroup"] > label > div:first-child{display:none}
+.st-key-re_tier_radio div[role="radiogroup"] > label p{font-size:12.5px !important;
+ font-weight:700 !important;margin:0 !important;color:#5d6258}
+/* 선택된 pill 강조 — 체크된 라벨(aria-checked) */
+.st-key-re_tier_radio div[role="radiogroup"] > label:has(input:checked){
+ border-color:#7E9A83;background:#EEF3EF}
+.st-key-re_tier_radio div[role="radiogroup"] > label:has(input:checked) p{color:#34352f}
+@media(max-width:680px){.st-key-re_tier_radio div[role="radiogroup"] > label{padding:5px 9px}
+ .st-key-re_tier_radio div[role="radiogroup"] > label p{font-size:11px !important}}
 </style>"""
 
 
@@ -1085,8 +1096,7 @@ def _rb_map_html(g):
         f'인천 포함(송도=연수구·청라=서구)</div></div></div>')
 
 
-# (구 _rb_tile_html · _rb_tile_label 제거 — 급지 선택이 순수 st.button 방식으로
-#  전환되어 타일 HTML/라벨 생성 함수는 더 이상 쓰이지 않음.)
+# (구 급지 타일 HTML/라벨 함수 제거 — 급지 선택이 st.radio 방식으로 최종 전환됨.)
 
 
 def _rb_row_html(i, c):
@@ -1137,12 +1147,12 @@ def _rb_row_html(i, c):
 
 
 def _render_region_board():
-    """'지역' 서브탭 — 완전 재구성.
-    구조: [섹션 헤더] → [급지 선택 버튼 10개(2행×5열, 선택=primary)] →
-          [선택 급지 지도(2/3 축소)+정보] → [선택 급지 시총 TOP20 리스트].
-    급지 선택은 st.button 기본 동작만 사용(CSS 오버레이·음수마진 트릭 전부 제거) —
-    선택된 버튼은 type='primary'로 색 강조. 어떤 Streamlit 버전에서도 100% 클릭됨.
-    클릭 시 세션에 티어명 저장 후 rerun."""
+    """'지역' 서브탭 — st.radio 기반 재구성(가장 확실한 위젯).
+    구조: [섹션 헤더] → [급지 선택 radio 가로형] → [선택 급지 지도(2/3)+정보] →
+          [선택 급지 시총 TOP20 리스트].
+    급지 선택은 st.radio(horizontal) — Streamlit 원시 위젯이라 클릭 시 자동 rerun +
+    세션 자동 관리(수동 st.button+rerun이 이 환경에서 안 먹던 문제를 원천 회피).
+    라벨에 등락률을 붙여 정보량도 유지. CSS는 radio 가로 간격 보정만."""
     groups, live = _region_board_payload()
     if not any(g["n"] for g in groups):
         st.caption("지역 보드 데이터가 아직 없어요. 매일 아침 자동 수집 후 표시됩니다.")
@@ -1150,34 +1160,27 @@ def _render_region_board():
     st.markdown(_RB_CSS, unsafe_allow_html=True)
     names = [g["nm"] for g in groups]
     default = next((g["nm"] for g in groups if g["n"]), names[0])
-    sel = st.session_state.get("re_tier_sel")
-    if sel not in names:
-        sel = default
 
     # 1) 섹션 헤더
     st.markdown('<div class="re-grp">지역 급지별 매매 현황'
                 '<span class="sub">평당가 10급지 동적 배정 · 여의도·목동·성수·이촌·잠실 '
-                '분리 · 아래 급지 버튼을 누르면 지도·주요 단지가 바뀜</span></div>',
+                '분리 · 아래에서 급지를 고르면 지도·주요 단지가 바뀜</span></div>',
                 unsafe_allow_html=True)
 
-    # 2) 급지 선택 버튼 — 2행×5열. 선택된 급지만 primary(색 강조), 나머지 secondary.
-    #    라벨: 급지명 + 등락률(간결). 클릭 100% 보장(순수 st.button).
-    for row_start in (0, 5):
-        cols = st.columns(5, gap="small")
-        for j, x in enumerate(groups[row_start:row_start + 5]):
-            with cols[j]:
-                if x["chg"] is None:
-                    lbl = f"{x['nm']}\n\n–"
-                else:
-                    arrow = "▲" if x["chg"] >= 0 else "▼"
-                    lbl = f"{x['nm']}\n\n{arrow}{abs(x['chg'])}%"
-                is_sel = (x["nm"] == sel)
-                if st.button(lbl, key=f"re_tbtn_{x['k']}",
-                             type=("primary" if is_sel else "secondary"),
-                             use_container_width=True,
-                             help=f"{x['nm']} · {x['rng']} · {x['n']}단지"):
-                    st.session_state["re_tier_sel"] = x["nm"]
-                    st.rerun()
+    # 2) 급지 선택 — st.radio 가로형. 라벨=급지명+등락률. 클릭 시 자동 rerun.
+    #    radio는 선택값을 세션(key)에 자동 저장하므로 수동 rerun 불필요(가장 안정적).
+    def _opt_label(nm):
+        gx = next((x for x in groups if x["nm"] == nm), None)
+        if not gx or gx["chg"] is None:
+            return nm
+        arrow = "▲" if gx["chg"] >= 0 else "▼"
+        return f"{nm}  {arrow}{abs(gx['chg'])}%"
+
+    # 기본 인덱스(거래 있는 첫 급지). 세션에 이미 유효값 있으면 radio가 그걸 유지.
+    def_idx = names.index(default) if default in names else 0
+    sel = st.radio(
+        "급지 선택", names, index=def_idx, key="re_tier_radio",
+        format_func=_opt_label, horizontal=True, label_visibility="collapsed")
 
     g = next((x for x in groups if x["nm"] == sel), groups[0])
 
