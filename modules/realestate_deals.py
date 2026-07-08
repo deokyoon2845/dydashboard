@@ -1839,9 +1839,27 @@ _MBT_CSS = """<style>
 .mbt-hl{color:#B65F5A}.mbt-lo{color:#5A7CA0}.mbt-mut{color:#9a9b92;font-weight:700}
 .mbt-tbl td small{font-size:10px;font-weight:700;color:#9a9b92;margin-left:2px}
 .mbt-tbl th.grp,.mbt-tbl td.grp{border-left:1px solid #EFF0EA}
+.mbt-hintm{display:none}
+.mbt-badge .mbt-pm{display:none}
 @media(max-width:680px){
- .mbt-tbl th.hide-m,.mbt-tbl td.hide-m{display:none}
- .mbt-head .hint{text-align:left;min-width:0}
+ /* 시안 B(모바일) — 헤드 세로 스택 + 힌트 ⓘ접기, 표는 4컬럼 컴팩트(압력을 방향 셀에 병합) */
+ .mbt-head{display:block;padding:12px 14px}
+ .mbt-head .lab{min-width:0}
+ .mbt-head .dir{margin-top:6px}
+ .mbt-head .dir .t{font-size:19px}
+ .mbt-head .hint{display:none}
+ .mbt-hintm{display:block;margin-top:9px;border-top:1px solid #EFF0EA;padding-top:8px}
+ .mbt-hintm summary{font-size:10.5px;font-weight:700;color:#9a9b92;cursor:pointer;list-style:none}
+ .mbt-hintm summary::-webkit-details-marker{display:none}
+ .mbt-hintm summary::before{content:"ⓘ ";color:#A7BBA9}
+ .mbt-hintm p{font-size:11px;color:#9a9b92;line-height:1.6;margin:6px 0 0}
+ .mbt-tbl th.hide-m,.mbt-tbl td.hide-m,
+ .mbt-tbl th.col-press,.mbt-tbl td.col-press{display:none}
+ .mbt-tbl th,.mbt-tbl td{padding:9px 7px}
+ .mbt-per{font-size:12.5px}
+ .mbt-per small{display:block;margin-left:0;margin-top:2px}
+ .mbt-badge{font-size:11.5px}
+ .mbt-badge .mbt-pm{display:block;font-size:9.5px;font-weight:800;margin-top:2px}
 }
 </style>"""
 
@@ -1869,8 +1887,9 @@ def _mbt_row(period, sub, s):
     return (
         f'<tr>'
         f'<td class="l"><span class="mbt-per">{period}<small>{sub}</small></span></td>'
-        f'<td><span class="mbt-badge" style="color:{dcol}">{arrow} {dlabel}</span></td>'
-        f'<td><span class="mbt-press">'
+        f'<td><span class="mbt-badge" style="color:{dcol}">{arrow} {dlabel}'
+        f'<small class="mbt-pm">압력 {pct}%</small></span></td>'
+        f'<td class="col-press"><span class="mbt-press">'
         f'<span class="pbar"><span style="width:{pct}%"></span></span>'
         f'<span class="pct" style="color:{dcol}">{pct}%</span></span></td>'
         f'<td class="grp"><span class="mbt-hl">{hi}</span>'
@@ -1927,11 +1946,14 @@ def _render_market_bands():
         f'<span class="t">{dlabel}</span>'
         f'<span class="p" style="color:{dcol}">상승압력 {pct}%</span></div>'
         f'<div class="hint">{_hint}</div>'
+        # 모바일 전용(시안 B): 힌트를 ⓘ접기로 — 데스크톱에선 숨김(.mbt-hintm)
+        f'<details class="mbt-hintm"><summary>신호 해석</summary>'
+        f'<p>{_hint}</p></details>'
         f'</div>')
 
     table_html = (
         '<table class="mbt-tbl"><thead><tr>'
-        '<th class="l">기간</th><th>방향</th><th>상승압력</th>'
+        '<th class="l">기간</th><th>방향</th><th class="col-press">상승압력</th>'
         '<th class="grp">신고/신저</th><th class="hide-m grp">거래활발</th>'
         '<th class="grp">활발단지 평균변동</th>'
         '</tr></thead><tbody>' + "".join(rows) + '</tbody></table>')
