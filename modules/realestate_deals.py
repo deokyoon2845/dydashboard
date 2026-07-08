@@ -975,12 +975,19 @@ def _rb_pct(c):
 _RB_CSS = """<style>
 .rb-dt{background:#fff;border:1px solid #ECEDE7;border-radius:13px;padding:12px 14px;margin-bottom:4px}
 /* 지도 = 컨테이너의 2/3 크기로 축소, 가운데 정렬 */
-.rb-map{max-width:66%;margin:0 auto}
+.rb-map{max-width:66%;margin:0 auto;position:relative}
 @media(max-width:680px){.rb-map{max-width:100%}}
 .rb-map svg{width:100%;height:auto;display:block}
 .rb-map path{fill:#EFF0EA;stroke:#fff;stroke-width:1.2}
-.rb-map path.sh{fill:#A7BBA9}
+.rb-map path.tg{stroke:#fff;stroke-width:1}
+.rb-map path.sh{fill:#7E9A83;stroke:#fff;stroke-width:1.4}
 .rb-map text{pointer-events:none;fill:#2f302a;font-weight:700}
+.rb-mleg{display:flex;align-items:center;gap:6px;justify-content:center;margin-top:6px;font-size:10px;color:#9a9b92;font-weight:700;flex-wrap:wrap}
+.rb-mleg .rb-mlg-t{color:#7E9A83}
+.rb-mleg .rb-mlg-bar{width:70px;height:8px;border-radius:4px;background:linear-gradient(90deg,#C4D2C6,#F1F3EE)}
+.rb-mleg .rb-mlg-e{font-size:9px;color:#b6b7ae}
+.rb-mleg .rb-mlg-e.r{margin-left:-2px}
+.rb-mleg .rb-mlg-sel{color:#7E9A83;margin-left:4px}
 .rb-info{margin-top:10px}
 .rb-h{font-size:13px;font-weight:800;color:#34352f}
 .rb-h em{font-style:normal;font-size:10.5px;font-weight:700;color:#9a9b92;margin-left:7px}
@@ -1017,6 +1024,19 @@ _RB_CSS = """<style>
 .rb-pv span i{font-style:normal;font-weight:700;color:#9a9b92;font-size:9.5px;margin-right:4px}
 .rb-pv span small{font-weight:600;color:#B7B8B0;font-size:9px;margin-left:3px}
 .rb-pv .none{color:#B7B8B0;background:#FAFAF7;font-weight:700}
+.rb-pv span.lead{background:#EEF3EF;border-color:#CFE0D3;color:#34352f;box-shadow:0 1px 3px rgba(126,154,131,.18)}
+.rb-pv span.lead i{color:#7E9A83}
+.rb-pv span.lead small{color:#8CA391}
+.rb-tier-strip{display:flex;align-items:center;gap:9px;flex-wrap:wrap;background:#F7F8F4;border:1px solid #E6EAE2;border-radius:9px;padding:7px 13px;margin:2px 2px 10px}
+.rb-tier-strip .rb-ts-name{font-size:13px;font-weight:800;color:#34352f}
+.rb-tier-strip .rb-ts-rng{font-size:11.5px;font-weight:800;color:#7E9A83;background:#EEF3EF;border-radius:6px;padding:2px 9px}
+.rb-tier-strip .rb-ts-meta{font-size:10.5px;font-weight:600;color:#9a9b92}
+.rb-stale{margin-top:6px}
+.rb-stale summary{cursor:pointer;font-size:11px;font-weight:700;color:#9a9b92;list-style:none;padding:7px 2px;border-top:1px dashed #E6E7E0}
+.rb-stale summary::-webkit-details-marker{display:none}
+.rb-stale summary::before{content:"▸ ";color:#B7B8B0}
+.rb-stale[open] summary::before{content:"▾ "}
+.rb-stale summary:hover{color:#7E9A83}
 .rb-al{margin-top:8px;display:flex;flex-direction:column;gap:4px;border-top:1px dashed #EDEEE7;padding-top:8px}
 .rb-ali{font-size:11px;font-weight:700;color:#5d6258;display:flex;gap:7px;align-items:baseline;flex-wrap:wrap}
 .rb-ali .b{font-size:9.5px;font-weight:800;border-radius:5px;padding:1.5px 7px;white-space:nowrap}
@@ -1053,16 +1073,53 @@ _RB_CSS = """<style>
 </style>"""
 
 
-def _rb_map_html(g):
-    """선택 급지 지도+정보 카드 HTML — 음영(시·군·구 근사) + 음영 지역 라벨('지도' 탭
-    스타일: 잉크색 + 흰 후광) + 구성 리전 평당가 + TOP3. iframe 없이 st.markdown 렌더."""
+def _rb_tier_shade_index(groups):
+    """전체 급지 → {도형명: (tier_rank, 급지명)} 매핑. 모든 급지를 옅은 단계색으로
+    깔기 위한 재료. tier_rank는 _TIER_META 순서(0=1급지 ··· 9=10급지)."""
+    order = {k: i for i, (k, _, _) in enumerate(_TIER_META)}
+    idx = {}
+    for g in groups:
+        rank = order.get(g.get("k"), 99)
+        for r in g.get("regions", []):
+            for n in (_TIER_GEO_MAP.get(r["nm"]) or [r["nm"]]):
+                # 더 상위(작은 rank) 급지가 이기도록 최소값 유지(경계 중복 방지)
+                if n not in idx or rank < idx[n][0]:
+                    idx[n] = (rank, g["nm"])
+    return idx
+
+
+# 급지 랭크(0~9) → 옅은 배경색(미니멀 미스트: 상위=세이지 진함 → 하위=옅은 회록).
+#   10단계를 6색 램프로 압축(상위 3급지는 세이지 계열, 이하 중립 회록).
+_TIER_SHADE = ["#C4D2C6", "#D2DCD3", "#DFE6E0", "#E7ECE6", "#EDF0EB", "#F1F3EE"]
+
+
+def _tier_shade_color(rank):
+    if rank is None or rank >= 99:
+        return "#F1F2EC"          # 미분류
+    # 0,1→0 / 2,3→1 / ... 상위 급지일수록 진한 세이지(램프 앞쪽)
+    i = min(len(_TIER_SHADE) - 1, rank // 2)
+    return _TIER_SHADE[i]
+
+
+def _rb_map_html(g, tier_idx=None):
+    """선택 급지 지도+정보 카드 HTML — 전체 급지를 옅은 단계색으로 깔고(맥락) 선택 급지만
+    강조(음영+라벨). tier_idx=전체 도형→(급지랭크,급지명) 매핑(_rb_tier_shade_index).
+    없으면 구식 폴백(선택 급지만 칠함). iframe 없이 st.markdown 렌더."""
     shade = set()
     for r in g["regions"]:
         for n in (_TIER_GEO_MAP.get(r["nm"]) or [r["nm"]]):
             shade.add(n)
-    paths = "".join(
-        f'<path class="{"sh" if s["n"] in shade else ""}" d="{s["d"]}"/>'
-        for s in _BOARD_GEO)
+    # 전체 도형: 소속 급지의 옅은 배경색으로 채우고, 선택 급지는 .sh(강조)로 덮는다.
+    paths = ""
+    for s in _BOARD_GEO:
+        n = s["n"]
+        if n in shade:
+            paths += f'<path class="sh" d="{s["d"]}"/>'
+        elif tier_idx is not None and n in tier_idx:
+            fill = _tier_shade_color(tier_idx[n][0])
+            paths += f'<path class="tg" style="fill:{fill}" d="{s["d"]}"/>'
+        else:
+            paths += f'<path d="{s["d"]}"/>'
     labels = ""
     for s in _BOARD_GEO:
         if s["n"] not in shade or s.get("cx") is None or s.get("cy") is None:
@@ -1084,15 +1141,20 @@ def _rb_map_html(g):
             for i, c in enumerate(g["rows"][:3]))
     else:
         top3 = '<span class="none">단지 없음</span>'
+    # 전체 급지가 깔린 경우 범례 한 줄(상위=진함 → 하위=옅음) 추가
+    legend = ('<div class="rb-mleg"><span class="rb-mlg-t">급지 음영</span>'
+              '<span class="rb-mlg-bar"></span>'
+              '<span class="rb-mlg-e">상위</span><span class="rb-mlg-e r">하위</span>'
+              f'<span class="rb-mlg-sel">■ {g["nm"]}</span></div>') if tier_idx else ""
     return (
         f'<div class="rb-dt"><div class="rb-map">'
         f'<svg viewBox="-115 215 1210 865" width="1210" height="865" '
         f'xmlns="http://www.w3.org/2000/svg" '
-        f'role="img" aria-label="급지 지역 지도">{paths}{labels}</svg></div>'
+        f'role="img" aria-label="급지 지역 지도">{paths}{labels}</svg>{legend}</div>'
         f'<div class="rb-info"><div class="rb-h">{g["nm"]}<em>{g["rng"]}{cap_s}</em></div>'
         f'<div class="rb-rgs">{rgs}</div>'
         f'<div class="rb-top3">{top3}</div>'
-        f'<div class="rb-note">지도 음영 = 시·군·구 단위 근사 · '
+        f'<div class="rb-note">지도 음영 = 시·군·구 단위 근사 · 옅은 색=다른 급지 위치 · '
         f'인천 포함(송도=연수구·청라=서구)</div></div></div>')
 
 
@@ -1105,9 +1167,16 @@ def _rb_row_html(i, c):
         pv = (f'<div class="rb-pv"><span class="none">최근 3개월 거래 없음 · '
               f'대표가 {c["p"] or "—"}</span></div>')
     else:
-        pv = '<div class="rb-pv">' + "".join(
-            f'<span><i>{b["area"]}㎡</i>{b["avg"]}억<small>{b["n"]}건</small></span>'
-            for b in c["pavg"]) + "</div>"
+        # 거래 최다(n 최대) 평형을 대표로 강조(.lead), 나머지는 기본 칩. (실거래 5)
+        _bs = c["pavg"]
+        _lead_i = max(range(len(_bs)),
+                      key=lambda j: _bs[j].get("n") or 0) if _bs else -1
+        chips = ""
+        for j, b in enumerate(_bs):
+            klass = "lead" if j == _lead_i else ""
+            chips += (f'<span class="{klass}"><i>{b["area"]}㎡</i>'
+                      f'{b["avg"]}억<small>{b["n"]}건</small></span>')
+        pv = f'<div class="rb-pv">{chips}</div>'
     if c["chg"] is None:
         chg = '<span class="rb-chg"><b class="stale">—</b></span><small>거래 뜸</small>'
     else:
@@ -1184,13 +1253,38 @@ def _render_region_board():
 
     g = next((x for x in groups if x["nm"] == sel), groups[0])
 
-    # 3) 선택 급지 지도(2/3 축소) + 정보
-    st.markdown(_rb_map_html(g), unsafe_allow_html=True)
+    # 3-a) 선택 급지 기준 스트립 — '이 급지가 뭔지'(평당가 범위)를 라디오 바로 아래 명시
+    #      (실거래 4). g["rng"]=_TIER_META 범위 설명. 구성 지역 수·시총도 함께.
+    _n_reg = len(g["regions"])
+    _cap_b = f' · 티어 시총 {g["cap"]}' if g["cap"] else ""
+    st.markdown(
+        f'<div class="rb-tier-strip"><span class="rb-ts-name">{g["nm"]}</span>'
+        f'<span class="rb-ts-rng">{g["rng"]}</span>'
+        f'<span class="rb-ts-meta">구성 {_n_reg}개 지역{_cap_b}</span></div>',
+        unsafe_allow_html=True)
 
-    # 4) 선택 급지 시총 TOP20 리스트
+    # 3-b) 선택 급지 지도(2/3 축소) + 정보 — 전체 급지를 옅게 깔아 맥락 제공
+    tier_idx = _rb_tier_shade_index(groups)
+    st.markdown(_rb_map_html(g, tier_idx), unsafe_allow_html=True)
+
+    # 4) 선택 급지 시총 TOP20 리스트 — 거래 있는 단지 먼저, 거래 뜸(3개월 거래 없음)은 접기
+    #    (실거래 3). 원본 시총 순서는 각 그룹 내에서 그대로 유지.
     cap_s = f' · 티어 시총 {g["cap"]}' if g["cap"] else ""
-    rows = ("".join(_rb_row_html(i, c) for i, c in enumerate(g["rows"]))
-            if g["rows"] else '<div class="rb-empty">이 티어에 배정된 단지가 없어요.</div>')
+    _active, _stale = [], []
+    for i, c in enumerate(g["rows"]):
+        (_active if c.get("pavg") or c.get("chg") is not None else _stale).append((i, c))
+    if g["rows"]:
+        rows = "".join(_rb_row_html(i, c) for i, c in _active)
+        if _stale:
+            stale_rows = "".join(_rb_row_html(i, c) for i, c in _stale)
+            rows += (
+                f'<details class="rb-stale"><summary>거래 뜸 {len(_stale)}곳 '
+                f'— 최근 3개월 실거래 없음 · 펼치기</summary>{stale_rows}</details>')
+        if not _active and _stale:
+            # 전부 거래 뜸이면 접지 않고 바로 보여준다(빈 화면 방지).
+            rows = "".join(_rb_row_html(i, c) for i, c in _stale)
+    else:
+        rows = '<div class="rb-empty">이 티어에 배정된 단지가 없어요.</div>'
     st.markdown(
         f'<div class="rb-cxh"><span class="rb-cxt">{g["nm"]} 주요 단지'
         f'<em>{g["rng"]}{cap_s}</em></span>'
@@ -1741,45 +1835,144 @@ def _band_div_native(caption, hi, lo, act, avg,
         f'</div></div>')
 
 
+# ── 시장 방향 컴팩트 비교표(B안) ─────────────────────────────────────────
+#   구 3밴드 스택은 월간/주간/오늘이 거의 같은 정보를 3번 반복해 세로 공간을 3배로
+#   먹었고, '하락 우세 0% ↔ 평균 상승률 +26.1%'가 모순처럼 읽혔다(두 지표의 모집단이
+#   다름: 상승압력=신고/신저 균형, 평균변동=거래활발 단지 평균). → 오늘 기준 헤드라인
+#   1개 + 월간·주간·오늘 3행 비교표로 압축하고, 두 지표를 시각적으로 분리·명확화한다.
+_MBT_CSS = """<style>
+.mbt-wrap{margin-bottom:6px}
+.mbt-head{background:#FCFCFA;border:1px solid #E4E5DE;border-radius:12px;
+ padding:14px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:8px}
+.mbt-head .lab{font-size:11px;font-weight:700;letter-spacing:.04em;color:#9a9b92;
+ text-transform:uppercase;min-width:120px}
+.mbt-head .lab b{color:#7E9A83}
+.mbt-head .dir{display:flex;align-items:baseline;gap:8px}
+.mbt-head .dir .ar{font-size:17px}
+.mbt-head .dir .t{font-size:21px;font-weight:800;letter-spacing:-.02em;color:#34352f}
+.mbt-head .dir .p{font-size:13px;font-weight:800}
+.mbt-head .hint{flex:1;min-width:200px;font-size:11px;font-weight:600;color:#9a9b92;
+ line-height:1.5;text-align:right}
+.mbt-tbl{width:100%;border-collapse:collapse;font-family:'Pretendard',-apple-system,sans-serif}
+.mbt-tbl th,.mbt-tbl td{padding:9px 12px;text-align:right;white-space:nowrap}
+.mbt-tbl th{font-size:10.5px;font-weight:700;color:#9a9b92;letter-spacing:.02em;
+ border-bottom:1px solid #E4E5DE;text-transform:uppercase}
+.mbt-tbl th.l,.mbt-tbl td.l{text-align:left}
+.mbt-tbl td{font-size:14px;font-weight:800;color:#34352f;border-bottom:1px solid #EFF0EA}
+.mbt-tbl tr:last-child td{border-bottom:none}
+.mbt-per{font-size:13px;font-weight:800;color:#34352f}
+.mbt-per small{font-size:10px;font-weight:600;color:#b6b7ae;margin-left:5px}
+.mbt-badge{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:800}
+.mbt-press{display:inline-flex;align-items:center;gap:8px;justify-content:flex-end}
+.mbt-press .pbar{width:46px;height:7px;border-radius:4px;background:#DCE2EA;overflow:hidden}
+.mbt-press .pbar span{display:block;height:100%;background:#B65F5A}
+.mbt-press .pct{font-size:12px;font-weight:800;min-width:34px;text-align:right}
+.mbt-hl{color:#B65F5A}.mbt-lo{color:#5A7CA0}.mbt-mut{color:#9a9b92;font-weight:700}
+.mbt-tbl td small{font-size:10px;font-weight:700;color:#9a9b92;margin-left:2px}
+.mbt-tbl th.grp,.mbt-tbl td.grp{border-left:1px solid #EFF0EA}
+@media(max-width:680px){
+ .mbt-tbl th.hide-m,.mbt-tbl td.hide-m{display:none}
+ .mbt-head .hint{text-align:left;min-width:0}
+}
+</style>"""
+
+
+def _mbt_dir(hi, lo):
+    """상승압력(신고÷(신고+신저))으로 방향 배지·색·퍼센트 산출 — 3밴드와 동일 규칙."""
+    tot = hi + lo
+    pct = round(hi / tot * 100) if tot else 50
+    if pct >= 60:
+        return "상승 우세", "▲", "#B65F5A", pct
+    if pct <= 40:
+        return "하락 우세", "▼", "#5A7CA0", pct
+    return "혼조", "◆", "#7E9A83", pct
+
+
+def _mbt_row(period, sub, s):
+    """비교표 1행 — 기간 · 방향 · 상승압력바 · 신고/신저 · 거래활발 · 활발단지 평균변동."""
+    hi, lo, act, avg = s["hi"], s["lo"], s["act"], s["avg"]
+    dlabel, arrow, dcol, pct = _mbt_dir(hi, lo)
+    if avg is None:
+        gain = '<span class="mbt-mut">–</span>'
+    else:
+        gcls = "mbt-hl" if avg >= 0 else "mbt-lo"
+        gain = f'<span class="{gcls}">{"+" if avg >= 0 else ""}{avg}<small>%</small></span>'
+    return (
+        f'<tr>'
+        f'<td class="l"><span class="mbt-per">{period}<small>{sub}</small></span></td>'
+        f'<td><span class="mbt-badge" style="color:{dcol}">{arrow} {dlabel}</span></td>'
+        f'<td><span class="mbt-press">'
+        f'<span class="pbar"><span style="width:{pct}%"></span></span>'
+        f'<span class="pct" style="color:{dcol}">{pct}%</span></span></td>'
+        f'<td class="grp"><span class="mbt-hl">{hi}</span>'
+        f'<span class="mbt-mut"> / </span><span class="mbt-lo">{lo}</span></td>'
+        f'<td class="hide-m grp">{act}<small>단지</small></td>'
+        f'<td class="grp">{gain}</td>'
+        f'</tr>')
+
+
 def _render_market_bands():
-    """월간·주간·오늘 시장 밴드 3단 — Streamlit 네이티브 렌더(st.markdown 단일 블록).
-    구 버전은 단일 iframe 스택이었으나, 이 환경에서 iframe 동적/고정 높이가 페이지
-    흐름·인쇄 레이아웃과 어긋나는 문제가 있어 실거래 탭에서 iframe을 완전히 제거했다.
-    표본 없는 단은 생략, 전부 없으면 아무것도 그리지 않는다. foot는 한 번만."""
-    divs = []
+    """시장 방향 — 오늘 기준 헤드라인 + 월간·주간·오늘 3행 컴팩트 비교표(B안).
+    집계 함수(_market_month/week/summary)는 그대로 재사용, 렌더링만 표로 압축했다.
+    표본 없는 기간 행은 생략, 전부 없으면 아무것도 그리지 않는다.
+    (구 3밴드 렌더 _band_div_native/_MB_CSS 등은 재사용 여지가 있어 정의만 보존.)"""
+    rows = []
     m = _market_month_summary()
     if m:
         d0, d1 = m["start"], m["latest"]
-        divs.append(_band_div_native(
-            f'<b>월간</b> 아파트 시장 · {d0.month}.{d0.day}→{d1.month}.{d1.day} · '
-            '최신거래일 기준 30일',
-            m["hi"], m["lo"], m["act"], m["avg"],
-            kl=("신고가 <small>30일 합</small>", "신저가 <small>30일 합</small>",
-                "거래활발 <small>월간 평균</small>", "평균 상승률 <small>월간 평균</small>")))
+        rows.append(_mbt_row("월간", f"{d0.month}.{d0.day}→{d1.month}.{d1.day}·30일", m))
     w = _market_week_summary()
     if w:
         d0, d1 = w["start"], w["latest"]
-        divs.append(_band_div_native(
-            f'<b>주간</b> 아파트 시장 · {d0.month}.{d0.day}→{d1.month}.{d1.day} · '
-            '최신거래일 기준 7일',
-            w["hi"], w["lo"], w["act"], w["avg"],
-            kl=("신고가 <small>7일 합</small>", "신저가 <small>7일 합</small>",
-                "거래활발 <small>주간 평균</small>", "평균 상승률 <small>주간 평균</small>")))
+        rows.append(_mbt_row("주간", f"{d0.month}.{d0.day}→{d1.month}.{d1.day}·7일", w))
     t = _market_summary()
     if t:
         _ref = t.get("latest")
-        datestr = (f'{_ref.month}.{_ref.day} 최신거래 기준' if _ref
-                   else f'{t["today"].month}.{t["today"].day} 기준')
-        divs.append(_band_div_native(f'오늘의 아파트 시장 · {datestr}',
-                                     t["hi"], t["lo"], t["act"], t["avg"]))
-    if not divs:
+        _ds = (f"{_ref.month}.{_ref.day} 최신거래" if _ref
+               else f'{t["today"].month}.{t["today"].day}')
+        rows.append(_mbt_row("오늘", _ds, t))
+    if not rows:
         return
-    st.markdown(_MB_CSS + '<div class="mb-stack">' + "".join(divs) + "</div>",
+
+    # 헤드라인: '오늘' 우선, 없으면 주간→월간 폴백. 대표 방향·상승압력만 크게.
+    head = t or w or m
+    _hn = "오늘" if t else ("주간" if w else "월간")
+    dlabel, arrow, dcol, pct = _mbt_dir(head["hi"], head["lo"])
+    _href = head.get("latest")
+    _hdate = (f"{_href.month}.{_href.day} 최신거래 기준" if _href
+              else "최신 스냅샷 기준")
+    # 상승압력과 활발단지 평균변동이 어긋날 때(예: 압력↓·평균변동↑) 오해를 막는 한 줄.
+    _avg = head.get("avg")
+    if _avg is not None and ((pct <= 40 and _avg > 0) or (pct >= 60 and _avg < 0)):
+        _hint = ("극단 거래(신고·신저)는 <b style='color:%s'>%s</b> 쪽이지만, "
+                 "거래 활발한 단지 평균은 %s%.1f%% — 두 신호가 엇갈리는 국면."
+                 % (dcol, dlabel.replace(" 우세", ""),
+                    "+" if _avg >= 0 else "", _avg))
+    else:
+        _hint = "상승압력=신고가 비중 · 활발단지 평균변동=거래 많은 단지의 평균 가격 변화"
+
+    head_html = (
+        f'<div class="mbt-head">'
+        f'<div class="lab"><b>{_hn}</b> 아파트 시장<br>{_hdate}</div>'
+        f'<div class="dir"><span class="ar" style="color:{dcol}">{arrow}</span>'
+        f'<span class="t">{dlabel}</span>'
+        f'<span class="p" style="color:{dcol}">상승압력 {pct}%</span></div>'
+        f'<div class="hint">{_hint}</div>'
+        f'</div>')
+
+    table_html = (
+        '<table class="mbt-tbl"><thead><tr>'
+        '<th class="l">기간</th><th>방향</th><th>상승압력</th>'
+        '<th class="grp">신고/신저</th><th class="hide-m grp">거래활발</th>'
+        '<th class="grp">활발단지 평균변동</th>'
+        '</tr></thead><tbody>' + "".join(rows) + '</tbody></table>')
+
+    st.markdown(_MBT_CSS + '<div class="mbt-wrap">' + head_html + table_html + '</div>',
                 unsafe_allow_html=True)
     st.markdown(foot_row(
         "특이거래 기준과 동일 집계",
         "상승압력=신고가÷(신고가+신저가) · 표준 민감도·직거래 제외 · "
-        "월간·주간 신고가·신저가=최신 거래일 기준 30일/7일 창 합산(일별 합산 중복 없음) · "
-        "거래활발·평균 상승률(월간·주간)=해당 기간 스냅샷 평균 · "
-        "거래활발=주목단지 랭킹 단지수 · 평균 상승률=주목단지 평균"),
+        "월간·주간 신고/신저=최신 거래일 기준 30일/7일 창 합산(일별 중복 없음) · "
+        "거래활발=주목단지 랭킹 단지수(해당 기간 평균) · "
+        "활발단지 평균변동=주목단지 평균(신고/신저 균형과 모집단이 다름)"),
         unsafe_allow_html=True)
