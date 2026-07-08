@@ -60,9 +60,9 @@ def render_realestate():
                                             _render_watchlist_band)
         tab_header("가격지도", css=_RE_CSS)
         _render_collect_controls()
-        _render_watchlist_band()
-        _render_streak_section()
-        _render_map()
+        _render_watchlist_band()   # 주목 지역 4카드 — '어디를 볼까' 핵심 신호는 지도 위 유지
+        _render_map()              # 지도 본체를 위로 끌어올려 스크롤 단축
+        _render_streak_section()   # 가격지수 동향 6카드는 지도 아래로(맥락 보조)
 
     elif _re_maintab == "실거래":
         from modules.realestate_deals import (_render_hot_complexes,
