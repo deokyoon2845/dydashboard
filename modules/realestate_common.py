@@ -315,8 +315,8 @@ def _re_collect_asof():
 
 
 def _render_collect_controls():
-    """지도 탭 상단 컨트롤 — 데이터 기준 캡션 + 갱신/진단 버튼 + 수집·진단 처리.
-       (증시 '새로고침'과 같은 위치: 서브탭 제목 바로 아래.)"""
+    """지도 탭 상단 — 데이터 기준시각 캡션만 렌더.
+       (예전엔 갱신/진단 버튼도 있었으나 엔진-우선 원칙에 따라 제거 → 아래 참고.)"""
     asof = _re_collect_asof()
     if asof:
         st.caption(f"수도권·광역시 아파트 · 매매·전세=KB 월간 가격지수, 거래=주간 실거래 · 기준 {asof} KST · 매일 아침 자동 갱신 · 최근·다음 시각은 하단 🕐 자동 갱신 현황")
@@ -324,35 +324,11 @@ def _render_collect_controls():
         st.caption("수도권 아파트 · 현재 샘플 — 매일 아침 자동 수집(KB 가격지수·실거래) 후 "
                    "실데이터로 채워집니다.")
 
-    _re_render_lock_gate()
-    authed = _re_authed()
-    col_a, col_b = st.columns([3, 1])
-    with col_a:
-        do_collect = st.button(
-            "🔄 최신 데이터 불러오기", disabled=not authed,
-            help="매일 아침 GitHub Actions가 KB·국토부 데이터를 수집해 DB에 저장합니다. "
-                 "이 버튼은 그 최신본을 즉시 다시 불러옵니다(라이브 API 호출 없음).",
-            use_container_width=True)
-    with col_b:
-        do_diag = st.button(
-            "🔍 연결 진단", help="단 1회 시험 호출로 키·네트워크 상태만 점검",
-            use_container_width=True)
-
-    # 연결 진단: 600콜 안 돌리고 강남구 1콜만 던져 원인을 바로 표시
-    if do_diag:
-        from engine.realestate_collect import diagnose
-        with st.spinner("data.go.kr 연결 점검 중..."):
-            try:
-                status, msg = diagnose()
-            except Exception as e:
-                status, msg = "API_ERROR", str(e)
-        if status in ("OK", "OK_EMPTY"):
-            st.success(f"[{status}] {msg}")
-        else:
-            st.error(f"[{status}] {msg}")
-
-    if do_collect:
-        with st.spinner("DB에서 최신본 불러오는 중..."):
-            _run_collection()
-        st.success("최신 데이터를 불러왔어요.")
-        st.rerun()
+    # 갱신은 매일 아침 GitHub Actions가 전담(엔진-우선)하므로, 뷰어에서 수동으로
+    # 부를 이유가 사라졌다 → '최신 데이터 불러오기'(스냅샷 캐시만 비우던 버튼)와
+    # '연결 진단'(뷰어에서 data.go.kr 라이브 콜 1회 · 엔진-우선 위반)을 제거했다.
+    # 기준시각 캡션은 유용하므로 위에 그대로 남긴다. 잠금 게이트도 갱신 버튼이
+    # 사라져 불필요 → 상단이 깔끔해진다.
+    #   · _run_collection() / _re_render_lock_gate() / diagnose() 는 재사용 여지가
+    #     있어 정의는 보존(호출부만 제거).
+    return
