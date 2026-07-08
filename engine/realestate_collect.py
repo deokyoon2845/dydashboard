@@ -2805,3 +2805,4 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
     if with_cap and with_gain:
         return ranked, cap_leaders, gain_leaders
     return (ranked, cap_leaders) if with_cap else ranked
+
