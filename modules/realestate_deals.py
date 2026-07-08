@@ -934,6 +934,7 @@ def _region_board_payload():
                 "rg": c.get("_rg") or gu_disp,
                 "units": int(c["units"]), "cap": c.get("cap_fmt") or "",
                 "py": round(_py) if _py else None,
+                "yr": c.get("built_year"),   # 준공년도(사용승인) | None
                 "p": c.get("price_eok") or "", "pavg": c.get("pavg"),
                 "chg": (c["chg"] if isinstance(c.get("chg"), (int, float))
                         else None),
@@ -961,11 +962,18 @@ def _fmt_cap(manwon):
 
 
 def _rb_pyf(py):
-    """평당가(만원) → '1.3억'/'8.5천만' — 구 iframe pyf() 동일 규칙."""
+    """평당가(만원) → '1.3억'/'6천만' — 억 미만은 천만 단위로 반올림 표기.
+       (구 버그: round(py/1000)/10 이 6000만원을 '0.6천만'으로 오표기 → /10 제거)
+       천만 반올림이 10에 도달하면 '1억'으로 승격, 0천만은 최소 1천만."""
+    if py is None:
+        return "—"
     if py >= 10000:
         v = f"{py / 10000:.1f}".rstrip("0").rstrip(".")
         return f"{v}억"
-    return f"{round(py / 1000) / 10}천만"
+    cheon = int(py / 1000 + 0.5)           # 천만 단위 반올림(6500→7, 9800→10)
+    if cheon >= 10:                        # 9500~9999 → 반올림 10천만 → 1억으로 승격
+        return "1억"
+    return f"{max(cheon, 1)}천만"
 
 
 def _rb_pct(c):
@@ -1024,19 +1032,6 @@ _RB_CSS = """<style>
 .rb-pv span i{font-style:normal;font-weight:700;color:#9a9b92;font-size:9.5px;margin-right:4px}
 .rb-pv span small{font-weight:600;color:#B7B8B0;font-size:9px;margin-left:3px}
 .rb-pv .none{color:#B7B8B0;background:#FAFAF7;font-weight:700}
-.rb-pv span.lead{background:#EEF3EF;border-color:#CFE0D3;color:#34352f;box-shadow:0 1px 3px rgba(126,154,131,.18)}
-.rb-pv span.lead i{color:#7E9A83}
-.rb-pv span.lead small{color:#8CA391}
-.rb-tier-strip{display:flex;align-items:center;gap:9px;flex-wrap:wrap;background:#F7F8F4;border:1px solid #E6EAE2;border-radius:9px;padding:7px 13px;margin:2px 2px 10px}
-.rb-tier-strip .rb-ts-name{font-size:13px;font-weight:800;color:#34352f}
-.rb-tier-strip .rb-ts-rng{font-size:11.5px;font-weight:800;color:#7E9A83;background:#EEF3EF;border-radius:6px;padding:2px 9px}
-.rb-tier-strip .rb-ts-meta{font-size:10.5px;font-weight:600;color:#9a9b92}
-.rb-stale{margin-top:6px}
-.rb-stale summary{cursor:pointer;font-size:11px;font-weight:700;color:#9a9b92;list-style:none;padding:7px 2px;border-top:1px dashed #E6E7E0}
-.rb-stale summary::-webkit-details-marker{display:none}
-.rb-stale summary::before{content:"▸ ";color:#B7B8B0}
-.rb-stale[open] summary::before{content:"▾ "}
-.rb-stale summary:hover{color:#7E9A83}
 .rb-al{margin-top:8px;display:flex;flex-direction:column;gap:4px;border-top:1px dashed #EDEEE7;padding-top:8px}
 .rb-ali{font-size:11px;font-weight:700;color:#5d6258;display:flex;gap:7px;align-items:baseline;flex-wrap:wrap}
 .rb-ali .b{font-size:9.5px;font-weight:800;border-radius:5px;padding:1.5px 7px;white-space:nowrap}
@@ -1167,16 +1162,9 @@ def _rb_row_html(i, c):
         pv = (f'<div class="rb-pv"><span class="none">최근 3개월 거래 없음 · '
               f'대표가 {c["p"] or "—"}</span></div>')
     else:
-        # 거래 최다(n 최대) 평형을 대표로 강조(.lead), 나머지는 기본 칩. (실거래 5)
-        _bs = c["pavg"]
-        _lead_i = max(range(len(_bs)),
-                      key=lambda j: _bs[j].get("n") or 0) if _bs else -1
-        chips = ""
-        for j, b in enumerate(_bs):
-            klass = "lead" if j == _lead_i else ""
-            chips += (f'<span class="{klass}"><i>{b["area"]}㎡</i>'
-                      f'{b["avg"]}억<small>{b["n"]}건</small></span>')
-        pv = f'<div class="rb-pv">{chips}</div>'
+        pv = '<div class="rb-pv">' + "".join(
+            f'<span><i>{b["area"]}㎡</i>{b["avg"]}억<small>{b["n"]}건</small></span>'
+            for b in c["pavg"]) + "</div>"
     if c["chg"] is None:
         chg = '<span class="rb-chg"><b class="stale">—</b></span><small>거래 뜸</small>'
     else:
@@ -1204,13 +1192,14 @@ def _rb_row_html(i, c):
     nv = (f'<a class="nv" href="https://search.naver.com/search.naver?query={q}" '
           f'target="_blank" rel="noopener">N</a>')
     py_s = f' · 평당 {_rb_pyf(c["py"])}' if c.get("py") else ""
+    yr_s = f' · {c["yr"]}년' if c.get("yr") else ""     # 준공년도(사용승인) — 없으면 생략
     dd_s = f'<small>최근 {c["dd"]}</small>' if c.get("dd") else ""
     dong_s = f' {c["dong"]}' if c["dong"] else ""
     return (
         f'<div class="rb-row{" top1" if i == 0 else ""}">'
         f'<div class="rb-rank">{i + 1}</div>'
         f'<div class="rb-nm"><span class="rb-bdg">{c["rg"]}</span>{c["apt"]}{nv}'
-        f'<small>{c["gu"]}{dong_s} · {c["units"]:,}세대{py_s} · 시총 {c["cap"]}</small>'
+        f'<small>{c["gu"]}{dong_s} · {c["units"]:,}세대{yr_s}{py_s} · 시총 {c["cap"]}</small>'
         f'{pv}{al}</div>'
         f'<div class="rb-r">{chg}{dd_s}</div></div>')
 
@@ -1253,38 +1242,14 @@ def _render_region_board():
 
     g = next((x for x in groups if x["nm"] == sel), groups[0])
 
-    # 3-a) 선택 급지 기준 스트립 — '이 급지가 뭔지'(평당가 범위)를 라디오 바로 아래 명시
-    #      (실거래 4). g["rng"]=_TIER_META 범위 설명. 구성 지역 수·시총도 함께.
-    _n_reg = len(g["regions"])
-    _cap_b = f' · 티어 시총 {g["cap"]}' if g["cap"] else ""
-    st.markdown(
-        f'<div class="rb-tier-strip"><span class="rb-ts-name">{g["nm"]}</span>'
-        f'<span class="rb-ts-rng">{g["rng"]}</span>'
-        f'<span class="rb-ts-meta">구성 {_n_reg}개 지역{_cap_b}</span></div>',
-        unsafe_allow_html=True)
-
-    # 3-b) 선택 급지 지도(2/3 축소) + 정보 — 전체 급지를 옅게 깔아 맥락 제공
+    # 3) 선택 급지 지도(2/3 축소) + 정보 — 전체 급지를 옅게 깔아 맥락 제공
     tier_idx = _rb_tier_shade_index(groups)
     st.markdown(_rb_map_html(g, tier_idx), unsafe_allow_html=True)
 
-    # 4) 선택 급지 시총 TOP20 리스트 — 거래 있는 단지 먼저, 거래 뜸(3개월 거래 없음)은 접기
-    #    (실거래 3). 원본 시총 순서는 각 그룹 내에서 그대로 유지.
+    # 4) 선택 급지 시총 TOP20 리스트
     cap_s = f' · 티어 시총 {g["cap"]}' if g["cap"] else ""
-    _active, _stale = [], []
-    for i, c in enumerate(g["rows"]):
-        (_active if c.get("pavg") or c.get("chg") is not None else _stale).append((i, c))
-    if g["rows"]:
-        rows = "".join(_rb_row_html(i, c) for i, c in _active)
-        if _stale:
-            stale_rows = "".join(_rb_row_html(i, c) for i, c in _stale)
-            rows += (
-                f'<details class="rb-stale"><summary>거래 뜸 {len(_stale)}곳 '
-                f'— 최근 3개월 실거래 없음 · 펼치기</summary>{stale_rows}</details>')
-        if not _active and _stale:
-            # 전부 거래 뜸이면 접지 않고 바로 보여준다(빈 화면 방지).
-            rows = "".join(_rb_row_html(i, c) for i, c in _stale)
-    else:
-        rows = '<div class="rb-empty">이 티어에 배정된 단지가 없어요.</div>'
+    rows = ("".join(_rb_row_html(i, c) for i, c in enumerate(g["rows"]))
+            if g["rows"] else '<div class="rb-empty">이 티어에 배정된 단지가 없어요.</div>')
     st.markdown(
         f'<div class="rb-cxh"><span class="rb-cxt">{g["nm"]} 주요 단지'
         f'<em>{g["rng"]}{cap_s}</em></span>'
@@ -1378,6 +1343,8 @@ def _render_hi_month_section(groups, skip_keys):
         meta = [addr]
         if isinstance(units, (int, float)) and units:
             meta.append(f"{int(units):,}세대")
+        if c.get("built_year"):
+            meta.append(f'{c["built_year"]}년')
         if c.get("builder"):
             meta.append(str(c["builder"]))
         meta_s = " · ".join(m for m in meta if m)
@@ -1467,6 +1434,8 @@ def _render_hot_complexes():
         u = h.get("units")
         if isinstance(u, (int, float)) and u:
             meta.append(f"{int(u):,}세대")
+        if h.get("built_year"):
+            meta.append(f'{h["built_year"]}년')
         if h.get("builder"):
             meta.append(str(h["builder"]))
         meta_s = " · ".join(m for m in meta if m)
