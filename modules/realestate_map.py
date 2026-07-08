@@ -157,16 +157,22 @@ body{margin:0;background:transparent;color:var(--ink);font-family:var(--kfont);f
 .kdot text{font-size:7.2px;font-weight:800;fill:#5d6258;font-family:var(--kfont);pointer-events:none}
 .kdot.on .pulse{animation:pl 1.7s ease-out infinite}
 @keyframes pl{0%{r:4;opacity:.5}100%{r:13;opacity:0}}
-.legend{position:absolute;left:13px;top:11px;display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:190px;font-size:10px;color:var(--muted);background:rgba(252,252,250,.94);border:1px solid var(--line2);border-radius:9px;padding:6px 9px 5px;backdrop-filter:blur(4px)}
+.legendwrap{position:absolute;left:13px;top:11px;z-index:5;display:flex;flex-direction:column;align-items:flex-start;gap:5px;width:190px}
+.legend{position:relative;left:0;top:0;display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;font-size:10px;color:var(--muted);background:rgba(252,252,250,.94);border:1px solid var(--line2);border-radius:9px;padding:6px 9px 5px;backdrop-filter:blur(4px)}
+.scaletog{display:inline-flex;gap:3px;background:rgba(252,252,250,.92);border:1px solid var(--line2);border-radius:8px;padding:2px;backdrop-filter:blur(4px)}
+.scaletog button{border:none;border-radius:6px;padding:3px 11px;font-size:10px;font-weight:700;color:var(--muted);cursor:pointer;background:transparent;font-family:var(--kfont)}
+.scaletog button.on{background:#EEF1EC;color:var(--ink)}
 .legend .lgcap{font-size:9.5px;font-weight:700;color:#5d6258}
 .legend .lgrow{display:flex;width:100%}
 .legend .lgsw{flex:1;height:11px}
 .legend .lgsw.neu{outline:1.4px solid #C9CABF;outline-offset:-1.4px}
 .legend .lgticks{position:relative;width:100%;height:11px;margin-top:1px}
 .legend .lgticks span{position:absolute;font-size:8.5px;font-weight:700;color:#6f7066;white-space:nowrap}
-.pills{position:absolute;right:11px;bottom:12px;display:inline-flex;gap:4px;background:rgba(252,252,250,.92);border:1px solid var(--line2);border-radius:9px;padding:3px;backdrop-filter:blur(4px)}
-.pills button{border:none;border-radius:7px;padding:4px 10px;font-size:10.5px;color:var(--muted);cursor:pointer;background:transparent;font-family:var(--kfont)}
-.pills button.on{background:#EEF1EC;color:var(--ink);font-weight:700}
+.pills{position:absolute;right:11px;bottom:12px;display:inline-flex;align-items:center;gap:4px;background:rgba(252,252,250,.97);border:1px solid var(--line2);border-radius:10px;padding:3px 3px 3px 4px;backdrop-filter:blur(4px);box-shadow:0 3px 12px rgba(52,53,47,.13)}
+.pills .pl-cap{font-size:9px;font-weight:800;color:#9aa39b;letter-spacing:.02em;padding:0 3px 0 2px}
+.pills button{border:none;border-radius:7px;padding:4px 11px;font-size:11px;font-weight:600;color:var(--muted);cursor:pointer;background:transparent;font-family:var(--kfont);transition:all .12s}
+.pills button:hover{background:#F0F2EC;color:var(--ink)}
+.pills button.on{background:var(--sage2);color:#fff;font-weight:800;box-shadow:0 1px 4px rgba(126,154,131,.35)}
 .tip{position:absolute;pointer-events:none;background:var(--card);border:1px solid var(--line2);border-radius:9px;padding:8px 11px;font-size:12px;min-width:148px;box-shadow:0 6px 22px rgba(52,53,47,.14);opacity:0;transform:translateY(4px);transition:opacity .14s,transform .14s;z-index:7}
 .tip .up{color:var(--up)}.tip .dn{color:var(--dn)}
 .phbadge{position:absolute;left:50%;top:11px;transform:translateX(-50%);font-size:10px;font-weight:700;color:#9A7B43;background:rgba(255,250,238,.94);border:1px solid #E6D9B8;border-radius:999px;padding:3px 11px;backdrop-filter:blur(4px);box-shadow:0 2px 8px rgba(52,53,47,.08);z-index:6}
@@ -184,6 +190,9 @@ table.mx th:first-child{text-align:left}
 table.mx td{padding:7px 8px;border-top:1px solid var(--line);text-align:right;vertical-align:middle;font-size:11.5px}
 table.mx td:first-child{text-align:left;font-weight:700;font-size:12px}
 table.mx tr:hover{background:#FAFAF6}
+table.mx tbody tr{cursor:pointer}
+table.mx tbody tr.hi{background:#EEF3EF;box-shadow:inset 3px 0 0 #7E9A83}
+table.mx tbody tr.hi td:first-child{color:#5f7a66}
 .dl{font-weight:800}.muted{color:var(--muted)}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:12px 14px;}
 .p-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
@@ -209,7 +218,9 @@ table.mx tr:hover{background:#FAFAF6}
 .note{color:var(--muted);font-size:10.8px;margin-top:9px;line-height:1.6}
 .draw{stroke-dasharray:var(--L);stroke-dashoffset:var(--L);}
 .drawn{stroke-dashoffset:0;transition:stroke-dashoffset .85s ease}
-@media(max-width:760px){.maparea{height:400px}.nav{display:none}.mrow{flex-direction:column}.mleft,.mright{width:100%;flex:none}.mxwrap{max-height:280px}}
+@media(max-width:760px){.maparea{height:400px}.nav{display:none}.mrow{flex-direction:column}.mleft,.mright{width:100%;flex:none}.mxwrap{max-height:280px}
+ table.mx th.col-v,table.mx td.col-v,table.mx th.col-jr,table.mx td.col-jr{display:none}
+ table.mx th:first-child{width:44% !important}}
 </style></head><body>
 <div class="hd">
   <div><div class="crumb"><span class="back" id="back">‹ 전국</span> <span>전국</span> › <b id="crName">서울</b>
@@ -218,9 +229,12 @@ table.mx tr:hover{background:#FAFAF6}
 </div>
 <div class="chips" id="chips"></div>
 <div class="maparea" id="maparea">
-  <div class="legend" id="legend"></div>
+  <div class="legendwrap">
+    <div class="legend" id="legend"></div>
+    <div class="scaletog" id="scaleTog"><button data-s="rel" class="on">상대</button><button data-s="abs">절대</button></div>
+  </div>
   <svg id="big" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" role="img" aria-label="상세 지도"></svg>
-  <div class="pills" id="metricPills"><button data-m="mm" class="on">매매</button><button data-m="js">전세</button><button data-m="v">거래</button><button data-m="jr">전세가율</button></div>
+  <div class="pills" id="metricPills"><span class="pl-cap">지표</span><button data-m="mm" class="on">매매</button><button data-m="js">전세</button><button data-m="v">거래</button><button data-m="jr">전세가율</button></div>
   <div class="nav"><div class="nt"><span>전국</span><span style="color:#C4C6BD">탭하여 이동</span></div>
     <svg viewBox="0 0 120 150" role="img" aria-label="한반도 내비게이터">
       <path id="kland" d="M44 14 C58 8 74 12 80 24 C86 34 82 44 88 52 C95 61 96 72 90 80 C97 86 100 96 95 106 C101 112 100 124 92 130 C86 134 80 128 76 120 C70 126 62 122 60 114 C52 118 44 114 42 106 C33 108 24 102 24 92 C16 90 12 80 18 72 C12 64 14 52 24 48 C22 38 28 26 38 22 C39 18 41 15 44 14 Z"></path>
@@ -229,7 +243,7 @@ table.mx tr:hover{background:#FAFAF6}
   <div class="phbadge" id="phbadge" hidden>예시 배치 · 실제 구 경계 아님</div>
 </div>
 <div class="mrow">
-  <div class="mleft"><div class="mxwrap"><table class="mx"><thead><tr><th style="width:34%">지역</th><th>매매Δ<i>월</i></th><th>전세Δ<i>월</i></th><th>거래<i>주</i></th><th>전세가율<i>월</i></th></tr></thead><tbody id="mxBody"></tbody></table></div></div>
+  <div class="mleft"><div class="mxwrap"><table class="mx"><thead><tr><th style="width:34%">지역</th><th>매매Δ<i>월</i></th><th>전세Δ<i>월</i></th><th class="col-v">거래<i>주</i></th><th class="col-jr">전세가율<i>월</i></th></tr></thead><tbody id="mxBody"></tbody></table></div></div>
   <div class="mright"><div class="panel"><div class="p-h"><span class="p-t" id="trTitle"></span>
     <span class="p-r"><span class="p-lg" id="trLeg"><i><span class="dot" style="background:#B65F5A"></span>매매</i><i><span class="dot" style="background:#5A7CA0"></span>전세</i></span>
       <span class="cmptog" id="cmpTog"><button data-cm="single" class="on">단일</button><button data-cm="cmp">비교</button></span></span></div>
@@ -243,13 +257,50 @@ const ORDER=["gn3","seoul","gg","incheon","daegu","busan"];
 const RNAME={gn3:"강남3구",seoul:"서울",gg:"경기",incheon:"인천",daegu:"대구",busan:"부산"};
 const SUDO=new Set(["gn3","seoul","gg"]);
 const NAVPOS={incheon:[34,54],seoul:[50,47],gn3:[54,55,1],gg:[64,45],daegu:[82,96],busan:[95,118]};
-let region="seoul",metric="mm",period="all",busy=false;
+let region="seoul",metric="mm",period="all",busy=false,scaleMode="rel";
 const fmtP=v=>(v>0?"+":"")+(+v||0).toFixed(2)+"%";
 const cls=v=>v>0.005?"up":(v<-0.005?"dn":"");
+// 색 램프(절대 임계값 col*와 톤 일치) — 상대(분위) 모드가 재사용. 낮음→높음 순.
+const RAMP_MM=["#A9C0DA","#C9D6E5","#EFEEE9","#E9BDB8","#D89089","#C16C64"]; // 매매·전세 등락(파랑↓ 중립 빨강↑)
+const RAMP_JR=["#EBF0F5","#D2DEE9","#B4C7D8","#92ABC1","#6E8FA8"];            // 전세가율(옅음→진함)
+const RAMP_V =["#C9D2C4","#DDE4D8","#EFEEE9","#BBD2C0","#8FB39B","#5E8770"]; // 거래 평소대비(한산→활발)
 function colMM(v){if(v>=.30)return"#C16C64";if(v>=.15)return"#D89089";if(v>=.05)return"#E9BDB8";if(v>-.02)return"#EFEEE9";if(v>-.10)return"#C9D6E5";return"#A9C0DA";}
 function colJR(v){if(v>=68)return"#6E8FA8";if(v>=63)return"#92ABC1";if(v>=58)return"#B4C7D8";if(v>=53)return"#D2DEE9";return"#EBF0F5";}
 function vrat(d){return (d.vavg!=null&&d.vavg>0&&d.v!=null)?(d.v/d.vavg-1)*100:null;}
 function colVR(p){if(p>=100)return"#5E8770";if(p>=50)return"#8FB39B";if(p>=15)return"#BBD2C0";if(p>-15)return"#EFEEE9";if(p>-40)return"#DDE4D8";return"#C9D2C4";}
+// ── 상대(분위) 스케일 ─────────────────────────────────────────────────
+//   현재 표시 중인 구들의 값만 모아 순위(분위)로 색 램프에 균등 배분한다.
+//   절대 임계값이 시장 국면(상승/하락/과열)에 따라 한쪽 색으로 포화되는 문제를 제거.
+//   같은 값은 같은 색(동점 안정), 값 없음(null)은 중립색. refresh/drawMap 전에 1회 계산.
+let _relBins={};   // metric → {vals:[정렬된 유효값], ramp:[...] }
+function metricVal(d){
+  if(metric==="v")return vrat(d);
+  if(metric==="jr")return (d.jr==null?null:d.jr);
+  return (metric==="js"?d.js:d.mm);
+}
+function rampFor(){return metric==="v"?RAMP_V:metric==="jr"?RAMP_JR:RAMP_MM;}
+function buildRelBins(paths){
+  const ramp=rampFor();
+  const vals=paths.map(metricVal).filter(v=>v!=null&&!isNaN(v)).sort((a,b)=>a-b);
+  _relBins={vals:vals,ramp:ramp};
+}
+function colRel(v){
+  if(v==null||isNaN(v))return "#EFEEE9";
+  const vals=_relBins.vals||[],ramp=_relBins.ramp||RAMP_MM;
+  const n=vals.length;
+  if(n<=1)return ramp[Math.floor(ramp.length/2)];      // 표본 1개면 중간색
+  // v 이하 값 개수로 분위(0~1) → 색 인덱스. 동점은 마지막 위치 기준(같은 값=같은 색).
+  let last=0;for(let i=0;i<n;i++){if(vals[i]<=v)last=i+1;else break;}
+  const q=(last-1)/(n-1);                               // 0(최하위)~1(최상위)
+  const idx=Math.min(ramp.length-1,Math.max(0,Math.round(q*(ramp.length-1))));
+  return ramp[idx];
+}
+function fillOf(d){
+  if(scaleMode==="rel")return colRel(metricVal(d));
+  if(metric==="v"){const p=vrat(d);return p==null?"#F1F2EC":colVR(p);}
+  if(metric==="jr")return colJR(d.jr==null?0:d.jr);
+  return colMM(metric==="js"?d.js:d.mm);
+}
 function volCtx(d){const p=vrat(d);if(p==null)return null;const m=d.v/d.vavg;
   if(Math.abs(p)<15)return{full:"평소 수준",bare:"평소",cls:"nm"};
   if(m>=2)return{full:"평소 "+m.toFixed(1)+"×",bare:m.toFixed(1)+"×",cls:"hi"};
@@ -282,7 +333,18 @@ function lgStepped(cells,ticks,cap){
   const tk=ticks.map(t=>`<span style="${t.pos}">${t.t}</span>`).join("");
   return `<div class="lgcap">${cap}</div><div class="lgrow">${sw}</div><div class="lgticks">${tk}</div>`;}
 function drawLegend(){let h="";
-  if(metric==="v")h=lgStepped(
+  if(scaleMode==="rel"){
+    // 상대(분위): 표시 지역 순위 기준. 램프를 그대로 스와치로, 양끝만 하위/상위 표기.
+    const ramp=rampFor();
+    const cells=ramp.map(c=>({c:c}));
+    const midlab=metric==="v"?"거래 순위":metric==="jr"?"전세가율 순위":(metric==="mm"?"매매":"전세")+" 순위";
+    const n=(_relBins.vals||[]).length;
+    h=lgStepped(cells,
+      [{t:"하위",pos:"left:0"},
+       {t:"상위",pos:"right:0"}],
+      midlab+" · 표시 지역 "+(n?n:"")+"곳 분위");
+  }
+  else if(metric==="v")h=lgStepped(
     [{c:"#C9D2C4"},{c:"#DDE4D8"},{c:"#EFEEE9",neu:true},{c:"#BBD2C0"},{c:"#8FB39B"},{c:"#5E8770"}],
     [{t:"한산",pos:"left:0"},{t:"평소",pos:"left:41.7%;transform:translateX(-50%);color:#34352f"},{t:"활발",pos:"right:0"}],
     "거래 평소 대비 · 주간");
@@ -302,19 +364,22 @@ function pathsHTML(big){const ps=_paths.map((d,i)=>`<path class="dist" data-i="$
   const labs=_paths.map(d=>{const fs=ref*(d.sl.length>3?0.135:0.165);   // 화면 픽셀 균일 + 밀도(N) 보정
     return `<text class="dlabel" x="${d.cx}" y="${d.cy}" text-anchor="middle" dominant-baseline="middle" font-size="${fs.toFixed(1)}" paint-order="stroke" stroke="#FCFCFA" stroke-width="${(fs*0.22).toFixed(1)}" stroke-linejoin="round">${d.sl}</text>`;}).join("");
   return `<g id="paths">${ps}</g><g>${labs}</g>`;}
-function drawMap(){_paths=pathsOf(region);_vb=vbOf(_paths);const svg=document.getElementById("big");
+function drawMap(){_paths=pathsOf(region);_vb=vbOf(_paths);buildRelBins(_paths);const svg=document.getElementById("big");
   svg.setAttribute("viewBox",_vb.join(" "));const big=_paths.length<=8;
   svg.innerHTML=pathsHTML(big)+`<text id="hoverLabel" text-anchor="middle" dominant-baseline="middle" paint-order="stroke" stroke="#FCFCFA" stroke-width="2.6" stroke-linejoin="round"></text>`;
   const tip=document.getElementById("tip"),area=document.getElementById("maparea"),pg=svg.querySelector("#paths"),hl=svg.querySelector("#hoverLabel");
   svg.querySelectorAll("path.dist").forEach(p=>{const d=_paths[+p.dataset.i];
-    p.onmouseenter=()=>{p.style.stroke="#7E9A83";p.style.strokeWidth="1.6";pg.appendChild(p);
+    p.onmouseenter=()=>{if(_pinned)return;p.style.stroke="#7E9A83";p.style.strokeWidth="1.6";pg.appendChild(p);
       const _vx=volCtx(d);const vline=d.v==null?'<div class="muted">거래 — 미수집(지방)</div>'
         :`<div class="muted">거래 ${d.v}건${_vx?` · <span class="vctx ${_vx.cls}">${_vx.full}</span>`:""}</div>`;
       tip.innerHTML=`<div style="font-weight:800;margin-bottom:4px">${d.n}</div><div class="muted">매매 <span class="${cls(d.mm)}">${fmtP(d.mm)}</span> · 전세 <span class="${cls(d.js)}">${fmtP(d.js)}</span></div>${vline}<div class="muted">전세가율 ${d.jr==null?"-":d.jr+"%"}</div><div class="muted" style="font-size:10px;margin-top:3px;color:#A9AB9F">매매·전세·전세가율 월간(전월대비) · 거래 주간</div>`;
       tip.style.opacity="1";tip.style.transform="translateY(0)";
       const _hf=Math.sqrt(_vb[2]*_vb[3]/Math.max(1,_paths.length))*0.20;
-      hl.setAttribute("x",d.cx);hl.setAttribute("y",d.cy);hl.setAttribute("font-size",_hf.toFixed(1));hl.setAttribute("stroke-width",(_hf*0.22).toFixed(1));hl.textContent=d.sl;hl.style.opacity="1";};
-    p.onmouseleave=()=>{p.style.stroke="#fff";p.style.strokeWidth=".7";tip.style.opacity="0";hl.style.opacity="0";};});
+      hl.setAttribute("x",d.cx);hl.setAttribute("y",d.cy);hl.setAttribute("font-size",_hf.toFixed(1));hl.setAttribute("stroke-width",(_hf*0.22).toFixed(1));hl.textContent=d.sl;hl.style.opacity="1";
+      document.querySelectorAll("#mxBody tr").forEach(tr=>tr.classList.toggle("hi",tr.getAttribute("data-n")===d.n));};
+    p.onmouseleave=()=>{if(_pinned)return;p.style.stroke="#fff";p.style.strokeWidth=".7";tip.style.opacity="0";hl.style.opacity="0";
+      document.querySelectorAll("#mxBody tr").forEach(tr=>tr.classList.remove("hi"));};
+    p.onclick=()=>_hiRegion(d.n,true,true);});   // 지도 클릭도 고정 토글
   area.onmousemove=e=>{const b=area.getBoundingClientRect();let x=e.clientX-b.left,y=e.clientY-b.top;
     let tx=x+14,ty=y+14;if(tx>b.width-176)tx-=190;if(ty>b.height-96)ty-=104;tip.style.left=tx+"px";tip.style.top=ty+"px";};
   area.onmouseleave=()=>{tip.style.opacity="0";hl.style.opacity="0";};}
@@ -325,9 +390,36 @@ function drawTable(){const rows=_paths.length?_paths:pathsOf(region);
     const _vx=volCtx(d);
     const vcell=d.v==null?'<span class="muted">–</span>'
       :`<span class="cnt">${d.v.toLocaleString()}</span>${_vx?` <span class="vctx ${_vx.cls}" style="font-size:10px">${_vx.bare}</span>`:""}`;
-    return `<tr><td>${d.n}</td><td><span class="dl ${cls(d.mm)}">${fmtP(d.mm)}</span></td>`
-      +`<td><span class="dl ${cls(d.js)}">${fmtP(d.js)}</span></td><td>${vcell}</td>`
-      +`<td>${d.jr==null?"-":d.jr+"%"}</td></tr>`;}).join("");}
+    return `<tr data-n="${d.n}"><td>${d.n}</td><td><span class="dl ${cls(d.mm)}">${fmtP(d.mm)}</span></td>`
+      +`<td><span class="dl ${cls(d.js)}">${fmtP(d.js)}</span></td><td class="col-v">${vcell}</td>`
+      +`<td class="col-jr">${d.jr==null?"-":d.jr+"%"}</td></tr>`;}).join("");
+  // 테이블 행 → 지도 하이라이트(양방향). 클릭·hover 모두 지원.
+  document.querySelectorAll("#mxBody tr").forEach(tr=>{
+    const nm=tr.getAttribute("data-n");
+    tr.onmouseenter=()=>_hiRegion(nm,true);
+    tr.onmouseleave=()=>_hiRegion(nm,false);
+    tr.onclick=()=>_hiRegion(nm,true,true);   // 클릭=고정 하이라이트 토글
+  });}
+// 지도 도형 ↔ 테이블 행 공통 하이라이트. on=강조, pin=클릭 고정.
+let _pinned=null;
+function _hiRegion(nm,on,pin){
+  if(pin){ if(_pinned===nm){on=false;_pinned=null;} else {_pinned=nm;} }
+  else if(_pinned) return;   // 고정된 게 있으면 hover 무시
+  const svg=document.getElementById("big");if(!svg)return;
+  const tip=document.getElementById("tip"),hl=svg.querySelector("#hoverLabel");
+  const pg=svg.querySelector("#paths");
+  svg.querySelectorAll("path.dist").forEach(p=>{
+    const d=_paths[+p.dataset.i];
+    if(d&&d.n===nm){
+      if(on){p.style.stroke="#7E9A83";p.style.strokeWidth="1.9";if(pg)pg.appendChild(p);
+        if(hl){const _hf=Math.sqrt(_vb[2]*_vb[3]/Math.max(1,_paths.length))*0.20;
+          hl.setAttribute("x",d.cx);hl.setAttribute("y",d.cy);hl.setAttribute("font-size",_hf.toFixed(1));
+          hl.setAttribute("stroke-width",(_hf*0.22).toFixed(1));hl.textContent=d.sl;hl.style.opacity="1";}}
+      else{p.style.stroke="#fff";p.style.strokeWidth=".7";if(hl)hl.style.opacity="0";}
+    }
+  });
+  document.querySelectorAll("#mxBody tr").forEach(tr=>{
+    tr.classList.toggle("hi",on&&tr.getAttribute("data-n")===nm);});}
 
 function trendOf(r){if(SUDO.has(r))return TREND[r]||{};const o=(LOCAL[r]||{}).others||{};return{sale:o.sale,jeonse:o.jeonse};}
 function sliceP(a){const wk=SUDO.has(region);const n=period==="1y"?(wk?52:12):period==="3y"?(wk?156:36):1e9;return (a||[]).slice(-n);}
@@ -442,7 +534,8 @@ function updateNote(){const ph=!SUDO.has(region);
     ?"인천·부산·대구는 구별 KB 월간 가격지수 · 지도 형태는 예시 배치(실제 구 경계 아님) · 거래(실거래)는 지방 미수집(–) · 군·섬 지역 제외"
     :"우상단 미니 한반도/칩으로 지역 이동 · 시군구는 표본 작아 주간 거래 변동 큼")
     +" · 매매·전세Δ=KB 월간 가격지수 전월대비, 전세가율=KB 월간, 거래=주간 실거래(평소比=현재주 vs 최근2개월 주당 평균·현재주 제외, 신고지연으로 참고용) · 추이=KB 지수("
-    +(ph?"월간":"수도권 주간·지방 월간")+", 2022.1.10=100)";}
+    +(ph?"월간":"수도권 주간·지방 월간")+", 2022.1.10=100)"
+    +" · 색=상대(표시 지역 순위 분위, 국면 무관 변별) 또는 절대(고정 임계값, 시장 온도) — 좌상단 토글";}
 
 function refresh(){drawChips();drawNav();drawLegend();drawMap();drawTable();fitTrendHeight();updateNote();document.getElementById("crName").textContent=RNAME[region];
   document.getElementById("phbadge").hidden=SUDO.has(region);}
@@ -460,6 +553,7 @@ document.querySelectorAll("#cmpTog button").forEach(b=>b.onclick=()=>{document.q
   if(cmpMode)drawCmpChips();drawTrend();});
 document.querySelectorAll("#cmpMet button").forEach(b=>b.onclick=()=>{document.querySelectorAll("#cmpMet button").forEach(x=>x.classList.remove("on"));b.classList.add("on");cmpMet=b.dataset.m;drawCompare();});
 document.querySelectorAll("#metricPills button").forEach(b=>b.onclick=()=>{document.querySelectorAll("#metricPills button").forEach(x=>x.classList.remove("on"));b.classList.add("on");metric=b.dataset.m;drawLegend();drawMap();drawTable();});
+document.querySelectorAll("#scaleTog button").forEach(b=>b.onclick=()=>{document.querySelectorAll("#scaleTog button").forEach(x=>x.classList.remove("on"));b.classList.add("on");scaleMode=b.dataset.s;drawMap();drawLegend();});
 document.getElementById("back").onclick=()=>setRegion("seoul");
 refresh();
 setTimeout(fitTrendHeight,220);setTimeout(fitTrendHeight,750);   // 폰트·레이아웃 안정 후 재맞춤
