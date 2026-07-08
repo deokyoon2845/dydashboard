@@ -842,6 +842,8 @@ __MKH_MOOD__
 .op-card .d{font-size:11px;color:var(--muted,#9a9b92);line-height:1.55;}
 .op-card .stk{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px;}
 .op-card .stk span{font-size:10px;font-weight:600;color:var(--pill-ink,#5d6258);background:var(--summary-bg,#F6F7F2);border:1px solid var(--line,#ECEDE7);border-radius:7px;padding:2px 7px;}
+/* 모바일: 시그널 카드는 상위 2개만(3번째 이후 숨김) — 세로 스크롤 절약 */
+@media (max-width:640px){ .op-cards .op-card:nth-child(n+3){display:none;} }
 /* 앵커 점프 시 섹션 배너가 화면 최상단에 붙지 않도록 여유 + 부드러운 스크롤 */
 .sect-banner{scroll-margin-top:4.2rem;}
 html{scroll-behavior:smooth;}
@@ -997,15 +999,32 @@ def _render_market_head():
 # ── 지수 현황 탭 ──
 def render_indices():
     # 표준 크롬(tab_header) — 출처·지연 안내는 각 섹션 헤더의 ⓘ 배지에 있음(캡션 없음).
-    tab_header("주요 지수 현황")
- 
+    # 헤더 + 새로고침(아이콘만) — 같은 줄 우측(A안 st.columns). 기존 '🔄 새로고침'
+    # 글자 버튼(본문 중간)을 제거하고 헤더 우측 정사각 아이콘 버튼으로 승격.
+    # ※ st.columns는 모바일에서 세로 적층이 기본 → keyed 컨테이너에 nowrap을 걸어
+    #   좁은 화면에서도 [제목 | 🔄]이 한 줄을 유지하게 한다.
+    st.markdown(
+        '<style>'
+        '.st-key-idx_head div[data-testid="stHorizontalBlock"]'
+        '{flex-wrap:nowrap !important;align-items:center}'
+        '.st-key-idx_head div[data-testid="stHorizontalBlock"]>div{min-width:0}'
+        '.st-key-idx_refresh button{width:44px;height:40px;padding:0;'
+        'border-radius:10px;font-size:16px;line-height:1}'
+        '.st-key-idx_refresh{display:flex;justify-content:flex-end}'
+        '</style>'
+        '<div class="accent-bar"></div>', unsafe_allow_html=True)
+    with st.container(key="idx_head"):
+        _hcol, _bcol = st.columns([8, 1])
+        with _hcol:
+            st.title("주요 지수 현황")
+        with _bcol:
+            if st.button("🔄", key="idx_refresh", help="지수 데이터 새로고침"):
+                st.cache_data.clear()
+                st.rerun()
+
     # '오늘의 한 장' — 헤드라인·스파인·시그널·합의/이견 + 섹션 내비 (본문보다 먼저)
     _render_market_head()
- 
-    if st.button("🔄 새로고침"):
-        st.cache_data.clear()
-        st.rerun()
- 
+
     has_frag = hasattr(st, "fragment")
     market_open = is_kr_market_open()
     every = 600 if (has_frag and market_open) else None
