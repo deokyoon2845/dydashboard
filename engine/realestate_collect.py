@@ -1316,6 +1316,28 @@ def _norm_apt(s):
     s = re.sub(r"\(.*?\)", "", str(s or ""))
     s = s.replace("아파트", "")
     return re.sub(r"[\s\-_·.]", "", s).strip().lower()
+
+
+def _apt_aliases(s):
+    """단지명 정규화 별칭 집합 — RTMS가 '가락(헬리오시티)'·'송파헬리오시티'처럼
+    괄호나 접두 지역명을 붙여 반환할 때도 유니버스명과 매칭되도록 여러 변형을 만든다.
+    반환: 정규화된 별칭 set(최소 1개 = _norm_apt 결과). 매칭 인덱스 구축·조회 양쪽에서
+    같은 함수를 써서 교집합이 있으면 매칭 성공으로 본다.
+      · 기본형: 괄호 제거 후 정규화(_norm_apt)
+      · 괄호 안 내용이 2자 이상이면 그것도 별칭(예: '가락(헬리오시티)'→'헬리오시티')
+      · 접두 시군구/구명(송파·강남 등 2~3자)이 붙은 경우 제거 변형도 추가"""
+    raw = str(s or "")
+    out = set()
+    base = _norm_apt(raw)
+    if base:
+        out.add(base)
+    # 괄호 안 내용(동·차수 아닌 '실단지명'인 경우) — 한글 2자 이상만
+    for inner in re.findall(r"\(([^)]*)\)", raw):
+        ni = re.sub(r"[\s\-_·.]", "", inner.replace("아파트", "")).strip().lower()
+        # '1차'·'102동' 같은 동/차수 토큰은 제외(숫자 포함이면 스킵)
+        if len(ni) >= 2 and not re.search(r"\d", ni):
+            out.add(ni)
+    return out or {base}
  
  
 # 확실한 대단지(≥1,000세대) — API 매칭 실패/미승인 시 폴백·보강
@@ -2357,6 +2379,8 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
     stats = {"ok": 0, "fail": 0, "rows": 0, "calls": 0, "empty200": 0,
              "http": {}, "last_err": ""}
     agg = {}
+    board_idx = {}   # 지역 보드용 — 주목단지 필터(최근30일 2건+·3개월 6건+) 미통과라도
+    #                 3개월 거래만 있으면 pavg/last_deal/chg를 담는다(무거래 오표시 방지).
     # 스윕 지역 = 수도권(SIGUNGU_CODES) + 유니버스 확장(인천 송도·청라 — 남양주는 기존).
     #   확장 지역도 chg(30일比)·pavg(평형별 3개월 평균)를 얻어 지역 보드에 실린다.
     #   지도·거래량 지표는 이 스윕과 무관(별도 함수)이라 '수도권' 정의는 불변.
@@ -2373,7 +2397,30 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
             per.setdefault(r["apt"], []).append(r)
         for apt, rs in per.items():
             rec = [r for r in rs if r["date"] >= recent0]
-            if len(rs) < HOT_MIN_FREQ or len(rec) < 2:        # 소형/저활동 제외
+            # ── 지역 보드용(느슨): 3개월 거래가 하나라도 있으면 집계해 board_idx에 담는다.
+            #    최근 30일 거래 유무·건수와 무관 — 헬리오시티처럼 3개월 내 거래는 있으나
+            #    최근 30일 활동이 적은 대단지가 '거래 없음'으로 오표시되던 문제를 고친다.
+            b_prev = [r for r in rs if r["date"] < recent0]
+            b_rec_ppa = (statistics.median([r["ppa"] for r in rec]) if rec
+                         else statistics.median([r["ppa"] for r in rs]))
+            b_prev_ppa = (statistics.median([r["ppa"] for r in b_prev])
+                          if b_prev else b_rec_ppa)
+            b_chg = (round((b_rec_ppa / b_prev_ppa - 1) * 100, 1)
+                     if b_prev_ppa else 0.0)
+            _bp = _area_avgs(rs)
+            _bentry = {
+                "chg": b_chg,
+                "last_deal": max(r["date"] for r in rs).isoformat(),
+                "pavg": _bp,
+                "alerts": _price_alerts(rs, _bp),
+                "p59": _recent_price_in_band(rs, 49.0, 63.0),
+                "p84": _recent_price_in_band(rs, 74.0, 90.0),
+                "price": statistics.median([r["price"] for r in rs]),
+                "_rows": rs,
+            }
+            for al in _apt_aliases(apt):
+                board_idx.setdefault((name, al), _bentry)
+            if len(rs) < HOT_MIN_FREQ or len(rec) < 2:        # 소형/저활동 제외(주목단지 전용)
                 continue
             prev = [r for r in rs if r["date"] < recent0]
             rec_ppa = statistics.median([r["ppa"] for r in rec])
@@ -2456,21 +2503,43 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
     # 시총 리더 출력(독립 dict) — ranked의 _rows 제거 전에 먼저 만든다.
     cap_leaders = []
     if with_cap and uni_cap:
-        # 오늘 스윕(agg) 정규화 인덱스 — 유니버스 단지에 최신가/㎡가/면적/행 매칭
-        agg_norm = {(gu, _norm_apt(apt)): v for (gu, apt), v in agg.items()}
+        # 오늘 스윕(agg) 별칭 인덱스 — 유니버스 단지에 최신가/㎡가/면적/행 매칭.
+        #   RTMS '가락(헬리오시티)'·'송파헬리오시티' 등 변형도 잡도록 별칭 다중 등록.
+        agg_norm = {}
+        for (gu, apt), v in agg.items():
+            for al in _apt_aliases(apt):
+                agg_norm.setdefault((gu, al), v)
         for d in uni_cap["flat"]:
             units = d.get("units")
             if not units:
                 continue
-            a = agg_norm.get((d["gu"], _norm_apt(d["apt"])))
-            price = (a.get("price") if a else None) or d.get("price")
+            _ual = _apt_aliases(d["apt"])
+            a = next((agg_norm[(d["gu"], al)] for al in _ual
+                      if (d["gu"], al) in agg_norm), None)
+            # 지역 보드용 폴백 — agg(주목단지 필터) 미통과라도 3개월 거래가 있으면
+            # board_idx에서 pavg/last_deal/chg/평형가를 가져와 '거래 없음' 오표시를 막는다.
+            b = next((board_idx[(d["gu"], al)] for al in _ual
+                      if (d["gu"], al) in board_idx), None)
+            price = (a.get("price") if a else None) or (b.get("price") if b else None) \
+                or d.get("price")
             if not price:
                 continue
-            rs = (a.get("_rows") if a else None) or []
+            rs = (a.get("_rows") if a else None) or (b.get("_rows") if b else None) or []
             p59 = (_recent_price_in_band(rs, 49.0, 63.0) if rs else None) or d.get("p59")
             p84 = (_recent_price_in_band(rs, 74.0, 90.0) if rs else None) or d.get("p84")
             cap_manwon = price * units
             area = d.get("area")
+            # chg/last_deal/pavg/alerts — agg 우선, 없으면 board_idx(3개월), 그래도 없으면 유니버스
+            _chg = (a.get("chg") if a else None)
+            if _chg is None and b:
+                _chg = b.get("chg")
+            _pavg = (_area_avgs(rs) if rs else None)
+            if _pavg is None and b:
+                _pavg = b.get("pavg")
+            _last = (max(r["date"] for r in rs).isoformat() if rs
+                     else (b.get("last_deal") if b else d.get("last_deal")))
+            _alerts = _price_alerts(rs, _pavg) if (rs and _pavg) else (
+                b.get("alerts") if b else None)
             cap_leaders.append({
                 "apt": d["apt"], "gu": d["gu"], "sd": d.get("sd"),
                 "units": units, "builder": d.get("builder"),
@@ -2483,13 +2552,12 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
                 "dong": d.get("dong") or "",
                 "addr": (d["gu"] + " " + (d.get("dong") or "")).strip(),
                 "jr": d.get("jr"), "gap_eok": d.get("gap"),   # 전세가율·갭은 유니버스에서
-                "fresh": bool(a),                              # 최근3개월 거래 있음(최신가)
+                "fresh": bool(a or b),                         # 최근3개월 거래 있음(최신가)
                 # ── 지역 보드('지역' 서브탭) 재료 — 같은 스윕 재사용(추가 콜 0) ──
-                "chg": (a.get("chg") if a else None),          # 최근30일 vs 이전 평단가 등락%
-                "last_deal": (max(r["date"] for r in rs).isoformat() if rs
-                              else d.get("last_deal")),        # 최근 거래일(무거래 시 유니버스)
-                "pavg": (pavg := _area_avgs(rs)),              # 평형별 3개월 평균가(억)
-                "alerts": _price_alerts(rs, pavg),             # 평균 ±5% 괴리 거래(30일)
+                "chg": _chg,                                   # 최근30일 vs 이전 평단가 등락%
+                "last_deal": _last,                            # 최근 거래일(무거래 시 유니버스)
+                "pavg": _pavg,                                 # 평형별 3개월 평균가(억)
+                "alerts": _alerts,                             # 평균 ±5% 괴리 거래(30일)
             })
         cap_leaders.sort(key=lambda c: c["cap_manwon"], reverse=True)
     elif with_cap:
