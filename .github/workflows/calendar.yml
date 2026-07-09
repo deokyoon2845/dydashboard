@@ -1,0 +1,91 @@
+name: 실적·IR 캘린더 수집 (일일)
+
+# ──────────────────────────────────────────────────────────────────────────
+#  DART 공시에서 잠정실적발표·IR(실적발표/경영현황) 일정을 수집해 Supabase
+#  (engine_cache: cal_disclosures)에 저장한다. 뷰어(modules/calendar_view.py)의
+#  '다가오는 주요 일정' 달력이 이 캐시를 읽어 칩으로 표시한다.
+#  · 12:40·18:40 KST(평일) 2슬롯 — IR 공시는 장중, 잠정실적은 장중·마감후 나오므로
+#    점심·저녁 두 번 수집. rcept_no 병합이 멱등을 보장해 중복 걱정 없음.
+#  · 대상 종목: 시총 상위 200 ∪ 주도주 ∪ 워치리스트 (CAL_TOP_N으로 조정 가능)
+#  · 최초 1회 백필: Run workflow에서 lookback=30으로 수동 실행 권장.
+#  ※ 별도 테이블 불필요 — 기존 engine_cache 사용.
+# ──────────────────────────────────────────────────────────────────────────
+
+on:
+  schedule:
+    - cron: '40 3,9 * * 1-5'   # 03:40·09:40 UTC = 12:40·18:40 KST (평일)
+  workflow_dispatch:
+    inputs:
+      lookback:
+        description: '공시 조회 기간(일) — 최초 백필은 30 권장'
+        required: false
+        default: '3'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: calendar-collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v5
+
+      - name: 필수 시크릿 점검
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+        shell: bash
+        run: |
+          missing=""
+          for v in SUPABASE_URL SUPABASE_KEY DART_API_KEY; do
+            if [ -z "${!v}" ]; then missing="$missing $v"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::필수 시크릿이 비어 있습니다 →$missing"
+            exit 1
+          fi
+          echo "✅ 필수 시크릿 확인 — 수집 단계로 진행합니다."
+
+      - name: 파이썬 설정
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: 라이브러리 설치
+        run: pip install -r requirements.txt
+
+      - name: 실적·IR 캘린더 수집 → Supabase 저장
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
+          MOLIT_API_KEY: ${{ secrets.MOLIT_API_KEY }}
+          CAL_LOOKBACK_DAYS: ${{ github.event.inputs.lookback || '3' }}
+        run: python -m engine.calendar_collect
+
+      # ── 실패 시 텔레그램 알림(조용한 실패 방어) — curl만 사용해 pip 실패에도 동작 ──
+      - name: 실패 시 텔레그램 알림
+        if: failure()
+        shell: bash
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "텔레그램 시크릿 없음 — 알림 건너뜀"; exit 0
+          fi
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          TEXT=$(printf '⚠️ <b>%s</b> 실패\n실행 로그: %s' "${{ github.workflow }}" "$RUN_URL")
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${TEXT}" \
+            -d "parse_mode=HTML" -d "disable_web_page_preview=true" >/dev/null || true
+          echo "실패 알림 발송 시도 완료"
