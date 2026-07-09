@@ -26,7 +26,11 @@ _WD_HEAD = ["일", "월", "화", "수", "목", "금", "토"]
 _MAX_MONTH_AHEAD = 2   # 이번 달 + 2개월까지 탐색
 _MAX_MONTH_BACK = 2    # 이번 달 - 2개월까지 탐색 (지난 일정 확인용)
 _PAST_DAYS = 120       # 지난 일정 로드 범위 (달력에서 과거 칸 채우기용)
-_MAX_CHIPS = 3         # 날짜 칸당 최대 칩 수 — 초과분은 '+N'으로 접기
+_MAX_CHIPS = 7         # 날짜 칸당 최대 칩 수 — 초과분은 '+N'으로 접기(8개째부터)
+
+# 칸 안 칩 정렬 우선순위: 거시지표(미국·한국·기타 공식 고정일정) → 실적 → IR.
+# 같은 그룹 안에서는 이름순. 숫자가 작을수록 위로 온다.
+_CAT_ORDER = {"미국": 0, "한국": 0, "기타": 0, "실적": 1, "IR": 2}
 
 # DART 공시 kind → 달력 표기 (엔진 engine/calendar_collect.py의 kind와 일치해야 함)
 _DART_KIND = {
@@ -45,7 +49,7 @@ _CAL_CSS = """
 .calm-wd{font-size:10px;font-weight:700;color:var(--muted,#9a9b92);text-align:center;padding:2px 0 4px;}
 .calm-wd.sun{color:var(--up,#B65F5A);} .calm-wd.sat{color:var(--down,#5A7CA0);}
 .calm-cell{position:relative;min-height:52px;border:1px solid var(--line,#ECEDE7);border-radius:7px;padding:3px 4px;
-  background:var(--card,#fff);overflow:hidden;}
+  background:var(--card,#fff);overflow-x:hidden;}
 .calm-cell.calm-empty{border:none;background:transparent;}
 .calm-cell.calm-past{opacity:.45;}
 /* 오늘: 빨간 동그라미 테두리 + Today 뱃지 */
@@ -152,8 +156,16 @@ def _chip_html(ev) -> str:
     return f'<span class="calm-chip {cls}" title="{tip}">{name}</span>'
 
 
+def _sort_chips(evs) -> list:
+    """칸 안 칩 정렬: 거시지표 → 실적 → IR, 그룹 내 이름순.
+    _CAT_ORDER에 없는 카테고리는 맨 뒤(9)로."""
+    return sorted(evs, key=lambda e: (_CAT_ORDER.get(e.get("category", ""), 9),
+                                      str(e.get("name", ""))))
+
+
 def _chips_html(evs) -> str:
-    """칩 렌더 — 칸당 _MAX_CHIPS개까지, 초과분은 '+N' 칩(툴팁에 목록)."""
+    """칩 렌더 — 정렬 후 칸당 _MAX_CHIPS개까지, 초과분은 '+N' 칩(툴팁에 목록)."""
+    evs = _sort_chips(evs)
     if len(evs) <= _MAX_CHIPS:
         return "".join(_chip_html(ev) for ev in evs)
     head = "".join(_chip_html(ev) for ev in evs[:_MAX_CHIPS - 1])
