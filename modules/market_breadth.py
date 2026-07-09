@@ -199,9 +199,7 @@ def fetch_breadth(market_label: str):
 def _fmt_value(eok) -> str:
     if eok is None:
         return "—"
-    if eok >= 10000:
-        return f"{eok:,}억 ({eok/10000.0:,.1f}조)"
-    return f"{eok:,}억"
+    return f"{eok/10000.0:,.1f}조"
 
 
 def _breadth_bar_html(adv, flat, dec):
