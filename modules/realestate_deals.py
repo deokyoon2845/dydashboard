@@ -1865,7 +1865,9 @@ _MBT_CSS = """<style>
 
 
 def _mbt_dir(hi, lo):
-    """상승압력(신고÷(신고+신저))으로 방향 배지·색·퍼센트 산출 — 3밴드와 동일 규칙."""
+    """(구) 신고/신저 건수 비율 단독 방향 판정 — 종합 판정(_mbt_dir2) 도입 후 미사용.
+    표본이 적을 때(예: 1/3) 외곽 단지 신저가 1건이 시장 전체를 '하락 우세'로
+    뒤집는 문제가 있어 보존만 해둠(호환·비교 검증용)."""
     tot = hi + lo
     pct = round(hi / tot * 100) if tot else 50
     if pct >= 60:
@@ -1875,10 +1877,49 @@ def _mbt_dir(hi, lo):
     return "혼조", "◆", "#7E9A83", pct
 
 
+# ── 종합 방향 판정 파라미터 — 체감과 다르면 여기만 조정 ─────────────────
+_MBT_SMOOTH_K = 3      # 라플라스 스무딩 강도: 표본 적을수록 압력이 50%로 수렴
+_MBT_FULL_N = 10       # 신고/신저 합이 이 건수 이상이면 압력 신호를 완전 신뢰
+_MBT_AVG_SAT = 5.0     # 활발단지 평균변동 ±이 %에서 신호 포화(-1~+1 클립)
+_MBT_TH = 0.15         # 종합 점수 판정 임계: ≥+TH 상승 우세 / ≤−TH 하락 우세
+
+
+def _mbt_score(hi, lo, avg):
+    """종합 방향 점수(-1~+1)와 표시용 원(raw) 상승압력% 산출.
+
+    ① 압력 신호 = 라플라스 스무딩 (hi+K)/(hi+lo+2K) → -1~+1
+       (표본이 적을수록 자동으로 중립 쪽으로 수렴 — 1/3이면 40%가 아닌 완만한 값)
+    ② 평균변동 신호 = 활발단지 평균변동을 ±SAT%에서 포화시켜 -1~+1
+    ③ 표본 신뢰도 w = min(1, (hi+lo)/FULL_N) 로 두 신호를 가중 결합
+       → 신고/신저 표본이 적으면 거래 활발 단지의 실제 가격 흐름이 판정을 주도.
+    avg가 없으면 압력 신호 단독. 반환 (score, raw_pct)."""
+    tot = hi + lo
+    raw_pct = round(hi / tot * 100) if tot else 50
+    sm = (hi + _MBT_SMOOTH_K) / (tot + 2 * _MBT_SMOOTH_K)
+    p_sig = (sm - 0.5) * 2.0
+    if avg is None:
+        return p_sig, raw_pct
+    a_sig = max(-1.0, min(1.0, avg / _MBT_AVG_SAT))
+    w = min(1.0, tot / _MBT_FULL_N)
+    return w * p_sig + (1.0 - w) * a_sig, raw_pct
+
+
+def _mbt_dir2(hi, lo, avg=None):
+    """종합 방향 배지 — 신고/신저 균형(스무딩)과 활발단지 평균변동을 표본가중 결합.
+    반환 (라벨, 화살표, 색, raw상승압력%, 종합점수)."""
+    score, pct = _mbt_score(hi, lo, avg)
+    if score >= _MBT_TH:
+        return "상승 우세", "▲", "#B65F5A", pct, score
+    if score <= -_MBT_TH:
+        return "하락 우세", "▼", "#5A7CA0", pct, score
+    return "혼조", "◆", "#7E9A83", pct, score
+
+
 def _mbt_row(period, sub, s):
-    """비교표 1행 — 기간 · 방향 · 상승압력바 · 신고/신저 · 거래활발 · 활발단지 평균변동."""
+    """비교표 1행 — 기간 · 방향(종합 판정) · 상승압력바(원자료) · 신고/신저 · 거래활발 ·
+    활발단지 평균변동. 배지는 종합 판정, 압력%·건수는 가공 없는 원자료 유지."""
     hi, lo, act, avg = s["hi"], s["lo"], s["act"], s["avg"]
-    dlabel, arrow, dcol, pct = _mbt_dir(hi, lo)
+    dlabel, arrow, dcol, pct, _sc = _mbt_dir2(hi, lo, avg)
     if avg is None:
         gain = '<span class="mbt-mut">–</span>'
     else:
@@ -1922,29 +1963,40 @@ def _render_market_bands():
     if not rows:
         return
 
-    # 헤드라인: '오늘' 우선, 없으면 주간→월간 폴백. 대표 방향·상승압력만 크게.
+    # 헤드라인: '오늘' 우선, 없으면 주간→월간 폴백. 종합 판정(압력+평균변동)을 크게.
     head = t or w or m
     _hn = "오늘" if t else ("주간" if w else "월간")
-    dlabel, arrow, dcol, pct = _mbt_dir(head["hi"], head["lo"])
+    _avg = head.get("avg")
+    dlabel, arrow, dcol, pct, _score = _mbt_dir2(head["hi"], head["lo"], _avg)
     _href = head.get("latest")
     _hdate = (f"{_href.month}.{_href.day} 최신거래 기준" if _href
               else "최신 스냅샷 기준")
-    # 상승압력과 활발단지 평균변동이 어긋날 때(예: 압력↓·평균변동↑) 오해를 막는 한 줄.
-    _avg = head.get("avg")
+    _tot = head["hi"] + head["lo"]
+    _scstr = f'{"+" if _score >= 0 else "−"}{abs(_score):.2f}'
+    # 압력(신고/신저)과 평균변동의 방향이 어긋날 때 — 어느 신호가 판정을 주도했는지 설명.
     if _avg is not None and ((pct <= 40 and _avg > 0) or (pct >= 60 and _avg < 0)):
-        _hint = ("극단 거래(신고·신저)는 <b style='color:%s'>%s</b> 쪽이지만, "
-                 "거래 활발한 단지 평균은 %s%.1f%% — 두 신호가 엇갈리는 국면."
-                 % (dcol, dlabel.replace(" 우세", ""),
-                    "+" if _avg >= 0 else "", _avg))
+        _pside = "하락" if pct <= 40 else "상승"
+        _pcol = "#5A7CA0" if pct <= 40 else "#B65F5A"
+        _avgs = ("+" if _avg >= 0 else "") + f"{_avg:.1f}%"
+        if _tot < _MBT_FULL_N:      # 표본 부족 → 평균변동이 판정 주도
+            _hint = ("극단 거래(신고·신저)는 <b style='color:%s'>%s</b> 쪽이지만 표본이 "
+                     "%d건으로 적어, 거래 활발한 단지 평균 %s를 함께 반영해 "
+                     "<b style='color:%s'>%s</b>로 종합 판정."
+                     % (_pcol, _pside, _tot, _avgs, dcol, dlabel))
+        else:                       # 표본 충분 → 압력이 판정 주도
+            _hint = ("거래 활발한 단지 평균은 %s지만, 신고·신저 표본(%d건)이 충분해 "
+                     "극단 거래 균형대로 <b style='color:%s'>%s</b>로 종합 판정."
+                     % (_avgs, _tot, dcol, dlabel))
     else:
-        _hint = "상승압력=신고가 비중 · 활발단지 평균변동=거래 많은 단지의 평균 가격 변화"
+        _hint = ("판정=신고/신저 균형(표본 보정)과 활발단지 평균변동의 표본가중 종합 · "
+                 "상승압력=신고가 비중(원자료)")
 
     head_html = (
         f'<div class="mbt-head">'
         f'<div class="lab"><b>{_hn}</b> 아파트 시장<br>{_hdate}</div>'
         f'<div class="dir"><span class="ar" style="color:{dcol}">{arrow}</span>'
         f'<span class="t">{dlabel}</span>'
-        f'<span class="p" style="color:{dcol}">상승압력 {pct}%</span></div>'
+        f'<span class="p" style="color:{dcol}">종합 {_scstr}</span></div>'
         f'<div class="hint">{_hint}</div>'
         # 모바일 전용(시안 B): 힌트를 ⓘ접기로 — 데스크톱에선 숨김(.mbt-hintm)
         f'<details class="mbt-hintm"><summary>신호 해석</summary>'
@@ -1962,7 +2014,10 @@ def _render_market_bands():
                 unsafe_allow_html=True)
     st.markdown(foot_row(
         "특이거래 기준과 동일 집계",
-        "상승압력=신고가÷(신고가+신저가) · 표준 민감도·직거래 제외 · "
+        "방향 판정=종합 점수(-1~+1): 신고/신저 균형을 라플라스 보정(k=3)해 표본이 "
+        "적을수록 중립 수렴 · 표본 신뢰도 w=min(1, 건수/10)로 활발단지 평균변동"
+        "(±5% 포화)과 가중 결합 · |점수|≥0.15면 상승/하락 우세, 미만은 혼조 · "
+        "상승압력=신고가÷(신고가+신저가) 원자료 · 표준 민감도·직거래 제외 · "
         "월간·주간 신고/신저=최신 거래일 기준 30일/7일 창 합산(일별 중복 없음) · "
         "거래활발=주목단지 랭킹 단지수(해당 기간 평균) · "
         "활발단지 평균변동=주목단지 평균(신고/신저 균형과 모집단이 다름)"),
