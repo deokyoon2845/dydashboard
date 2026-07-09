@@ -45,6 +45,7 @@ _SAMPLE = {
          "ipo_price": "60,000", "ipo_price_won": 60000, "ipo_return": 4.0,
          "revenue": "1,686억", "op_income": "1,110억", "net_income": "846억",
          "per": 38.5, "pbr": 12.1, "psr": 19.0,
+         "est_per": 21.3, "eps": "2,930", "eps_won": 2930,
          "lockup": "기관 의무보유 확약 41.6%",
          "intro": "서브컬처 게임 ‘니케’·‘스텔라 블레이드’ 개발사.",
          "spark": [60000, 62500, 58000, 55500, 57800, 61200, 63400, 60100, 59000, 62400]},
@@ -115,8 +116,8 @@ _CSS = """
   padding:3px 8px;border-radius:6px;flex:none;}
 .dday.soon{background:#C2410C;} .dday.tbd{background:#B7BCB3;} .dday.new{background:var(--up,#B65F5A);}
 /* ── ③ 최근 상장 비교 테이블(A안) — CSS grid 행 ── */
-.ipo-head,.ipo-row{display:grid;gap:8px;align-items:center;
-  grid-template-columns:minmax(148px,1.5fr) 62px 58px 118px 44px 48px 48px 66px 66px 66px;}
+.ipo-head,.ipo-row{display:grid;gap:7px;align-items:center;
+  grid-template-columns:minmax(138px,1.5fr) 58px 54px 110px 42px 50px 44px 44px 58px 60px 60px 60px;}
 .ipo-head{padding:2px 6px 8px;font-size:10px;font-weight:700;color:var(--muted,#9a9b92);
   letter-spacing:.03em;border-bottom:1px solid var(--line,#ECEDE7);}
 .ipo-head span{text-align:right;} .ipo-head span:first-child{text-align:left;}
@@ -581,8 +582,10 @@ def _row_html(s: dict) -> str:
         ret = '<div class="retcell"><span class="na">—</span></div>'
 
     per = f'<div class="num">{_per_cell(s)}</div>'
+    eper = f'<div class="num">{_val_num(s.get("est_per"), "{:.1f}")}</div>'
     pbr = f'<div class="num">{_val_num(s.get("pbr"), "{:.2f}")}</div>'
     psr = f'<div class="num">{_val_num(s.get("psr"), "{:.2f}")}</div>'
+    eps = f'<div class="num">{_amt_num(s.get("eps"))}</div>'
     rev = f'<div class="num">{_amt_num(s.get("revenue"))}</div>'
     op = f'<div class="num">{_amt_num(s.get("op_income"))}</div>'
     net = f'<div class="num">{_amt_num(s.get("net_income"))}</div>'
@@ -593,8 +596,11 @@ def _row_html(s: dict) -> str:
     mband = ('<div class="mband">'
              + _chip("상장", f"<b>{html.escape(listed[2:] if len(listed)==10 else listed)}</b>")
              + _chip("시총", f"<b>{html.escape(str(s.get('cap','-')))}</b>")
-             + _chip("PER", _per_cell(s)) + _chip("PBR", _val_num(s.get("pbr"), "{:.2f}"))
+             + _chip("PER", _per_cell(s))
+             + _chip("추정PER", _val_num(s.get("est_per"), "{:.1f}"))
+             + _chip("PBR", _val_num(s.get("pbr"), "{:.2f}"))
              + _chip("PSR", _val_num(s.get("psr"), "{:.2f}"))
+             + _chip("EPS", _amt_num(s.get("eps")))
              + _chip("매출", _amt_num(s.get("revenue")))
              + _chip("영업익", _amt_num(s.get("op_income")))
              + _chip("순익", _amt_num(s.get("net_income")))
@@ -604,7 +610,7 @@ def _row_html(s: dict) -> str:
         '<div class="ipo-row">'
         f'<div class="nmcell"><div class="nm"><a href="{html.escape(item)}" target="_blank" rel="noopener">{nm}</a>{nv}</div>'
         f'<div class="sub">{_mk_chip(s.get("market",""))}{sct}</div></div>'
-        f'{dt}{cap}{ret}{per}{pbr}{psr}{rev}{op}{net}'
+        f'{dt}{cap}{ret}{per}{eper}{pbr}{psr}{eps}{rev}{op}{net}'
         f'{mband}'
         '</div>'
     )
@@ -709,7 +715,8 @@ def render_ipo_tab():
     st.markdown(
         '<div class="ipo-head"><span>종목 · 업종</span>'
         '<span>상장일</span><span>시총</span><span>공모가→현재</span>'
-        '<span>PER</span><span>PBR</span><span>PSR</span>'
+        '<span>PER</span><span>추정PER</span><span>PBR</span><span>PSR</span>'
+        '<span>EPS</span>'
         '<span>매출</span><span>영업이익</span><span>순이익</span></div>',
         unsafe_allow_html=True)
     for s in rows:
@@ -723,6 +730,7 @@ def render_ipo_tab():
 
     st.caption("수익률 = 공모가 대비 현재가(공모가는 DART 파싱 · 실패 종목은 상장일 종가 대비로 폴백 표기). "
                "PER·PBR·PSR·매출·영업이익·순이익은 DART 최근 연간 기준이고 시총은 최신 스냅샷. "
+               "추정PER·EPS(원)는 네이버 증권 컨센서스 — 추정치가 없는 종목은 '—'. "
                "PER '적자'는 순이익 마이너스, '—'는 미수집. 정렬은 상단 필 바(PER은 낮은 순). "
                "향후 일정의 공모가(예정)·청약·납입·주관은 DART 증권신고서 주요정보 기준 — "
                "정정신고로 바뀔 수 있어요. 큰 차트=네이버 일별(약 15분 지연). N 아이콘·종목명=네이버 증권.")
