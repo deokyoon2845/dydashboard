@@ -347,7 +347,7 @@ _INDV2_ORDER = ["buy", "outlook", "lead50", "sale", "jeonse",
 
 
 # 핵심(상단 강조 카드).
-_INDV2_CORE = ("outlook",)  # 매수우위 카드는 거시 6차트(2020~)와 중복이라 제거(2026-07)
+_INDV2_CORE = ("outlook",)  # 핵심 카드 섹션 삭제(2026-07)로 현재 미사용 — 보존
 
 
 # 연결예정 슬롯 — 데이터 소스 자체가 아직 미연결(진짜 '연결예정'). 가짜 데이터 없음.
@@ -952,8 +952,6 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kfont
   </div>
   <div class="sec" id="priceSec" style="display:none">현재 아파트 매매가격</div>
   <div class="price" id="price"></div>
-  <div class="sec">매매가격전망지수 — 월간 기대 심리</div>
-  <div class="core" id="core"></div>
   <div class="foot" id="foot"></div>
 </div>
 <script>
@@ -1116,7 +1114,8 @@ const CORELAB={buy:"매수우위지수",outlook:"매매가격전망지수"};
 function coreMissCard(k){return '<div class="cc cc-miss"><div class="cc-top"><span class="cc-name">'+(CORELAB[k]||k)+'</span>'
  +'<span class="chk-tag">점검 필요</span></div><div class="cc-val">—</div>'
  +'<div class="cc-interp">소스 수집 실패 — 데이터가 들어오면 자동으로 채워집니다.</div></div>';}
-function renderCore(){const host=document.getElementById("core");
+function renderCore(){/* 매매전망 카드 섹션 삭제(2026-07) — 미호출 보존 */
+ const host=document.getElementById("core");if(!host)return;
  host.innerHTML=CORE.map(function(k){const m=byK(k);return m?coreCard(m):coreMissCard(k);}).join("");}
 function renderGroups(){/* 그룹별 지표 섹션 삭제(거시 6차트와 중복) — 미호출 보존 */
  if(!document.getElementById("groups"))return;let html="";
@@ -1223,7 +1222,7 @@ function renderFoot(){const soon=PEND.filter(p=>p.st==="soon");
  let s='미니차트는 최근 1년(가로축 월 단위)';
  if(soon.length)s+=' · 연결예정 '+soon.length+'종('+soon.map(p=>p.lab).join("·")+')';
  document.getElementById("foot").innerHTML=s;}
-renderCycle();renderPrice();renderCore();renderFoot();
+renderCycle();renderPrice();renderFoot();
 (function(){function _fit(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;if(window.frameElement){window.frameElement.style.height=h+"px";window.frameElement.setAttribute("height",h);}}catch(e){}}window.addEventListener("load",_fit);setTimeout(_fit,150);setTimeout(_fit,600);setTimeout(_fit,1500);window.addEventListener("resize",_fit);try{new ResizeObserver(_fit).observe(document.body);}catch(e){}})();
 </script></body></html>'''
 
@@ -1302,13 +1301,10 @@ def _render_indicator_charts(data):
     # 종합 강도 v2 — 6지표 가중(파이썬 사전계산). 거시 미수집이면 빈 배열 → JS 구 방식 폴백.
     _scarr, _v2sig = _v2_score_series(data)
     # 새 레이아웃 기준 높이 산정(클리핑 방지) — 헤더 + (가격블록) + 핵심 + 그룹 행들.
-    _CORE = _INDV2_CORE
-    core_n = len(_CORE)   # 전망 카드(매매전망 단독 — 매수우위는 거시 6차트로 이동)
-    height = (285                      # 사이클 헤더 + 판정근거 칩 + 위치 게이지(강도추이 차트 제거)
+
+    height = (285                      # 사이클 헤더 + 판정근거 칩 + 위치 게이지
               + (60 + len(price) * 210 if price else 0)  # 현재 매매가격 블록(모바일 적층 여유)
-              + 70                      # 매매전망 섹션 라벨
-              + ceil(max(core_n, 1) / 3) * 292   # 전망 카드(미니차트+수위게이지)
-              + 70)                     # 푸터 여유 (그룹별 지표 섹션 삭제 — 2026-07)
+              + 70)                     # 푸터 여유 (그룹·핵심 섹션 삭제 — 2026-07)
     components.html(_indicator_chart_component(ind, pend, price, asof,
                                                _scarr, _v2sig),
                     height=height, scrolling=False)
