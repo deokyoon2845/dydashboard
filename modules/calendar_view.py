@@ -3,6 +3,7 @@
 - 데스크톱: 7열 월간 캘린더 (이벤트 칩을 날짜 칸에 표시, 이전 달~+2개월 탐색)
 - 모바일(640px 이하): 기존 D-day 리스트로 자동 폴백
 - 데이터: engine.calendar_events (고정 일정 + yfinance 실적)
+        + Supabase engine_cache 'cal_disclosures' (DART 잠정실적·IR — engine/calendar_collect.py)
 - 지난 일정도 달력에 표시(흐리게) · 오늘은 빨간 동그라미 + 'Today' 뱃지
 """
 
@@ -17,12 +18,22 @@ import streamlit as st
 from engine.calendar_events import upcoming_events, fetch_next_earnings
 
 _CAL_PATH = Path("data/calendar.json")
-_CAT_CHIP = {"미국": "calm-us", "한국": "calm-kr", "실적": "calm-earn", "기타": "calm-etc"}
-_CAT_CLASS = {"미국": "cal-us", "한국": "cal-kr", "실적": "cal-earn"}  # 모바일 리스트용
+_CAT_CHIP = {"미국": "calm-us", "한국": "calm-kr", "실적": "calm-earn",
+             "IR": "calm-ir", "기타": "calm-etc"}
+_CAT_CLASS = {"미국": "cal-us", "한국": "cal-kr", "실적": "cal-earn",
+              "IR": "cal-earn"}  # 모바일 리스트용 (IR은 실적 스타일 재사용)
 _WD_HEAD = ["일", "월", "화", "수", "목", "금", "토"]
 _MAX_MONTH_AHEAD = 2   # 이번 달 + 2개월까지 탐색
 _MAX_MONTH_BACK = 2    # 이번 달 - 2개월까지 탐색 (지난 일정 확인용)
 _PAST_DAYS = 120       # 지난 일정 로드 범위 (달력에서 과거 칸 채우기용)
+_MAX_CHIPS = 3         # 날짜 칸당 최대 칩 수 — 초과분은 '+N'으로 접기
+
+# DART 공시 kind → 달력 표기 (엔진 engine/calendar_collect.py의 kind와 일치해야 함)
+_DART_KIND = {
+    "earn":    {"category": "실적", "suffix": " 실적"},
+    "ir_earn": {"category": "IR",   "suffix": " IR"},
+    "ir_biz":  {"category": "IR",   "suffix": " IR"},
+}
 
 _CAL_CSS = """
 <style>
@@ -58,20 +69,61 @@ _CAL_CSS = """
 .calm-us{background:var(--tint-down,#F1F5F9);color:#2C5F7C;}
 .calm-kr{background:var(--tint-up,#FBF2F2);color:#B65F5A;}
 .calm-earn{background:var(--summary-bg,#F6F7F2);color:var(--sage-deep,#7E9A83);}
+.calm-ir{background:#F5F1E8;color:#9A8354;}
 .calm-etc{background:var(--pill-bg,#F1F2EC);color:var(--pill-ink,#5d6258);}
+.calm-more{background:transparent;color:var(--muted,#9a9b92);border:1px dashed var(--line,#ECEDE7);}
 .calm-next{font-size:12px;color:var(--muted,#9a9b92);margin:4px 2px 8px;}
 .calm-next b{color:var(--ink,#34352f);}
 </style>
 """
 
 
+def _dart_events(days: int, past_days: int) -> list:
+    """Supabase engine_cache('cal_disclosures')의 DART 잠정실적·IR 이벤트를
+    달력 이벤트 형식({date, name, category, note, dday})으로 변환.
+    캐시 없음·미설정·형식 오류 시 조용히 빈 리스트(기존 달력 그대로)."""
+    try:
+        from modules import db
+        payload = db.cache_get("cal_disclosures") or {}
+    except Exception:
+        return []
+    today = date.today()
+    out = []
+    for ev in payload.get("events", []) or []:
+        kind = _DART_KIND.get(str(ev.get("kind", "")))
+        if not kind:
+            continue
+        try:
+            d = datetime.strptime(str(ev.get("date", "")), "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            continue
+        dday = (d - today).days
+        if not (-past_days <= dday <= days):
+            continue
+        nm = str(ev.get("name", "")).strip()
+        if not nm:
+            continue
+        out.append({
+            "date": d.strftime("%Y-%m-%d"),
+            "name": nm + kind["suffix"],
+            "category": kind["category"],
+            "note": str(ev.get("note", "")).strip(),
+            "dday": dday,
+        })
+    return out
+
+
 @st.cache_data(ttl=3600)
 def _load_all(days: int = 90, past_days: int = _PAST_DAYS):
-    """고정 일정(과거 포함) + 실적일 합쳐서 반환 (1시간 캐시).
+    """고정 일정(과거 포함) + yfinance 실적 + DART 잠정실적·IR 합쳐서 반환 (1시간 캐시).
     past_days만큼 지난 일정도 포함 → 달력에서 지난 칸도 채워짐."""
     events = upcoming_events(days, past_days=past_days)
     try:
         events += [e for e in fetch_next_earnings() if e["dday"] <= days]
+    except Exception:
+        pass
+    try:
+        events += _dart_events(days, past_days)
     except Exception:
         pass
     events.sort(key=lambda e: (e["dday"], e.get("category", "")))
@@ -98,6 +150,16 @@ def _chip_html(ev) -> str:
     note = _html.escape(str(ev.get("note", "")))
     tip = f"{name}" + (f" — {note}" if note else "")
     return f'<span class="calm-chip {cls}" title="{tip}">{name}</span>'
+
+
+def _chips_html(evs) -> str:
+    """칩 렌더 — 칸당 _MAX_CHIPS개까지, 초과분은 '+N' 칩(툴팁에 목록)."""
+    if len(evs) <= _MAX_CHIPS:
+        return "".join(_chip_html(ev) for ev in evs)
+    head = "".join(_chip_html(ev) for ev in evs[:_MAX_CHIPS - 1])
+    rest = evs[_MAX_CHIPS - 1:]
+    tip = _html.escape(" · ".join(str(e.get("name", "")) for e in rest))
+    return head + f'<span class="calm-chip calm-more" title="{tip}">+{len(rest)}</span>'
 
 
 def _month_grid_html(year: int, month: int, ev_by_date: dict, today: date) -> str:
@@ -129,7 +191,7 @@ def _month_grid_html(year: int, month: int, ev_by_date: dict, today: date) -> st
                              f'<span class="calm-todaylab">Today</span>')
             else:
                 day_inner = f'{day}'
-            chips = "".join(_chip_html(ev) for ev in ev_by_date.get(d.strftime("%Y-%m-%d"), []))
+            chips = _chips_html(ev_by_date.get(d.strftime("%Y-%m-%d"), []))
             cells.append(f'<div class="{" ".join(classes)}">'
                          f'<div class="{day_cls}">{day_inner}</div>{chips}</div>')
 
@@ -179,9 +241,10 @@ def render_calendar(days: int = 90):
     st.markdown(
         '<div class="mkt-group ui-fx">📅 다가오는 주요 일정'
         + foot_badge(
-            "공식 일정 + yfinance 추정",
+            "공식 일정 + DART 공시 + yfinance 추정",
             "FOMC·금통위·CPI·고용·PPI·GDP·소매판매는 공식 발표 일정(연 1회 수동 갱신) · "
-            "실적일은 yfinance 추정으로 변동 가능 · 지난 일정도 흐리게 표시")
+            "잠정실적·IR 일정은 DART 공시 자동 수집(시총 상위·주도주·워치리스트) · "
+            "실적일 일부는 yfinance 추정으로 변동 가능 · 지난 일정도 흐리게 표시")
         + '</div>', unsafe_allow_html=True)
 
     # 가장 임박한 '다가오는' 일정 한 줄 (과거 제외)
