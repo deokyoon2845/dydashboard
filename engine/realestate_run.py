@@ -28,7 +28,12 @@ def main():
     # ── 멱등 가드: 오늘(KST) 이미 수집을 마쳤으면 다음 슬롯은 즉시 스킵 ──
     #   realestate.yml은 06:07·07:07·08:07 KST 세 슬롯. 첫 성공이 잡으면 여기서
     #   빠져 중복 수집·중복 부동산 키워드(Anthropic) 과금을 막는다.
-    if collected_today("realestate_snapshots"):
+    #   FORCE_COLLECT=1(수동 실행 입력)이면 가드를 무시하고 당일 재수집한다 —
+    #   코드/키 수정 직후 결과를 바로 확인해야 할 때 사용(2026-07 추가).
+    import os as _os
+    if _os.environ.get("FORCE_COLLECT", "").strip().lower() in ("1", "true", "yes"):
+        print("[realestate] FORCE_COLLECT — 멱등 가드 무시하고 당일 재수집.", flush=True)
+    elif collected_today("realestate_snapshots"):
         print("[realestate] 오늘 이미 수집 완료 — 스킵(멱등 가드).", flush=True)
         return
 
