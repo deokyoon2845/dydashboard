@@ -73,6 +73,9 @@ jobs:
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # ↓ 거시 지표(사이클 탭 · 종합 강도 v2)용 — 누락 시 ECOS 시리즈가 전부 '0행'이 됨
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+          KOSIS_API_KEY: ${{ secrets.KOSIS_API_KEY }}
         run: python -m engine.realestate_run
 
 
