@@ -755,6 +755,130 @@ def _collect_kosis_apt_volume(points=18):
         return []
  
  
+# ── ECOS 거시지표 수집 — 사이클 탭 '거시 상세 추이' + 종합 강도 v2 ──────────
+#   probe(2026-07-09 · macro_probe.yml 2회 실행)로 확정한 코드만 사용:
+#     주담대  121Y006/M/BECBLA0302 (신규취급 가중평균 · 2001.9~)
+#     기준금리 722Y001/M/0101000   (주담대 차트 병기용)
+#     M2      161Y006/M/BBHA00    (평잔·원계열 신지표 · 2003.10~ → YoY 계산)
+#     GDP     200Y102/Q/10111     (실질·계절조정·전기비 · 분기)
+#     착공    901Y103/M           (건축착공현황 · 항목 2단 구조 의심 → 폴백 시도:
+#                                  1/I47ABA → 2/I47ABA → I47ABA · 성공 조합 로그 출력)
+#   착공은 주거용 착공 연면적의 단월 YoY(%) 3개월 이동평균으로 저장(변동성 스무딩).
+def _ecos_series(stat, cyc, item, start, end, n=500):
+    """ECOS StatisticSearch → (dates, vals). 실패/빈 응답 시 ([], [])."""
+    key = _env_key("ECOS_API_KEY")
+    if not key:
+        return [], []
+    item_part = f"/{item}" if item else ""
+    url = (f"https://ecos.bok.or.kr/api/StatisticSearch/{key}/json/kr/1/{n}/"
+           f"{stat}/{cyc}/{start}/{end}{item_part}")
+    try:
+        r = requests.get(url, timeout=25)
+        rows = (r.json().get("StatisticSearch") or {}).get("row") or []
+    except Exception as e:
+        print(f"[realestate] ECOS {stat}/{cyc}/{item} 요청 실패: {e}")
+        return [], []
+    dates, vals = [], []
+    for row in rows:
+        v, t = row.get("DATA_VALUE"), row.get("TIME")
+        if v in (None, "", ".") or not t:
+            continue
+        try:
+            vals.append(float(v))
+            dates.append(str(t))
+        except Exception:
+            continue
+    return dates, vals
+
+
+def _yoy_series(dates, vals):
+    """월간(YYYYMM) 레벨 시계열 → 전년동월비 % 시계열 (dates', yoy%)."""
+    idx = {d: v for d, v in zip(dates, vals)}
+    out_d, out_v = [], []
+    for d, v in zip(dates, vals):
+        prev = idx.get(f"{int(d[:4]) - 1}{d[4:]}")
+        if prev:
+            out_d.append(d)
+            out_v.append(round((v / prev - 1) * 100, 2))
+    return out_d, out_v
+
+
+def _ma_series(vals, k=3):
+    """단순 k개월 이동평균(앞쪽은 가용분 평균)."""
+    out = []
+    for i in range(len(vals)):
+        w = vals[max(0, i - k + 1):i + 1]
+        out.append(round(sum(w) / len(w), 2))
+    return out
+
+
+def _collect_macro_indicators():
+    """ECOS 거시 4종(+기준금리 pair) 카드 리스트. 각 항목 dict에 dates 포함.
+    실패 항목은 조용히 생략(가짜 데이터 없음) — 뷰어가 샘플로 폴백한다."""
+    from datetime import date as _d
+    endM = _d.today().strftime("%Y%m")
+    endQ = f"{_d.today().year}Q{(_d.today().month - 1) // 3 + 1}"
+    out = []
+
+    # 주담대 금리 (+기준금리 병기 pair)
+    d1, v1 = _ecos_series("121Y006", "M", "BECBLA0302", "202001", endM)
+    if len(v1) >= 2:
+        item = {"key": "mortgage", "label": "주담대 금리",
+                "sub": "예금은행 신규취급 가중평균 · 월간(ECOS)", "unit": "%",
+                "col": "#B65F5A", "series": [round(x, 2) for x in v1], "dates": d1}
+        d0, v0 = _ecos_series("722Y001", "M", "0101000", "202001", endM)
+        if len(v0) >= 2:
+            item["pair"] = {"label": "기준금리", "col": "#9a9b92",
+                            "series": [round(x, 2) for x in v0], "dates": d0}
+        out.append(item)
+        print(f"[realestate] ECOS 주담대 OK n={len(v1)} 최근={v1[-1]}"
+              f" · 기준금리 n={len(v0) if len(v0) >= 2 else 0}")
+    else:
+        print("[realestate] ECOS 주담대 0행")
+
+    # M2 증가율(YoY) — 2019.1부터 레벨을 받아 2020.1부터 YoY 산출
+    d2, v2 = _ecos_series("161Y006", "M", "BBHA00", "201901", endM)
+    yd, yv = _yoy_series(d2, v2)
+    if len(yv) >= 2:
+        out.append({"key": "m2", "label": "M2 증가율",
+                    "sub": "광의통화 평잔·원계열 전년동월비 · 월간(ECOS)", "unit": "%",
+                    "col": "#7E9A83", "series": yv, "dates": yd})
+        print(f"[realestate] ECOS M2 OK n={len(yv)} 최근={yv[-1]}%")
+    else:
+        print("[realestate] ECOS M2 0행")
+
+    # GDP 성장률 — 분기(전기비)
+    d3, v3 = _ecos_series("200Y102", "Q", "10111", "2020Q1", endQ)
+    if len(v3) >= 2:
+        out.append({"key": "gdp", "label": "GDP 성장률",
+                    "sub": "실질·계절조정·전기비 · 분기(ECOS)", "unit": "%",
+                    "col": "#5A7CA0", "series": [round(x, 2) for x in v3],
+                    "dates": d3})
+        print(f"[realestate] ECOS GDP OK n={len(v3)} 최근={v3[-1]}%")
+    else:
+        print("[realestate] ECOS GDP 0행")
+
+    # 주택 착공 — 901Y103 항목 2단 구조 폴백(성공 조합을 로그로 확정)
+    starts_d, starts_v, used = [], [], None
+    for item_code in ("1/I47ABA", "2/I47ABA", "I47ABA"):
+        d4, v4 = _ecos_series("901Y103", "M", item_code, "201901", endM)
+        if len(v4) >= 14:            # YoY 산출 가능 최소 길이
+            starts_d, starts_v, used = d4, v4, item_code
+            break
+    if used:
+        sd, sv = _yoy_series(starts_d, starts_v)
+        sv = _ma_series(sv, 3)
+        if len(sv) >= 2:
+            out.append({"key": "starts", "label": "주택 착공",
+                        "sub": "주거용 착공 YoY·3개월 평균 · 월간(ECOS)", "unit": "%",
+                        "col": "#B89A5C", "series": sv, "dates": sd})
+            print(f"[realestate] ECOS 착공 OK item={used} n={len(sv)} 최근={sv[-1]}%")
+    else:
+        print("[realestate] ECOS 착공 실패 — 3개 item 조합 모두 0행"
+              " (901Y103 구조 재확인 필요)")
+    return out
+
+
 def collect_indicators():
     """지표 탭용 시계열. 각 항목 {key,label,sub,unit,col,series}.
     전부 KB(신뢰 소스): 매매·전세·선도50·매수우위·전세수급·매매전망·전세전망·전세가율
@@ -816,7 +940,13 @@ def collect_indicators():
                              points=MN))
     except Exception as e:
         print(f"[realestate] KB 전세가율 실패: {e}")
-    # (미분양·금리·실거래량은 지표 탭에서 제외 — KOSIS/ECOS 수집 중단)
+    # ── 거시지표(ECOS) — 사이클 탭 '거시 상세 추이'·종합 강도 v2용(2020.1 백필) ──
+    #   probe(2026-07-09)로 확정한 코드만 사용. dates 필드 포함(분기/월 혼재 대응).
+    try:
+        inds.extend(_collect_macro_indicators())
+    except Exception as e:
+        print(f"[realestate] ECOS 거시지표 실패: {e}")
+    # (미분양·실거래량은 지표 탭에서 제외 — KOSIS 수집 중단)
     try:
         # 서울·수도권 매매 중위/평균가격(억) — 지표탭 '현재 매매가격' 블록용.
         # 카드(_INDV2_ORDER)엔 안 들어가고, 뷰어가 이 4개 키를 따로 묶어 블록으로 그린다.
@@ -2805,4 +2935,3 @@ def collect_hot_complexes(asof=None, months=HOT_MONTHS, top=20, exclude_direct=T
     if with_cap and with_gain:
         return ranked, cap_leaders, gain_leaders
     return (ranked, cap_leaders) if with_cap else ranked
-
