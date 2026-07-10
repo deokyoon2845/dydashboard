@@ -1304,9 +1304,12 @@ def _render_indicator_charts(data):
     _scarr, _v2sig = _v2_score_series(data)
     # 새 레이아웃 기준 높이 산정(클리핑 방지) — 헤더 + (가격블록) + 핵심 + 그룹 행들.
 
-    height = (285                      # 사이클 헤더 + 판정근거 칩 + 위치 게이지
-              + (60 + len(price) * 210 if price else 0)  # 현재 매매가격 블록(모바일 적층 여유)
-              + 70)                     # 푸터 여유 (그룹·핵심 섹션 삭제 — 2026-07)
+    # 높이는 데스크톱 실측(가격 카드 2열)에 맞춰 타이트하게 잡는다 — 과대 잡으면
+    # 다음 섹션과 사이에 큰 공백이 생긴다(2026-07 축소). 모바일 적층으로 내용이
+    # 더 길어지면 iframe 내부 _fit 스크립트가 frameElement 높이를 키워 보정한다.
+    height = (300                      # 사이클 헤더 + 판정근거 칩 + 위치 게이지
+              + (55 + 215 * ceil(len(price) / 2) if price else 0)  # 가격 카드(2열)
+              + 35)                    # 푸터 캡션
     components.html(_indicator_chart_component(ind, pend, price, asof,
                                                _scarr, _v2sig),
                     height=height, scrolling=False)
@@ -1590,29 +1593,28 @@ def _render_macro_section(data, scarr=None):
     st.markdown('<div class="re-grp">거시 상세 추이'
                 '<span class="sub">주담대·착공·매수우위·M2·GDP·전세가율 — 2020년~ · '
                 '종합 강도 v2 입력 지표 · 메인 상세</span></div>', unsafe_allow_html=True)
-    _c1, _c2 = st.columns([3, 1])
+    # 종합 강도 궤적은 섹션 헤더 바로 아래(2026-07 이동) — 결론(궤적)을 먼저,
+    # 근거(6지표 차트)를 그 아래에 두는 편집 순서.
+    _render_macro_backtest(data, scarr)
+    _c1, _c2 = st.columns([3, 2])
     with _c1:
         period = st.radio("기간", list(_MACRO_PERIODS.keys()), index=2,
                           horizontal=True, key="re_macro_period",
                           label_visibility="collapsed")
     with _c2:
-        try:
-            with st.popover("ⓘ 종합 강도 v2 산식·가중치", use_container_width=True):
-                st.markdown(
-                    "**종합 강도 v2** = 6지표 신호(-1~+1)의 가중합 · 국면 임계 ±0.15\n\n"
-                    "| 지표 | 가중 | 신호 산식 |\n|---|---|---|\n"
-                    "| 매수우위 | 30% | 순수 방향성 — 4주 변화(÷6p)·12주 변화(÷12p) 반반. 레벨 미사용 |\n"
-                    "| 주담대 | 25% | 볼록성 반영 −(Δr 6개월÷현재 r)÷0.12 — 저금리일수록 같은 인하 효과 증폭 |\n"
-                    "| M2 | 15% | YoY 레벨(중심 4.5%·±1.5%p) 50% + 6개월 방향(÷1.5%p) 50% |\n"
-                    "| 전세가율 | 12% | 레벨(중심 55%·±10%p) 50% + 12개월 방향(÷3%p) 50% |\n"
-                    "| 착공 | 10% | 역방향 — 주거용 착공 YoY(3개월 평균)÷25%. 착공 감소=향후 공급부족=상승요인 |\n"
-                    "| GDP | 8% | 전기비 레벨(중심 +0.25%·±0.5%p) |\n\n"
-                    "결측 지표는 제외하고 가중 재정규화 · 상수는 "
-                    "`realestate_cycle.py` 상단에서 조정 가능. 기준금리는 주담대와 "
-                    "중복이라 점수 제외(차트 병기만).")
-        except Exception:
-            st.caption("종합 강도 v2 = 매수우위30·주담대25·M2 15·전세가율12·착공10·GDP 8 "
-                       "가중합 · 임계 ±0.15")
+        # 산식·가중치 설명은 'KB 실데이터 ⓘ'와 동일한 foot_row 배지(details 필)로
+        # 통일(2026-07 · 구 st.popover 대체) — 클릭 시 아래로 펼쳐진다.
+        st.markdown(foot_row(
+            "종합 강도 v2 산식·가중치",
+            "종합 강도 v2 = 6지표 신호(-1~+1)의 가중합 · 국면 임계 ±0.15 — "
+            "매수우위 30%: 순수 방향성, 4주 변화(÷6p)·12주 변화(÷12p) 반반(레벨 미사용) · "
+            "주담대 25%: 볼록성 반영 −(Δr 6개월÷현재 r)÷0.12, 저금리일수록 같은 인하 효과 증폭 · "
+            "M2 15%: YoY 레벨(중심 4.5%·±1.5%p) 50% + 6개월 방향(÷1.5%p) 50% · "
+            "전세가율 12%: 레벨(중심 55%·±10%p) 50% + 12개월 방향(÷3%p) 50% · "
+            "착공 10%: 역방향, 주거용 착공 YoY(3개월 평균)÷25% — 착공 감소=향후 공급부족=상승요인 · "
+            "GDP 8%: 전기비 레벨(중심 +0.25%·±0.5%p) · "
+            "결측 지표는 제외하고 가중 재정규화 · 기준금리는 주담대와 중복이라 점수 제외(차트 병기만)"),
+            unsafe_allow_html=True)
     months = _MACRO_PERIODS.get(period)
     charts = _macro_chart_payload(data, months)
     if not charts:
@@ -1622,7 +1624,6 @@ def _render_macro_section(data, scarr=None):
     components.html(_MACRO_HTML.replace("__CH__",
                                         _json.dumps(charts, ensure_ascii=False)),
                     height=rows * 330 + 20, scrolling=False)
-    _render_macro_backtest(data, scarr)
     _live = any((it.get("key") == "mortgage" and "샘플" not in it.get("sub", ""))
                 for it in (data or []))
     st.markdown(foot_row(
