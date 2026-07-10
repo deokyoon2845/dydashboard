@@ -66,7 +66,7 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 .stTabs [data-baseweb="tab-highlight"],
 .stTabs [data-baseweb="tab-border"] { display:none !important; height:0 !important; background:transparent !important; }
 /* 콘텐츠 탭(모듈 내부 st.tabs — 부동산 사이클/지도/실거래/분양/테마 등): 세이지 필 세그먼트 바.
-   상단 주식·부동산 및 주식 하위탭은 이제 st.segmented_control(lazy)로 분리됨(아래 별도 규칙). */
+   상단 주식·부동산, 주식·부동산 하위탭은 st.segmented_control(lazy)로 분리됨(아래 별도 규칙). */
 .stTabs [data-baseweb="tab-list"] {
   gap:3px; flex-wrap:wrap; width:fit-content; max-width:100%;
   background:#F4F6F1; border:1px solid #ECEDE7; border-radius:12px;
@@ -114,27 +114,90 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 .st-key-top_section div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
 .st-key-top_section div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
 .st-key-top_section div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:#34352f !important; }
-/* 주식 하위(시장/브리핑/주도주/공모주/테마) — 세이지 필 */
-.st-key-stock_subtab div[data-testid="stSegmentedControl"] [role="radiogroup"],
-.st-key-stock_subtab div[data-testid="stSegmentedControl"] > div {
+/* 2단 메인 탭 — 세이지 필 (B안): 주식(시장/글로벌/브리핑/종목/테마) + 부동산(사이클/실거래/분양/테마).
+   키 stock_subtab→stock_subtab2 교체(2026-07 탭 개편): 기존 세션에 '주도주' 등 구 옵션 값이
+   남아 있으면 새 옵션 목록과 충돌하므로 새 키로 시작. 부동산 re_maintab2도 동일 필로 통일. */
+.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] [role="radiogroup"],
+.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] > div,
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] [role="radiogroup"],
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] > div {
   display:inline-flex; gap:3px; background:#F4F6F1; border:1px solid #ECEDE7;
   border-radius:12px; padding:4px; flex-wrap:wrap;
 }
-.st-key-stock_subtab div[data-testid="stSegmentedControl"] button {
+.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button,
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button {
   border:0 !important; background:transparent !important; box-shadow:none !important;
-  color:#9a9b92 !important; font-weight:700 !important; padding:9px 16px !important;
+  color:#9a9b92 !important; font-weight:700 !important; padding:9px 15px !important;
   border-radius:9px !important; min-height:0 !important; transition:all .18s ease;
 }
-.st-key-stock_subtab div[data-testid="stSegmentedControl"] button p { font-weight:700 !important; font-size:13.5px !important; margin:0 !important; }
-.st-key-stock_subtab div[data-testid="stSegmentedControl"] button:hover { color:#34352f !important; }
-.st-key-stock_subtab div[data-testid="stSegmentedControl"] button[aria-checked="true"],
-.st-key-stock_subtab div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
-.st-key-stock_subtab div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] {
+.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button p,
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button p { font-weight:700 !important; font-size:13.5px !important; margin:0 !important; }
+.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button:hover,
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button:hover { color:#34352f !important; }
+.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"],
+.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
+.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"],
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"],
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] {
   background:#7E9A83 !important; color:#FFFFFF !important; box-shadow:0 2px 6px -1px rgba(126,154,131,.45) !important;
 }
-.st-key-stock_subtab div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
-.st-key-stock_subtab div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
-.st-key-stock_subtab div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:#FFFFFF !important; }
+.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
+.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
+.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p,
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:#FFFFFF !important; }
+/* 탭 아이콘(:material/…) 크기·정렬 — 라벨 텍스트 색을 그대로 상속 */
+.st-key-top_section div[data-testid="stSegmentedControl"] button span[data-testid="stIconMaterial"] { font-size:17px; color:inherit; }
+.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button span[data-testid="stIconMaterial"],
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button span[data-testid="stIconMaterial"] { font-size:16px; color:inherit; }
+/* 3단(최하위) 탭 — 고스트 언더라인 (B안): 종목(주도주|공모주)·실거래 보기(시세 지도|지역 급지|주목 단지)·
+   브리핑 장전|장마감. 필 컨테이너를 없애고 텍스트+밑줄만 남겨 2단(세이지 필)보다 위계를 한 단계 낮춘다. */
+.st-key-stock_kind div[data-testid="stSegmentedControl"] [role="radiogroup"],
+.st-key-stock_kind div[data-testid="stSegmentedControl"] > div,
+.st-key-re_dealtab2 div[data-testid="stSegmentedControl"] [role="radiogroup"],
+.st-key-re_dealtab2 div[data-testid="stSegmentedControl"] > div,
+.st-key-rpt_kind_seg div[data-testid="stSegmentedControl"] [role="radiogroup"],
+.st-key-rpt_kind_seg div[data-testid="stSegmentedControl"] > div {
+  display:inline-flex; gap:16px; background:transparent; border:none;
+  border-radius:0; padding:0; flex-wrap:wrap;
+}
+.st-key-stock_kind div[data-testid="stSegmentedControl"] button,
+.st-key-re_dealtab2 div[data-testid="stSegmentedControl"] button,
+.st-key-rpt_kind_seg div[data-testid="stSegmentedControl"] button {
+  border:0 !important; background:transparent !important; box-shadow:none !important;
+  color:#9a9b92 !important; padding:3px 2px 7px !important; border-radius:0 !important;
+  border-bottom:2px solid transparent !important; min-height:0 !important;
+  transition:color .18s ease,border-color .18s ease;
+}
+.st-key-stock_kind div[data-testid="stSegmentedControl"] button p,
+.st-key-re_dealtab2 div[data-testid="stSegmentedControl"] button p,
+.st-key-rpt_kind_seg div[data-testid="stSegmentedControl"] button p { font-weight:700 !important; font-size:12.5px !important; margin:0 !important; }
+.st-key-stock_kind div[data-testid="stSegmentedControl"] button:hover,
+.st-key-re_dealtab2 div[data-testid="stSegmentedControl"] button:hover,
+.st-key-rpt_kind_seg div[data-testid="stSegmentedControl"] button:hover { color:#34352f !important; }
+.st-key-stock_kind div[data-testid="stSegmentedControl"] button[aria-checked="true"],
+.st-key-stock_kind div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
+.st-key-stock_kind div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"],
+.st-key-re_dealtab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"],
+.st-key-re_dealtab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
+.st-key-re_dealtab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"],
+.st-key-rpt_kind_seg div[data-testid="stSegmentedControl"] button[aria-checked="true"],
+.st-key-rpt_kind_seg div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
+.st-key-rpt_kind_seg div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] {
+  background:transparent !important; box-shadow:none !important;
+  border-bottom:2px solid #A7BBA9 !important; color:#7E9A83 !important;
+}
+.st-key-stock_kind div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
+.st-key-stock_kind div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
+.st-key-stock_kind div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p,
+.st-key-re_dealtab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
+.st-key-re_dealtab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
+.st-key-re_dealtab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p,
+.st-key-rpt_kind_seg div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
+.st-key-rpt_kind_seg div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
+.st-key-rpt_kind_seg div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:#7E9A83 !important; }
 .stButton > button { border-radius:9px; padding:6px 16px; font-weight:600; }
 .stButton { margin-bottom:4px; }
 [data-testid="stExpander"] { border-radius:10px; margin-bottom:8px; }
@@ -696,43 +759,54 @@ def _render_domestic_charts():
     # 조작·범례 안내는 '코스피 · 코스닥' 헤더의 ⓘ 배지로 이동(A안) — 하단 각주 제거.
  
  
-# ── 지수 현황 본문 ──
-def _render_indices_body():
+# ── 지수 스냅샷 공용 헬퍼 (시장/글로벌 탭 분리 후 양쪽에서 사용 · 2026-07 탭 개편) ──
+def _group_snapshots(groups):
+    """지정한 지수 그룹만 로드 — lazy 탭에서 다른 탭 몫의 그룹까지 fetch하지 않는다."""
     group_data, group_asof = {}, {}
-    for group_name, tickers in INDEX_GROUPS.items():
+    for group_name in groups:
+        tickers = INDEX_GROUPS.get(group_name)
+        if not tickers:
+            continue
         datas = {name: fetch_index(t) for name, t in tickers.items()}
         group_data[group_name] = datas
         asofs = [d["asof"] for d in datas.values() if d and d.get("asof")]
         group_asof[group_name] = max(asofs) if asofs else None
- 
     distinct = {a for a in group_asof.values() if a}
     unified = len(distinct) == 1
-    if unified:
+    return group_data, group_asof, unified, distinct
+
+
+def _histories(group):
+    """3개월 히스토리 수집 (히트맵 미니차트용 · fetch_history 3600s 캐시 → 추가 비용 없음)"""
+    out = {}
+    for item_name, ticker in INDEX_GROUPS.get(group, {}).items():
+        try:
+            hist = fetch_history(ticker, "3mo")
+            if hist is not None and len(hist) >= 2:
+                out[item_name] = hist
+        except Exception:
+            pass
+    return out
+
+
+def _heat_group(group, group_data, group_asof, unified):
+    st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
+    head = f'<div class="mkt-group">{group}'
+    if not unified and group_asof.get(group):
+        head += f'<span class="grp-asof">기준 {group_asof[group]}</span>'
+    head += "</div>"
+    st.markdown(head, unsafe_allow_html=True)
+    st.markdown(_heat_html(group_data[group], _histories(group)),
+                unsafe_allow_html=True)
+
+
+# ── 시장 탭 본문 — 국내 증시 · 시장 심리 (글로벌/외환·금리→글로벌 탭, 일정→브리핑 탭) ──
+def _render_indices_body():
+    _, group_asof, unified, distinct = _group_snapshots(["국내"])
+    if unified and distinct:
         st.markdown(
-            f'<div class="data-asof">데이터 기준 {next(iter(distinct))} · '
-            f'해외 지수·환율은 직전 거래일 종가</div>', unsafe_allow_html=True)
- 
-    # 3개월 히스토리 수집 (히트맵 미니차트용 · fetch_history 3600s 캐시 → 추가 비용 없음)
-    def _histories(group):
-        out = {}
-        for item_name, ticker in INDEX_GROUPS[group].items():
-            try:
-                hist = fetch_history(ticker, "3mo")
-                if hist is not None and len(hist) >= 2:
-                    out[item_name] = hist
-            except Exception:
-                pass
-        return out
- 
-    def _heat_group(group):
-        st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
-        head = f'<div class="mkt-group">{group}'
-        if not unified and group_asof.get(group):
-            head += f'<span class="grp-asof">기준 {group_asof[group]}</span>'
-        head += "</div>"
-        st.markdown(head, unsafe_allow_html=True)
-        st.markdown(_heat_html(group_data[group], _histories(group)),
-                    unsafe_allow_html=True)
+            f'<div class="data-asof">데이터 기준 {next(iter(distinct))}</div>',
+            unsafe_allow_html=True)
  
     # ══════════════════ 1. 국내 증시 ══════════════════
     st.markdown('<div class="sect-banner" id="sec-krx">국내 증시</div>', unsafe_allow_html=True)
@@ -763,9 +837,20 @@ def _render_indices_body():
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     st.markdown('<div class="sect-banner" id="sec-mood">시장 심리</div>', unsafe_allow_html=True)
     render_indicators()
+
+
+# ── 글로벌 탭 본문 — 글로벌 지수 · 외환·금리 (시장 탭에서 분리 · 2026-07 탭 개편) ──
+_GLOBAL_GROUPS = ("미국", "변동성·원자재", "암호화폐", "환율")
+
+
+def _render_global_body():
+    group_data, group_asof, unified, distinct = _group_snapshots(list(_GLOBAL_GROUPS))
+    if unified and distinct:
+        st.markdown(
+            f'<div class="data-asof">데이터 기준 {next(iter(distinct))} · '
+            f'해외 지수·환율은 직전 거래일 종가</div>', unsafe_allow_html=True)
  
-    # ══════════════════ 3. 글로벌 지수 ══════════════════
-    st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
+    # ══════════════════ 1. 글로벌 지수 ══════════════════
     st.markdown(
         '<div class="sect-banner ui-fx" id="sec-global">글로벌 지수'
         + foot_badge(
@@ -774,14 +859,14 @@ def _render_indices_body():
             "미니차트 = 3개월 추이(하단 눈금 = 보름)")
         + '</div>', unsafe_allow_html=True)
     for g in ("미국", "변동성·원자재", "암호화폐"):
-        if g in INDEX_GROUPS:
-            _heat_group(g)
+        if g in group_data:
+            _heat_group(g, group_data, group_asof, unified)
  
-    # ══════════════════ 4. 외환 · 금리 ══════════════════
+    # ══════════════════ 2. 외환 · 금리 ══════════════════
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     st.markdown('<div class="sect-banner" id="sec-fx">외환 · 금리</div>', unsafe_allow_html=True)
-    if "환율" in INDEX_GROUPS:
-        _heat_group("환율")
+    if "환율" in group_data:
+        _heat_group("환율", group_data, group_asof, unified)
  
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     from modules.rates import render_rates
@@ -791,20 +876,14 @@ def _render_indices_body():
     from modules.rate_gap import render_rate_gap
     render_rate_gap()
  
-    # ══════════════════ 5. 일정 ══════════════════
-    st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
-    st.markdown('<div class="sect-banner" id="sec-cal">일정</div>', unsafe_allow_html=True)
-    render_calendar()
- 
  
 # ── 시장 탭 '오늘의 한 장' + 섹션 점프 내비 ──
 # v2 2블록 — ①헤드라인 밴드(보고서 무드·헤드라인·지표 칩) ②시그널 카드(topics 중요도 상위 3).
 # (매크로 스파인·합의/이견 블록은 중복/과밀로 제거. 합의·이견은 브리핑 탭에서 확인.)
 # 기존 보고서 데이터만 재사용하므로 추가 AI 호출 0. 브리핑 rpt-tldr와 동일한 시각 문법
 # (좌측 세이지 액센트·Fraunces 헤드라인·무드 배지)을 공유한다.
-_MKT_SECTIONS = [("국내 증시", "sec-krx"), ("시장 심리", "sec-mood"),
-                 ("글로벌 지수", "sec-global"), ("외환·금리", "sec-fx"),
-                 ("일정", "sec-cal")]
+_MKT_SECTIONS = [("국내 증시", "sec-krx"), ("시장 심리", "sec-mood")]
+# (글로벌 지수·외환·금리는 '글로벌' 탭, 일정은 '브리핑' 탭으로 이동 — 2026-07 탭 개편)
 
 _MKT_HEAD_CSS = """
 <style>
@@ -1038,8 +1117,46 @@ def render_indices():
         st.fragment(_render_indices_body, run_every=every)()
     else:
         _render_indices_body()
- 
- 
+
+
+# ── 글로벌 탭 (글로벌 지수 · 외환·금리 — 시장 탭에서 분리 · 2026-07 탭 개편) ──
+def render_global():
+    # 시장 탭과 동일한 표준 크롬: accent-bar + [제목 | 🔄] 한 줄 + 장중 자동 새로고침.
+    # (환율·암호화폐는 국내 장중에도 움직이므로 시장 탭과 같은 fragment 주기를 공유한다.)
+    st.markdown(
+        '<style>'
+        '.st-key-glb_head div[data-testid="stHorizontalBlock"]'
+        '{flex-wrap:nowrap !important;align-items:center}'
+        '.st-key-glb_head div[data-testid="stHorizontalBlock"]>div{min-width:0}'
+        '.st-key-glb_refresh button{width:44px;height:40px;padding:0;'
+        'border-radius:10px;font-size:16px;line-height:1}'
+        '.st-key-glb_refresh{display:flex;justify-content:flex-end}'
+        '</style>'
+        '<div class="accent-bar"></div>', unsafe_allow_html=True)
+    with st.container(key="glb_head"):
+        _hcol, _bcol = st.columns([8, 1])
+        with _hcol:
+            st.title("글로벌 지수 · 외환 금리")
+        with _bcol:
+            if st.button("🔄", key="glb_refresh", help="지수 데이터 새로고침"):
+                st.cache_data.clear()
+                st.rerun()
+
+    has_frag = hasattr(st, "fragment")
+    market_open = is_kr_market_open()
+    every = 600 if (has_frag and market_open) else None
+
+    if market_open:
+        st.caption("🟢 장중 자동 새로고침 켜짐 · 약 10분 주기 · 해외 지수는 직전 거래일 종가")
+    else:
+        st.caption("⏸ 장외 시간 · 다음 개장(평일 09:00 KST)부터 자동 새로고침이 작동해요.")
+
+    if every:
+        st.fragment(_render_global_body, run_every=every)()
+    else:
+        _render_global_body()
+
+
 # ── 사용량 · 비용 ──
 def render_usage_section():
     last = st.session_state.get("last_gen")
@@ -1098,7 +1215,12 @@ def render_report_tab():
     # ── 타임라인 (최근 5거래일 보고서 흐름) ──
     # 'DB에 저장돼요…' 안내 문구(=render_reports의 마지막 캡션) 바로 아래에 표시.
     render_timeline()
- 
+
+    # ── 일정 (시장 탭에서 이동 · 2026-07 탭 개편) — DART 실적발표·IR은 브리핑과 성격이 같다 ──
+    st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
+    st.markdown('<div class="sect-banner" id="sec-cal">일정</div>', unsafe_allow_html=True)
+    render_calendar()
+
     st.divider()
  
     flash = st.session_state.pop("gen_flash", None)
@@ -1139,8 +1261,22 @@ def render_report_tab():
     render_reports_manage()
     st.divider()
     render_usage_section()
- 
- 
+
+
+# ── 종목 탭 (주도주 | 공모주 — 같은 '개별 종목 발굴' 성격으로 통합 · 2026-07 탭 개편) ──
+def render_stock_picks():
+    """종목 탭 — 3단 고스트 언더라인 세그먼트(주도주|공모주)로 하위 뷰 전환.
+    각 뷰가 자체 표준 크롬(tab_header)을 그리므로 여기서는 라우팅만 담당한다."""
+    _kind = st.segmented_control(
+        "종목 보기", ["주도주", "공모주"], default="주도주",
+        key="stock_kind", label_visibility="collapsed",
+    ) or "주도주"   # 선택 해제(None) 시 기본값으로 폴백
+    if _kind == "공모주":
+        render_ipo_tab()
+    else:
+        render_leaders()
+
+
 # ── 카운트업 스크립트 ──
 def _inject_countup():
     components.html(
@@ -1374,31 +1510,41 @@ def _render_status_panel():
 # 특히 부동산(render_realestate, 최대 규모)은 '부동산' 선택 시에만 로드된다.
 _inject_countup()
  
+# 탭 아이콘(:material/…) — format_func로 표시만 바꾸고 값(세션·비교·점프)은 한글 그대로 유지.
+_TOP_TAB_ICONS = {"주식": ":material/candlestick_chart:", "부동산": ":material/apartment:"}
+_STOCK_TAB_ICONS = {"시장": ":material/monitoring:", "글로벌": ":material/public:",
+                    "브리핑": ":material/newspaper:", "종목": ":material/target:",
+                    "테마": ":material/tag:"}
+
 _top = st.segmented_control(
     "섹션", ["주식", "부동산"], default="주식",
+    format_func=lambda _t: f"{_TOP_TAB_ICONS[_t]} {_t}",
     key="top_section", label_visibility="collapsed",
 ) or "주식"   # 선택 해제(None) 시 기본값으로 폴백
  
 if _top == "주식":
     # '브리핑에서 자세히' 점프 — 위젯 생성 '전'에 세션값을 바꿔야 한다.
     # default= 대신 세션 사전 시드를 쓰면 위젯 생성 후 값 변경 경고 없이 전환된다.
+    # ※ key를 stock_subtab2로 교체(2026-07 탭 개편): 기존 세션에 '주도주'/'공모주' 값이
+    #   남아 있으면 새 옵션 목록(시장/글로벌/브리핑/종목/테마)과 충돌하므로 새 키로 시작.
     _jump = st.session_state.pop("_stock_subtab_jump", None)
-    if "stock_subtab" not in st.session_state:
-        st.session_state["stock_subtab"] = "시장"
+    if "stock_subtab2" not in st.session_state:
+        st.session_state["stock_subtab2"] = "시장"
     if _jump:
-        st.session_state["stock_subtab"] = _jump
+        st.session_state["stock_subtab2"] = _jump
     _sub = st.segmented_control(
-        "주식 탭", ["시장", "브리핑", "주도주", "공모주", "테마"],
-        key="stock_subtab", label_visibility="collapsed",
+        "주식 탭", ["시장", "글로벌", "브리핑", "종목", "테마"],
+        format_func=lambda _t: f"{_STOCK_TAB_ICONS[_t]} {_t}",
+        key="stock_subtab2", label_visibility="collapsed",
     ) or "시장"
     if _sub == "시장":
         render_indices()
+    elif _sub == "글로벌":
+        render_global()
     elif _sub == "브리핑":
         render_report_tab()
-    elif _sub == "주도주":
-        render_leaders()
-    elif _sub == "공모주":
-        render_ipo_tab()
+    elif _sub == "종목":
+        render_stock_picks()
     elif _sub == "테마":
         render_keywords()
 else:  # 부동산
