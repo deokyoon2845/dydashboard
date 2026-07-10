@@ -1192,13 +1192,15 @@ function priceDelta(arr){if(!arr||arr.length<2)return null;
  const pct=d/prev*100,cls=Math.abs(pct)<0.05?"fl":pct>0?"up":"dn";
  return {cls,pct:(pct>0?"+":pct<0?"−":"±")+Math.abs(pct).toFixed(1),amt:(d>0?"+":d<0?"−":"±")+Math.abs(d).toFixed(2)};}
 function priceChart(med,mean){ // 최근 1년 이중선 — 중위 실선(면적)·평균 점선(우측 정렬)
- const W=280,H=64,P={l:4,r:6,t:8,b:17},N=13;
+ // H 64→120 (2026-07): 중위~평균을 한 스케일에 담으면 각 선의 기울기가 눌려 보여
+ // 세로를 키워 Y 변화 체감을 살린다. viewBox 비율만 바뀌므로(.mini height:auto) CSS 무수정.
+ const W=280,H=120,P={l:4,r:6,t:8,b:17},N=13;
  const a=med.slice(-N),b=(mean||[]).slice(-N);
  if(a.length<2)return "";
  const pts=a.map((v,i)=>({t:new Date(ASOF.getTime()-(a.length-1-i)*30*86400000),v}));
  let lo=Math.min.apply(null,a),hi=Math.max.apply(null,a);
  if(b.length){lo=Math.min(lo,Math.min.apply(null,b));hi=Math.max(hi,Math.max.apply(null,b));}
- const sp=(hi-lo)||1,y0=lo-sp*0.16,y1=hi+sp*0.16;
+ const sp=(hi-lo)||1,y0=lo-sp*0.08,y1=hi+sp*0.08;  // 여백 0.16→0.08 — 진폭 확보
  const xs=i=>P.l+i/(a.length-1)*(W-P.l-P.r);
  const ys=v=>P.t+(1-(v-y0)/(y1-y0))*(H-P.t-P.b);
  const path=a.map((v,i)=>(i?"L":"M")+xs(i).toFixed(1)+" "+ys(v).toFixed(1)).join(" ");
