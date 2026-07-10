@@ -118,8 +118,15 @@ _CSS = """
 /* ── ③ 최근 상장 비교 테이블(A안) — CSS grid 행 ── */
 .ipo-head,.ipo-row{display:grid;gap:7px;align-items:center;
   grid-template-columns:minmax(138px,1.5fr) 58px 54px 110px 42px 50px 44px 44px 58px 60px 60px 60px;}
-.ipo-head{padding:2px 6px 8px;font-size:10px;font-weight:700;color:var(--muted,#9a9b92);
-  letter-spacing:.03em;border-bottom:1px solid var(--line,#ECEDE7);}
+.ipo-head{padding:8px 6px;font-size:10px;font-weight:700;color:var(--muted,#9a9b92);
+  letter-spacing:.03em;border-bottom:1px solid var(--line,#ECEDE7);background:var(--bg,#FCFCFA);}
+/* 헤더 고정(sticky) — 행이 많아도 어떤 지표 컬럼인지 유지(2026-07).
+   sticky 요소는 부모 박스 안에 갇히므로 .ipo-head 자체가 아니라, 테이블 전체를 감싼
+   keyed 컨테이너(st-key-ipo_tbl) 안에서 헤더를 담은 요소 컨테이너에 :has()로 건다.
+   :has() 미지원 브라우저에선 그냥 기존처럼 안 붙을 뿐(기능 저하 없음). */
+.st-key-ipo_tbl [data-testid="stElementContainer"]:has(.ipo-head),
+.st-key-ipo_tbl [data-testid="element-container"]:has(.ipo-head){
+  position:sticky;top:3.75rem;z-index:6;background:var(--bg,#FCFCFA);}
 .ipo-head span{text-align:right;} .ipo-head span:first-child{text-align:left;}
 .ipo-row{padding:11px 6px;border-bottom:1px solid var(--line,#ECEDE7);transition:background .15s ease;}
 .ipo-row:hover{background:#fbfbf8;}
@@ -712,21 +719,27 @@ def render_ipo_tab():
         st.markdown('<div class="ipo-cna">조건에 맞는 종목이 없어요.</div>', unsafe_allow_html=True)
         return
 
-    st.markdown(
-        '<div class="ipo-head"><span>종목 · 업종</span>'
-        '<span>상장일</span><span>시총</span><span>공모가→현재</span>'
-        '<span>PER</span><span>추정PER</span><span>PBR</span><span>PSR</span>'
-        '<span>EPS</span>'
-        '<span>매출</span><span>영업이익</span><span>순이익</span></div>',
-        unsafe_allow_html=True)
-    for s in rows:
-        st.markdown(_row_html(s), unsafe_allow_html=True)
-        with st.expander("차트·상세 보기"):
-            intro = str(s.get("intro") or "").strip()
-            if intro:
-                st.markdown(f'<div class="ipo-cna" style="padding:2px 4px 10px;color:var(--pill-ink,#5d6258);">'
-                            f'{html.escape(intro)}</div>', unsafe_allow_html=True)
-            _ipo_chart(s.get("name", ""), s.get("listed", ""), mode)
+    # 헤더+행 전체를 keyed 컨테이너로 감싸 스티키 헤더의 이동 범위를 테이블로 확장.
+    try:
+        _tbl = st.container(key="ipo_tbl")
+    except TypeError:                 # 구버전 Streamlit 폴백(스코프만 생략, 동작은 정상)
+        _tbl = st.container()
+    with _tbl:
+        st.markdown(
+            '<div class="ipo-head"><span>종목 · 업종</span>'
+            '<span>상장일</span><span>시총</span><span>공모가→현재</span>'
+            '<span>PER</span><span>추정PER</span><span>PBR</span><span>PSR</span>'
+            '<span>EPS</span>'
+            '<span>매출</span><span>영업이익</span><span>순이익</span></div>',
+            unsafe_allow_html=True)
+        for s in rows:
+            st.markdown(_row_html(s), unsafe_allow_html=True)
+            with st.expander("차트·상세 보기"):
+                intro = str(s.get("intro") or "").strip()
+                if intro:
+                    st.markdown(f'<div class="ipo-cna" style="padding:2px 4px 10px;color:var(--pill-ink,#5d6258);">'
+                                f'{html.escape(intro)}</div>', unsafe_allow_html=True)
+                _ipo_chart(s.get("name", ""), s.get("listed", ""), mode)
 
     st.caption("수익률 = 공모가 대비 현재가(공모가는 DART 파싱 · 실패 종목은 상장일 종가 대비로 폴백 표기). "
                "PER·PBR·PSR·매출·영업이익·순이익은 DART 최근 연간 기준이고 시총은 최신 스냅샷. "
