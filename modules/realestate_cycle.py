@@ -940,7 +940,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kfont
 .pc-mom{font-size:10.5px;font-weight:800;margin:0 0 2px}
 .pc-mom.up{color:var(--up)}.pc-mom.dn{color:var(--dn)}.pc-mom.fl{color:var(--muted)}
 .pc-mom small{font-weight:600;color:var(--muted);font-size:9px;margin-left:2px}
-@media(max-width:680px){.core{grid-template-columns:1fr}.row{grid-template-columns:1.3fr 96px 74px}.r-mid{display:none}.price{grid-template-columns:1fr}}
+@media(max-width:680px){.core{grid-template-columns:1fr}.row{grid-template-columns:1.3fr 96px 74px}.r-mid{display:none}.price{gap:8px}}
 </style></head><body><div class="box">
   <div class="cycle">
     <div class="cyc-top"><span class="t">부동산 사이클 위치</span>
@@ -1569,12 +1569,18 @@ def _render_macro_backtest(data, scarr):
     if not scarr or sum(1 for v in scarr if v is not None) < 12:
         return
     by = {it.get("key"): it for it in (data or [])}
-    sale = [(None if v is None else float(v))
-            for v in ((by.get("sale") or {}).get("series") or [])]
+    _sm = [(None if v is None else float(v))
+           for v in ((by.get("sale_m") or {}).get("series") or [])]
+    if len([v for v in _sm if v is not None]) >= 24:
+        sale, step = _sm, 1                # 월간 지수(2020~ 백필) — 1:1 인덱싱
+    else:
+        sale = [(None if v is None else float(v))
+                for v in ((by.get("sale") or {}).get("series") or [])]
+        step = 4                           # 주간 폴백 → 월 샘플링(4주 간격)
     m = len(scarr)
     sale_m = []
-    for mb in range(m):                    # 주간 매매지수 → 월 샘플링(4주 간격)
-        i = len(sale) - 1 - mb * 4
+    for mb in range(m):
+        i = len(sale) - 1 - mb * step
         v = sale[i] if 0 <= i < len(sale) else None
         sale_m.append(round(v, 2) if v is not None else None)
     sc2 = list(scarr)[::-1]                # 과거→현재 · None 유지(선 분절)
