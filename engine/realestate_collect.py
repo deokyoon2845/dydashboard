@@ -858,23 +858,66 @@ def _collect_macro_indicators():
     else:
         print("[realestate] ECOS GDP 0행")
 
-    # 주택 착공 — 901Y103 항목 2단 구조 폴백(성공 조합을 로그로 확정)
-    starts_d, starts_v, used = [], [], None
-    for item_code in ("1/I47ABA", "2/I47ABA", "I47ABA"):
-        d4, v4 = _ecos_series("901Y103", "M", item_code, "201901", endM)
-        if len(v4) >= 14:            # YoY 산출 가능 최소 길이
-            starts_d, starts_v, used = d4, v4, item_code
-            break
+    # 주택 착공 — 서울+경기 합산 기준(2026-07 변경 · 수도권 핵심 공급만 반영).
+    #   901Y103은 항목 코드 체계가 문서상 불명확해, StatisticItemList로 '서울'·
+    #   '경기' 항목 코드를 런타임에 해석한 뒤 주거용 코드(I47ABA)와 두 순서로
+    #   조합해 시도한다. 해석·수집이 하나라도 실패하면 기존 전국 폴백 콤보로
+    #   내려간다(sub 라벨로 어느 기준인지 구분 · 성공 조합은 로그로 확정).
+    def _ecos_item_rows(stat):
+        key = _env_key("ECOS_API_KEY")
+        if not key:
+            return []
+        url = (f"https://ecos.bok.or.kr/api/StatisticItemList/{key}"
+               f"/json/kr/1/500/{stat}")
+        try:
+            r = requests.get(url, timeout=25)
+            return (r.json().get("StatisticItemList") or {}).get("row") or []
+        except Exception as e:
+            print(f"[realestate] ECOS ItemList {stat} 요청 실패: {e}")
+            return []
+
+    starts_d, starts_v, used, reg_lab = [], [], None, "전국"
+    try:
+        _rows = _ecos_item_rows("901Y103")
+        _seoul = next((r.get("ITEM_CODE") for r in _rows
+                       if "서울" in (r.get("ITEM_NAME") or "")), None)
+        _gg = next((r.get("ITEM_CODE") for r in _rows
+                    if "경기" in (r.get("ITEM_NAME") or "")), None)
+        if _seoul and _gg:
+            regs = {}
+            for reg in (_seoul, _gg):
+                for combo in (f"{reg}/I47ABA", f"I47ABA/{reg}", reg):
+                    d5, v5 = _ecos_series("901Y103", "M", combo, "201901", endM)
+                    if len(v5) >= 14:            # YoY 산출 가능 최소 길이
+                        regs[reg] = dict(zip(d5, v5))
+                        break
+            if len(regs) == 2:                    # 두 지역 모두 성공 시에만 합산
+                common = sorted(set.intersection(*[set(m) for m in regs.values()]))
+                if len(common) >= 14:
+                    starts_d = common
+                    starts_v = [sum(m[t] for m in regs.values()) for t in common]
+                    used = f"서울({_seoul})+경기({_gg})"
+                    reg_lab = "서울+경기"
+    except Exception as e:
+        print(f"[realestate] ECOS 착공 지역 해석 실패 — 전국 폴백: {e}")
+    if not used:                                  # 전국 폴백(기존 콤보)
+        for item_code in ("1/I47ABA", "2/I47ABA", "I47ABA"):
+            d4, v4 = _ecos_series("901Y103", "M", item_code, "201901", endM)
+            if len(v4) >= 14:
+                starts_d, starts_v, used = d4, v4, item_code
+                break
     if used:
         sd, sv = _yoy_series(starts_d, starts_v)
         sv = _ma_series(sv, 3)
         if len(sv) >= 2:
             out.append({"key": "starts", "label": "주택 착공",
-                        "sub": "주거용 착공 YoY·3개월 평균 · 월간(ECOS)", "unit": "%",
+                        "sub": f"주거용 착공 YoY·3개월 평균 · {reg_lab} · 월간(ECOS)",
+                        "unit": "%",
                         "col": "#B89A5C", "series": sv, "dates": sd})
-            print(f"[realestate] ECOS 착공 OK item={used} n={len(sv)} 최근={sv[-1]}%")
+            print(f"[realestate] ECOS 착공 OK item={used} 기준={reg_lab}"
+                  f" n={len(sv)} 최근={sv[-1]}%")
     else:
-        print("[realestate] ECOS 착공 실패 — 3개 item 조합 모두 0행"
+        print("[realestate] ECOS 착공 실패 — 지역 해석·전국 콤보 모두 0행"
               " (901Y103 구조 재확인 필요)")
     return out
 
