@@ -36,8 +36,13 @@ def render_realestate():
     #   단, _RE_CSS(부동산 전용 스타일)는 예전엔 항상 실행되던 '사이클' 탭에서만 주입됐으므로,
     #   어느 탭으로 바로 진입해도 스타일이 붙도록 각 분기에서 주입한다(한 렌더에 한 분기만
     #   실행 → 중복 없음, accent-bar와 한 블록으로 합쳐 세로 간격도 유지).
+    # 탭 아이콘(:material/…) — format_func로 표시만 바꾸고 값(세션·비교)은 한글 그대로 유지.
+    #   세이지 필 스타일은 app.py 전역 CSS(.st-key-re_maintab2 — 주식 하위탭과 공유)가 담당.
+    _re_icons = {"사이클": ":material/cycle:", "실거래": ":material/receipt_long:",
+                 "분양": ":material/campaign:", "테마": ":material/tag:"}
     _re_maintab = st.segmented_control(
         "부동산 탭", ["사이클", "실거래", "분양", "테마"], default="사이클",
+        format_func=lambda _t: f"{_re_icons[_t]} {_t}",
         key="re_maintab2", label_visibility="collapsed",
     ) or "사이클"   # 선택 해제(None) 시 기본값으로 폴백
     # ※ key를 re_maintab2로 교체(2026-07): 기존 세션에 '지도' 값이 남아 있으면
