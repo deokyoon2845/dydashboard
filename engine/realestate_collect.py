@@ -911,7 +911,7 @@ def _collect_macro_indicators():
         sv = _ma_series(sv, 3)
         if len(sv) >= 2:
             out.append({"key": "starts", "label": "주택 착공",
-                        "sub": f"주거용 착공 YoY·3개월 평균 · {reg_lab} · 월간(ECOS)",
+                        "sub": f"주거용 착공 증감률(전년동월比)·3개월 평균 · {reg_lab} · 월간(ECOS)",
                         "unit": "%",
                         "col": "#B89A5C", "series": sv, "dates": sd})
             print(f"[realestate] ECOS 착공 OK item={used} 기준={reg_lab}"
@@ -945,6 +945,13 @@ def collect_indicators():
                                        "매매전세코드": "01"}, points=WN))
     except Exception as e:
         print(f"[realestate] KB 매매지수 실패: {e}")
+    try:
+        _sm = _kb_seoul_series("index", {"월간주간구분코드": "01", "매물종별구분": "01",
+                                         "매매전세코드": "01"}, points=MN)
+        add("sale_m", "매매가격지수(월간)", "서울 · 월간(KB)", "", "#B65F5A", _sm)
+        print(f"[realestate] KB 매매지수 월간 n={len(_sm)}")
+    except Exception as e:
+        print(f"[realestate] KB 매매지수 월간 실패: {e}")
     try:
         add("jeonse", "전세가격지수", "서울 · 주간(KB)", "", "#5A7CA0",
             _kb_seoul_series("index", {"월간주간구분코드": "02", "매물종별구분": "01",
