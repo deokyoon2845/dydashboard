@@ -831,7 +831,7 @@ function render(){
 document.querySelectorAll("#period button").forEach(b=>b.onclick=()=>{
  document.querySelectorAll("#period button").forEach(x=>x.classList.remove("on"));b.classList.add("on");period=b.dataset.p;render();});
 render();
-(function(){function _fit(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;if(window.frameElement){window.frameElement.style.height=h+"px";window.frameElement.setAttribute("height",h);}}catch(e){}}window.addEventListener("load",_fit);setTimeout(_fit,150);setTimeout(_fit,600);setTimeout(_fit,1500);window.addEventListener("resize",_fit);try{new ResizeObserver(_fit).observe(document.body);}catch(e){}})();
+(function(){function _fit(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;if(window.frameElement){window.frameElement.style.height=h+"px";window.frameElement.setAttribute("height",h);var pe=window.frameElement.parentElement;if(pe&&pe.getBoundingClientRect().height<h){pe.style.height=h+"px";}}}catch(e){}}window.addEventListener("load",_fit);setTimeout(_fit,150);setTimeout(_fit,600);setTimeout(_fit,1500);window.addEventListener("resize",_fit);try{new ResizeObserver(_fit).observe(document.body);}catch(e){}})();
 </script></body></html>'''
 
 
@@ -1192,9 +1192,12 @@ function priceDelta(arr){if(!arr||arr.length<2)return null;
  const pct=d/prev*100,cls=Math.abs(pct)<0.05?"fl":pct>0?"up":"dn";
  return {cls,pct:(pct>0?"+":pct<0?"−":"±")+Math.abs(pct).toFixed(1),amt:(d>0?"+":d<0?"−":"±")+Math.abs(d).toFixed(2)};}
 function priceChart(med,mean){ // 최근 1년 이중선 — 중위 실선(면적)·평균 점선(우측 정렬)
- // H 64→120 (2026-07): 중위~평균을 한 스케일에 담으면 각 선의 기울기가 눌려 보여
- // 세로를 키워 Y 변화 체감을 살린다. viewBox 비율만 바뀌므로(.mini height:auto) CSS 무수정.
- const W=280,H=120,P={l:4,r:6,t:8,b:17},N=13;
+ // (2026-07 v2) 280×120 → 560×150 가로형 재설계:
+ //  ① 세로축 억 단위 3눈금(하단·중간·상단) + 옅은 가이드선 추가 — 좌측 패딩 36 확보.
+ //  ② 비율 0.43→0.27로 완화 — .mini(height:auto)가 카드 폭에 비례해 과도하게 커지며
+ //     파이썬 선언 높이(구 235px/행)를 넘겨 다음 섹션(거시 상세 추이)과 겹치던 문제 해소.
+ //     선언 예산도 320px/행으로 동기화(아래 _render_indicator_charts).
+ const W=560,H=150,P={l:36,r:10,t:10,b:22},N=13;
  const a=med.slice(-N),b=(mean||[]).slice(-N);
  if(a.length<2)return "";
  const pts=a.map((v,i)=>({t:new Date(ASOF.getTime()-(a.length-1-i)*30*86400000),v}));
@@ -1208,14 +1211,19 @@ function priceChart(med,mean){ // 최근 1년 이중선 — 중위 실선(면적
  const off=a.length-b.length;              // 같은 월간 · 꼬리(최신월) 기준 정렬
  const mp=b.map((v,j)=>({i:j+off,v})).filter(p=>p.i>=0&&p.i<a.length);
  const path2=mp.map((p,k)=>(k?"L":"M")+xs(p.i).toFixed(1)+" "+ys(p.v).toFixed(1)).join(" ");
+ // 세로축 — 데이터 최저·중간·최고 3눈금(중위~평균 통합 범위) · 억 단위 라벨 + 가이드선
+ const fmtY=v=>(v>=100?v.toFixed(0):v.toFixed(1))+'억';
+ const yt=[lo,(lo+hi)/2,hi].map(v=>{const y=ys(v);
+  return '<line x1="'+P.l+'" x2="'+(W-P.r)+'" y1="'+y.toFixed(1)+'" y2="'+y.toFixed(1)+'" stroke="#ECEDE7" stroke-width="1" stroke-dasharray="2 3"/>'
+   +'<text class="mc-ax" style="font-size:11px" x="'+(P.l-5)+'" y="'+(y+3.5).toFixed(1)+'" text-anchor="end">'+fmtY(v)+'</text>';}).join("");
  const ax='<line x1="'+P.l+'" y1="'+(H-P.b)+'" x2="'+(W-P.r)+'" y2="'+(H-P.b)+'" stroke="var(--line2)" stroke-width="1"/>';
  const tk=monthTicks(pts).map(t=>{const x=xs(t.i);
   return '<line x1="'+x.toFixed(1)+'" x2="'+x.toFixed(1)+'" y1="'+(H-P.b)+'" y2="'+(H-P.b+3)+'" stroke="#C9CBC2" stroke-width="1"/>'
-   +'<text class="mc-ax" x="'+x.toFixed(1)+'" y="'+(H-3)+'" text-anchor="middle">'+MON[t.mo]+'</text>';}).join("");
+   +'<text class="mc-ax" style="font-size:11px" x="'+x.toFixed(1)+'" y="'+(H-6)+'" text-anchor="middle">'+MON[t.mo]+'</text>';}).join("");
  return '<svg class="mini" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet">'
-  +'<path d="'+area+'" fill="#7E9A83" opacity="0.10"/>'+ax
-  +(mp.length>1?'<path d="'+path2+'" fill="none" stroke="#B65F5A" stroke-width="1.7" stroke-dasharray="4 3" stroke-linejoin="round" stroke-linecap="round" opacity="0.85"/>':'')
-  +'<path d="'+path+'" fill="none" stroke="#7E9A83" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"/>'
+  +'<path d="'+area+'" fill="#7E9A83" opacity="0.10"/>'+yt+ax
+  +(mp.length>1?'<path d="'+path2+'" fill="none" stroke="#B65F5A" stroke-width="2.8" stroke-dasharray="7 5" stroke-linejoin="round" stroke-linecap="round" opacity="0.85"/>':'')
+  +'<path d="'+path+'" fill="none" stroke="#7E9A83" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>'
   +tk+'</svg>';}
 function priceCard(p){const med=p.med||[],mean=p.mean||[];
  const lastMed=med.length?med[med.length-1]:null;
@@ -1320,7 +1328,7 @@ function renderFoot(){const soon=PEND.filter(p=>p.st==="soon");
  if(soon.length)s+=' · 연결예정 '+soon.length+'종('+soon.map(p=>p.lab).join("·")+')';
  document.getElementById("foot").innerHTML=s;}
 renderCycle();renderPrice();renderFoot();
-(function(){function _fit(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;if(window.frameElement){window.frameElement.style.height=h+"px";window.frameElement.setAttribute("height",h);}}catch(e){}}window.addEventListener("load",_fit);setTimeout(_fit,150);setTimeout(_fit,600);setTimeout(_fit,1500);window.addEventListener("resize",_fit);try{new ResizeObserver(_fit).observe(document.body);}catch(e){}})();
+(function(){function _fit(){try{var h=Math.ceil(document.body.getBoundingClientRect().height)+2;if(window.frameElement){window.frameElement.style.height=h+"px";window.frameElement.setAttribute("height",h);var pe=window.frameElement.parentElement;if(pe&&pe.getBoundingClientRect().height<h){pe.style.height=h+"px";}}}catch(e){}}window.addEventListener("load",_fit);setTimeout(_fit,150);setTimeout(_fit,600);setTimeout(_fit,1500);window.addEventListener("resize",_fit);try{new ResizeObserver(_fit).observe(document.body);}catch(e){}})();
 </script></body></html>'''
 
 
@@ -1403,7 +1411,7 @@ def _render_indicator_charts(data):
     # 다음 섹션과 사이에 큰 공백이 생긴다(2026-07 축소). 모바일 적층으로 내용이
     # 더 길어지면 iframe 내부 _fit 스크립트가 frameElement 높이를 키워 보정한다.
     height = (300                      # 사이클 헤더 + 판정근거 칩 + 위치 게이지
-              + (55 + 235 * ceil(len(price) / 2) if price else 0)  # 가격 카드(2열 · 이중선 범례 포함)
+              + (55 + 320 * ceil(len(price) / 2) if price else 0)  # 가격 카드(2열 · 560×150 차트+세로축 라벨, 2026-07 재실측)
               + 35)                    # 푸터 캡션
     components.html(_indicator_chart_component(ind, pend, price, asof,
                                                _scarr, _v3sig),
