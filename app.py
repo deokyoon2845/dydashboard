@@ -152,6 +152,25 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 .st-key-top_section div[data-testid="stSegmentedControl"] button span[data-testid="stIconMaterial"] { font-size:17px; color:inherit; }
 .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button span[data-testid="stIconMaterial"],
 .st-key-re_maintab2 div[data-testid="stSegmentedControl"] button span[data-testid="stIconMaterial"] { font-size:16px; color:inherit; }
+/* 모바일(≤640px): 아이콘까지 붙으면 서브탭(주식 5개·부동산 4개)이 두 줄로 밀린다.
+   아이콘을 숨기고 버튼을 flex 균등분할(full-width)해 한 행에 딱 맞춘다 — 데스크톱은 아이콘 유지. */
+@media (max-width:640px){
+  .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] [role="radiogroup"],
+  .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] > div,
+  .st-key-re_maintab2 div[data-testid="stSegmentedControl"] [role="radiogroup"],
+  .st-key-re_maintab2 div[data-testid="stSegmentedControl"] > div {
+    display:flex !important; width:100%; gap:2px; flex-wrap:nowrap; padding:3px;
+  }
+  .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button span[data-testid="stIconMaterial"],
+  .st-key-re_maintab2 div[data-testid="stSegmentedControl"] button span[data-testid="stIconMaterial"] { display:none !important; }
+  .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button,
+  .st-key-re_maintab2 div[data-testid="stSegmentedControl"] button {
+    flex:1 1 0 !important; min-width:0 !important; padding:8px 4px !important;
+    justify-content:center !important; text-align:center;
+  }
+  .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button p,
+  .st-key-re_maintab2 div[data-testid="stSegmentedControl"] button p { font-size:12.5px !important; }
+}
 /* 3단(최하위) 탭 — 고스트 언더라인 (B안): 종목(주도주|공모주)·실거래 보기(시세 지도|지역 급지|주목 단지)·
    브리핑 장전|장마감. 필 컨테이너를 없애고 텍스트+밑줄만 남겨 2단(세이지 필)보다 위계를 한 단계 낮춘다. */
 .st-key-stock_kind div[data-testid="stSegmentedControl"] [role="radiogroup"],
