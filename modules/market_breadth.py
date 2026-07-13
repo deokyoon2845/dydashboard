@@ -1,17 +1,24 @@
 """시장 폭(Breadth) — 거래대금 + 등락 종목 수.
 
-pykrx가 클라우드(해외 IP)에서 차단되어 외부 페이지 스크래핑으로 대체한다.
-소스를 순서대로 시도하고, 모두 실패하면 None(섹션 생략):
-  1) 네이버 지수 일별 시세 페이지 (거래대금) + 네이버 모바일 지수 API/sise 메인 (등락 종목 수)
-  2) 다음(Daum) 금융 모바일 페이지 (거래대금 + 등락 종목 수)
+pykrx가 클라우드(해외 IP)에서 차단되어 네이버 비공식 JSON API로 수집한다.
 
-2026-06 보강: 등락 종목 수가 1/1/1 같은 엉뚱한 값으로 찍히던 문제를 고쳤다.
-  - 네이버 모바일 지수 API(구조화 JSON)를 1순위로 시도.
-  - 데스크톱 페이지 정규식은 폴백으로 유지하되, 합계가 비현실적으로 작으면(<100)
-    오파싱으로 보고 버려서 '정보 없음'으로 정직하게 표기한다(가짜 1/1/1 방지).
+2026-07 재작성 배경:
+  네이버 지수 상세(sise_index)·다음 모바일 페이지가 전부 JS 렌더링 SPA로 바뀌어
+  정적 HTML 파싱이 불가능해졌다(정규식이 좌측 메뉴의 '상승'만 잡아 up=0 실패,
+  다음 페이지는 아예 빈 껍데기). breadth probe로 확정한 단일 JSON 엔드포인트로
+  거래대금·등락 종목 수를 '한 번의 호출'로 가져오도록 통일했다.
+
+소스(우선순위):
+  1) m.stock.naver.com/api/index/{CODE}/integration   ← 주 소스(둘 다 제공)
+     - totalInfos[accumulatedTradingValue] → 거래대금(백만 → 억)
+     - upDownStockInfo{riseCount,steadyCount,fallCount,upperCount,lowerCount}
+       → 상승(=상승+상한) / 보합 / 하락(=하락+하한)
+  2) polling.finance.naver.com/api/realtime/domestic/index/{CODE}  ← 거래대금 폴백
+     - accumulatedTradingValueRaw(원) → 거래대금(억). 등락 종목 수는 없음(→ 정보 없음).
+
+등락 합계가 비현실적으로 작으면(<100) 오파싱으로 보고 등락은 버린다(거래대금은 유지).
 
 DEBUG=True로 두면 실패 시 화면에 진단 정보를 표시한다(원인 파악용).
-원인 확인이 끝나면 DEBUG=False로 되돌린다.
 """
 
 import re
@@ -19,18 +26,18 @@ import re
 import requests
 import streamlit as st
 
-DEBUG = True  # ← 진단이 끝나면 False로 변경
+DEBUG = False  # 진단이 필요할 때만 True
 
-_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-_HEADERS = {"User-Agent": _UA}
-_HEADERS_DAUM = {
+_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+       "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+_HEADERS = {
     "User-Agent": _UA,
-    "Referer": "https://finance.daum.net/domestic",
     "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "ko-KR,ko;q=0.9",
+    "Referer": "https://m.stock.naver.com/",
 }
 
 _NAVER_CODE = {"코스피": "KOSPI", "코스닥": "KOSDAQ"}
-_DAUM_SYMBOL = {"코스피": "KOSPI", "코스닥": "KOSDAQ"}
 
 # 등락 종목 수 합계가 이 값보다 작으면 오파싱으로 보고 버린다.
 # (코스피·코스닥은 상장 종목이 수백~천 단위라 한 자릿수는 비정상)
@@ -45,7 +52,8 @@ def _log(msg):
         _diag.append(str(msg))
 
 
-def _to_int(x):
+def _digits(x):
+    """문자열에서 숫자만 추려 int로. 실패 시 None. ('4,911,687백만' → 4911687)"""
     try:
         v = re.sub(r"[^\d]", "", str(x))
         return int(v) if v else None
@@ -53,142 +61,91 @@ def _to_int(x):
         return None
 
 
-# ── 소스 1-a: 네이버 지수 일별 시세 (거래대금) ────────────────
+def _eok_from_baekman(text):
+    """'4,911,687백만' 형태 → 억(int). 실패 시 None."""
+    mil = _digits(text)
+    return round(mil / 100) if mil else None  # 백만 → 억
 
-def _naver_trade_value(market_label: str):
-    """finance.naver.com/sise/sise_index_day.naver — 일별 거래대금(백만원).
-    최근 행의 '거래대금' 컬럼을 억원으로 환산해 반환. 실패 시 None."""
+
+# ── 소스 1: 네이버 통합 JSON (거래대금 + 등락 종목 수) ───────────
+
+def _naver_integration(market_label: str):
+    """m.stock.naver.com integration — 거래대금·등락 종목 수를 한 번에.
+    실패 시 None. 등락만 비정상이면 등락은 0으로 비우고 거래대금은 살린다."""
     code = _NAVER_CODE.get(market_label)
     if not code:
         return None
-    url = f"https://finance.naver.com/sise/sise_index_day.naver?code={code}"
+    url = f"https://m.stock.naver.com/api/index/{code}/integration"
     try:
         r = requests.get(url, headers=_HEADERS, timeout=12)
-        r.encoding = "euc-kr"
-        html = r.text
+        data = r.json()
     except Exception as e:
-        _log(f"[naver value] 요청 실패: {e}")
+        _log(f"[integration {market_label}] 요청/파싱 실패: {e}")
         return None
 
-    # 일별 표의 숫자들. '거래대금' 헤더가 있고 행마다 천 단위 숫자가 늘어선다.
-    # 가장 최근(첫) 데이터 행의 거래대금(백만원)을 잡는다.
-    try:
-        import pandas as pd
-        from io import StringIO
-        tables = pd.read_html(StringIO(html))
-        for tb in tables:
-            cols = [str(c) for c in tb.columns]
-            val_col = next((c for c in cols if "거래대금" in c), None)
-            if val_col is None:
-                continue
-            ser = tb[val_col].dropna()
-            for v in ser:
-                millions = _to_int(v)
-                if millions and millions > 1000:  # 의미있는 값
-                    return round(millions / 100)  # 백만→억
-        _log("[naver value] 거래대금 컬럼/값 없음")
-    except Exception as e:
-        _log(f"[naver value] 파싱 실패: {e}")
-    return None
+    # 거래대금 (totalInfos 안의 accumulatedTradingValue: '…백만')
+    value_eok = None
+    for it in (data.get("totalInfos") or []):
+        if it.get("code") == "accumulatedTradingValue":
+            value_eok = _eok_from_baekman(it.get("value"))
+            break
+
+    # 등락 종목 수 (상한은 상승에, 하한은 하락에 합산)
+    ud = data.get("upDownStockInfo") or {}
+    rise = _digits(ud.get("riseCount")) or 0
+    upper = _digits(ud.get("upperCount")) or 0
+    steady = _digits(ud.get("steadyCount")) or 0
+    fall = _digits(ud.get("fallCount")) or 0
+    lower = _digits(ud.get("lowerCount")) or 0
+    adv, flat, dec = rise + upper, steady, fall + lower
+
+    if adv + dec < _MIN_BREADTH_TOTAL:
+        _log(f"[integration {market_label}] 등락 비정상 "
+             f"up={adv} flat={flat} down={dec} → 등락 생략")
+        adv = flat = dec = 0
+
+    if value_eok is None and (adv + dec) == 0:
+        _log(f"[integration {market_label}] 유효 값 없음")
+        return None
+    return {"value_eok": value_eok, "advance": adv, "flat": flat,
+            "decline": dec, "asof": None}
 
 
-# ── 소스 1-b: 등락 종목 수 (네이버 지수 상세 페이지 파싱) ──
-# 모바일 /basic JSON엔 종목 수가 없음(DEBUG로 확인). 종목 수가 '텍스트'로 들어있는
-# 데스크톱 지수 상세 페이지(sise_index.naver)를 파싱한다. 태그를 모두 제거하고
-# '상승/보합/하락' 라벨 바로 뒤 숫자를 잡는다. 합계가 비현실적으로 작으면(<100)
-# 오파싱으로 보고 버린다. 실패 시 원문 일부를 DEBUG에 남겨 다음 수정의 단서로 쓴다.
+# ── 소스 2: 네이버 폴링 실시간 (거래대금 폴백) ─────────────────
 
-def _naver_updown(market_label: str):
-    """상승/보합/하락 종목 수. 실패/비정상 시 (0,0,0) → 화면엔 '정보 없음'."""
-    code = _NAVER_CODE.get(market_label)  # 'KOSPI' | 'KOSDAQ'
+def _naver_polling_value(market_label: str):
+    """polling.finance.naver.com — accumulatedTradingValueRaw(원) → 억. 실패 시 None."""
+    code = _NAVER_CODE.get(market_label)
     if not code:
-        return 0, 0, 0
-
-    url = f"https://finance.naver.com/sise/sise_index.naver?code={code}"
+        return None
+    url = f"https://polling.finance.naver.com/api/realtime/domestic/index/{code}"
     try:
         r = requests.get(url, headers=_HEADERS, timeout=12)
-        r.encoding = "euc-kr"
-        html = r.text
+        datas = (r.json() or {}).get("datas") or []
+        if not datas:
+            _log(f"[polling {market_label}] datas 없음")
+            return None
+        won = _digits(datas[0].get("accumulatedTradingValueRaw"))
+        return round(won / 1e8) if won else None  # 원 → 억
     except Exception as e:
-        _log(f"[updown {market_label}] 요청 실패: {e}")
-        return 0, 0, 0
-
-    # 모든 HTML 태그 제거 후 공백 정리 → 라벨 기준 텍스트 앵커링
-    txt = re.sub(r"<[^>]+>", " ", html)
-    txt = re.sub(r"\s+", " ", txt)
-
-    def _grab(label):
-        # 라벨 뒤 비숫자 6자(공백·화살표 등)까지 건너뛰고 첫 숫자를 잡는다(너무 멀리 X)
-        m = re.search(label + r"[^\d]{0,6}([\d,]+)", txt)
-        return (_to_int(m.group(1)) or 0) if m else 0
-
-    u = _grab("상승")
-    f = _grab("보합")
-    d = _grab("하락")
-
-    if u + d < _MIN_BREADTH_TOTAL:
-        # 실패 원인 파악용: '상승' 주변 원문 일부를 남긴다(다음 수정의 단서).
-        i = txt.find("상승")
-        snippet = txt[max(0, i - 20):i + 90] if i >= 0 else "('상승' 라벨 없음)"
-        _log(f"[updown {market_label}] 파싱 실패 up={u} flat={f} down={d} · "
-             f"원문≈ {snippet}")
-        return 0, 0, 0
-    return u, f, d
-
-
-# ── 소스 2: 다음 모바일 페이지 (거래대금 + 등락) ──────────────
-
-def _daum_mobile(market_label: str):
-    """m.finance.daum.net/domestic 텍스트 파싱. 실패 시 None."""
-    try:
-        r = requests.get("https://m.finance.daum.net/domestic",
-                         headers=_HEADERS, timeout=12)
-        text = r.text
-    except Exception as e:
-        _log(f"[daum] 요청 실패: {e}")
+        _log(f"[polling {market_label}] 실패: {e}")
         return None
-
-    start = text.find(market_label)
-    seg = text[start:start + 4000] if start >= 0 else text
-
-    res = {"value_eok": None, "advance": 0, "flat": 0, "decline": 0, "asof": None}
-    m = re.search(r"거래금\s*([\d,]+)\s*백만", seg)
-    if m:
-        mil = _to_int(m.group(1))
-        if mil:
-            res["value_eok"] = round(mil / 100)
-    mu = re.search(r"상승[▲\s]*([\d,]+)", seg)
-    mf = re.search(r"보합[▬\s]*([\d,]+)", seg)
-    md = re.search(r"하락[▼\s]*([\d,]+)", seg)
-    res["advance"] = (_to_int(mu.group(1)) if mu else 0) or 0
-    res["flat"] = (_to_int(mf.group(1)) if mf else 0) or 0
-    res["decline"] = (_to_int(md.group(1)) if md else 0) or 0
-
-    # 다음도 등락 합계가 비현실적으로 작으면 등락 정보는 버린다(거래대금은 유지).
-    if (res["advance"] + res["decline"]) < _MIN_BREADTH_TOTAL:
-        res["advance"] = res["flat"] = res["decline"] = 0
-
-    if res["value_eok"] is None and (res["advance"] + res["decline"]) == 0:
-        _log(f"[daum] 값 없음 (페이지 길이 {len(text)}, '{market_label}' "
-             f"위치 {start})")
-        return None
-    return res
 
 
 @st.cache_data(ttl=600)
 def fetch_breadth(market_label: str):
-    """거래대금·등락 종목 수. 네이버 우선, 실패 시 다음. 모두 실패 시 None."""
-    # 1) 네이버
-    val = _naver_trade_value(market_label)
-    up, flat, down = _naver_updown(market_label)
-    if val is not None or (up + down) >= _MIN_BREADTH_TOTAL:
-        return {"value_eok": val, "advance": up, "flat": flat,
-                "decline": down, "asof": None}
+    """거래대금·등락 종목 수. 통합 JSON 우선, 실패 시 폴링으로 거래대금만."""
+    d = _naver_integration(market_label)
+    if d:
+        if d["value_eok"] is None:  # 등락은 있는데 거래대금만 비면 폴링으로 보강
+            d["value_eok"] = _naver_polling_value(market_label)
+        return d
 
-    # 2) 다음
-    daum = _daum_mobile(market_label)
-    if daum:
-        return daum
+    # 통합 실패 → 거래대금이라도 살린다(등락은 '정보 없음')
+    val = _naver_polling_value(market_label)
+    if val is not None:
+        return {"value_eok": val, "advance": 0, "flat": 0,
+                "decline": 0, "asof": None}
 
     _log(f"[{market_label}] 모든 소스 실패")
     return None
@@ -254,8 +211,8 @@ def render_market_breadth():
     st.markdown(
         '<div class="mkt-group ui-fx">📊 거래대금 · 등락 종목 수'
         + foot_badge(
-            "네이버·다음 금융 · 15~20분 지연",
-            "장중 약 15~20분 지연 · 상승/보합/하락 막대는 전 종목 비율")
+            "네이버 금융 · 15~20분 지연",
+            "장중 약 15~20분 지연 · 상승/보합/하락 막대는 전 종목 비율(상한·하한 포함)")
         + '</div>', unsafe_allow_html=True)
     cards = _market_card("코스피", kospi) + _market_card("코스닥", kosdaq)
     st.markdown(f'<div class="breadth-grid">{cards}</div>', unsafe_allow_html=True)
