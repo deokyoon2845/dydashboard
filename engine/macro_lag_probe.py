@@ -15,6 +15,7 @@ KB는 키 불필요. Supabase 불필요(읽기·쓰기 없음).
 
 import math
 import os
+import time
 from datetime import date
 
 # 엔진의 검증된 저수준 fetcher 재사용(KB 호출·ECOS 호출 규약 동일 보장)
@@ -25,6 +26,26 @@ START_TARGET = "202001"   # 타깃(매매지수 변화율) 평가 시작
 MAX_LAG = 36              # 지표 lag 스캔 상한(개월)
 SMOOTH_K = 3              # 지표 3개월 이동평균
 MIN_OVERLAP = 24          # 상관 계산 최소 표본(개월)
+
+# ECOS는 GitHub Actions 러너 지역에 따라 간헐 타임아웃(2026-07-13 1차 실행에서
+# northcentralus 전멸 확인 — 매일 새벽 수집은 정상이므로 해외 IP 간헐 차단 추정).
+# → 빈 응답이면 대기 후 재시도. 그래도 실패면 해당 지표만 생략(로그에 남음).
+ECOS_TRIES = 3
+ECOS_WAIT = 12            # 재시도 간 대기(초)
+
+
+def _retry_ecos(fn, *args, label="", **kw):
+    """fn(*args) 결과가 '비어있으면' ECOS_TRIES회까지 재시도. 실패 시 마지막 결과."""
+    out = None
+    for i in range(ECOS_TRIES):
+        out = fn(*args, **kw)
+        got = out[0] if isinstance(out, tuple) else out
+        if got:
+            return out
+        if i < ECOS_TRIES - 1:
+            print(f"    [ECOS 재시도 {i + 1}/{ECOS_TRIES - 1}] {label} — {ECOS_WAIT}s 대기")
+            time.sleep(ECOS_WAIT)
+    return out
 
 
 # ── 월 산술·시계열 유틸 ─────────────────────────────────────────
@@ -167,7 +188,8 @@ def quarterly_to_monthly(dates, vals):
 
 def ecos_monthly(stat, item, start="201501"):
     end = date.today().strftime("%Y%m")
-    d, v = _ecos_series(stat, "M", item, start, end, n=900)
+    d, v = _retry_ecos(_ecos_series, stat, "M", item, start, end, n=900,
+                       label=f"{stat}/{item}")
     return dict(zip(d, v))
 
 
@@ -210,14 +232,16 @@ def resolve_starts_levels():
     end = date.today().strftime("%Y%m")
 
     def item_rows(stat):
-        url = (f"https://ecos.bok.or.kr/api/StatisticItemList/{key}"
-               f"/json/kr/1/500/{stat}")
-        try:
-            r = requests.get(url, timeout=25)
-            return (r.json().get("StatisticItemList") or {}).get("row") or []
-        except Exception as e:
-            print(f"  [starts] ItemList 실패: {e}")
-            return []
+        def _once():
+            url = (f"https://ecos.bok.or.kr/api/StatisticItemList/{key}"
+                   f"/json/kr/1/500/{stat}")
+            try:
+                r = requests.get(url, timeout=25)
+                return (r.json().get("StatisticItemList") or {}).get("row") or []
+            except Exception as e:
+                print(f"  [starts] ItemList 실패: {e}")
+                return []
+        return _retry_ecos(_once, label=f"ItemList {stat}")
 
     rows = item_rows("901Y103")
     seoul = next((r.get("ITEM_CODE") for r in rows
@@ -228,7 +252,8 @@ def resolve_starts_levels():
         regs = {}
         for reg in (seoul, gg):
             for combo in (f"{reg}/I47ABA", f"I47ABA/{reg}", reg):
-                d, v = _ecos_series("901Y103", "M", combo, "201001", end, n=900)
+                d, v = _retry_ecos(_ecos_series, "901Y103", "M", combo,
+                                   "201001", end, n=900, label=f"착공 {combo}")
                 if len(v) >= 24:
                     regs[reg] = dict(zip(d, v))
                     break
@@ -238,7 +263,8 @@ def resolve_starts_levels():
                 print(f"  [starts] 서울({seoul})+경기({gg}) 합산 n={len(common)}")
                 return {t: sum(m[t] for m in regs.values()) for t in common}, "서울+경기"
     for combo in ("1/I47ABA", "2/I47ABA", "I47ABA"):
-        d, v = _ecos_series("901Y103", "M", combo, "201001", end, n=900)
+        d, v = _retry_ecos(_ecos_series, "901Y103", "M", combo,
+                           "201001", end, n=900, label=f"착공 {combo}")
         if len(v) >= 24:
             print(f"  [starts] 전국 폴백 item={combo} n={len(v)}")
             return dict(zip(d, v)), "전국"
@@ -299,7 +325,8 @@ def main():
 
     # 4) GDP 전기비(분기→월 전개)
     endQ = f"{date.today().year}Q{(date.today().month - 1) // 3 + 1}"
-    dq, vq = _ecos_series("200Y102", "Q", "10111", "2015Q1", endQ, n=200)
+    dq, vq = _retry_ecos(_ecos_series, "200Y102", "Q", "10111", "2015Q1", endQ,
+                         n=200, label="GDP 200Y102")
     gdp = quarterly_to_monthly(dq, vq)
     inds["GDP(전기비)"] = {"raw": gdp, "note": f"n={len(gdp)}"}
 
