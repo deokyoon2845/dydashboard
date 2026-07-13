@@ -946,8 +946,11 @@ def collect_indicators():
     except Exception as e:
         print(f"[realestate] KB 매매지수 실패: {e}")
     try:
+        # 기간=조회연수(lookback). KB priceIndex는 기본 최근 ~25개월만 준다(probe 2026-07-13 확정)
+        # → 백테스트 궤적을 2020.1부터 그리려면 장기로 받아야 한다. 기간=10(≈121개월)으로 넉넉히
+        #   요청하고, _kb_seoul_series가 points=MN(~80)으로 최근분만 슬라이스(스냅샷 크기 불변).
         _sm = _kb_seoul_series("index", {"월간주간구분코드": "01", "매물종별구분": "01",
-                                         "매매전세코드": "01"}, points=MN)
+                                         "매매전세코드": "01", "기간": "10"}, points=MN)
         add("sale_m", "매매가격지수(월간)", "서울 · 월간(KB)", "", "#B65F5A", _sm)
         print(f"[realestate] KB 매매지수 월간 n={len(_sm)}")
     except Exception as e:
