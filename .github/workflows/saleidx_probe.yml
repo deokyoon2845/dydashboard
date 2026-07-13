@@ -1,0 +1,33 @@
+name: KB 매매지수 장기조회 프로브 (수동)
+
+# ──────────────────────────────────────────────────────────────────────────
+#  백테스트 '종합 강도 궤적'의 매매지수(빨간선)가 24.05부터만 그려지는 원인 규명용.
+#  engine.realestate_collect 의 실제 KB 코드경로(_kb_get/_kb_rows)로 priceIndex를
+#  여러 '기간'·조회범위 파라미터로 호출해, 2020.1까지 받는 조합을 찾는다.
+#  KB data-api는 인증키가 필요 없어 시크릿 없이도 동작. 저장/부수효과 없음(출력만).
+#  실행: Actions → 이 워크플로 → Run workflow → 로그의 '유효값/날짜' 표를 확인.
+# ──────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v5
+
+      - name: 파이썬 설정
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: 라이브러리 설치
+        run: pip install -r requirements.txt
+
+      - name: KB 매매지수 장기조회 프로브 실행
+        run: python -m engine.saleidx_probe
