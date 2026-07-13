@@ -1,0 +1,22 @@
+name: macro-lag-probe
+
+# 종합 강도 v4 설계용 1회성 진단 — lag·가중치 실측.
+# 수동 실행 전용. 결과는 로그로만 확인(저장 없음). 확정 후 이 파일과
+# engine/macro_lag_probe.py는 삭제해도 된다.
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: run probe
+        env:
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+        run: python -m engine.macro_lag_probe
