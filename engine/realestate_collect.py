@@ -821,7 +821,10 @@ def _collect_macro_indicators():
     out = []
 
     # 주담대 금리 (+기준금리 병기 pair)
-    d1, v1 = _ecos_series("121Y006", "M", "BECBLA0302", "202001", endM)
+    #   [v4] 2018.1부터 백필 — 종합 강도 v4의 '주담대 6M변화 · lag 15개월' 성분이
+    #   2020.1 백테스트를 커버하려면 2018.7 이전 레벨이 필요(Δ6M 산출 여유 포함).
+    #   지표 카드·거시 차트 표시는 뷰어 _clip_2020이 2020년부터로 잘라 그린다.
+    d1, v1 = _ecos_series("121Y006", "M", "BECBLA0302", "201801", endM)
     if len(v1) >= 2:
         item = {"key": "mortgage", "label": "주담대 금리",
                 "sub": "예금은행 신규취급 가중평균 · 월간(ECOS)", "unit": "%",
@@ -859,6 +862,9 @@ def _collect_macro_indicators():
         print("[realestate] ECOS GDP 0행")
 
     # 주택 착공 — 서울+경기 합산 기준(2026-07 변경 · 수도권 핵심 공급만 반영).
+    #   [v4] 2015.1부터 백필 — 종합 강도 v4의 '착공 YoY · lag 29개월' 성분이
+    #   2020.1 백테스트를 커버하려면 2017.8 이전 YoY(=2016.8 레벨)가 필요.
+    #   표시는 뷰어 _clip_2020이 2020년부터로 잘라 그린다(M2·GDP는 기존 시작 유지).
     #   901Y103은 항목 코드 체계가 문서상 불명확해, StatisticItemList로 '서울'·
     #   '경기' 항목 코드를 런타임에 해석한 뒤 주거용 코드(I47ABA)와 두 순서로
     #   조합해 시도한다. 해석·수집이 하나라도 실패하면 기존 전국 폴백 콤보로
@@ -887,7 +893,7 @@ def _collect_macro_indicators():
             regs = {}
             for reg in (_seoul, _gg):
                 for combo in (f"{reg}/I47ABA", f"I47ABA/{reg}", reg):
-                    d5, v5 = _ecos_series("901Y103", "M", combo, "201901", endM)
+                    d5, v5 = _ecos_series("901Y103", "M", combo, "201501", endM)
                     if len(v5) >= 14:            # YoY 산출 가능 최소 길이
                         regs[reg] = dict(zip(d5, v5))
                         break
@@ -902,7 +908,7 @@ def _collect_macro_indicators():
         print(f"[realestate] ECOS 착공 지역 해석 실패 — 전국 폴백: {e}")
     if not used:                                  # 전국 폴백(기존 콤보)
         for item_code in ("1/I47ABA", "2/I47ABA", "I47ABA"):
-            d4, v4 = _ecos_series("901Y103", "M", item_code, "201901", endM)
+            d4, v4 = _ecos_series("901Y103", "M", item_code, "201501", endM)
             if len(v4) >= 14:
                 starts_d, starts_v, used = d4, v4, item_code
                 break
@@ -950,7 +956,8 @@ def collect_indicators():
         # → 백테스트 궤적을 2020.1부터 그리려면 장기로 받아야 한다. 기간=10(≈121개월)으로 넉넉히
         #   요청하고, _kb_seoul_series가 points=MN(~80)으로 최근분만 슬라이스(스냅샷 크기 불변).
         _sm = _kb_seoul_series("index", {"월간주간구분코드": "01", "매물종별구분": "01",
-                                         "매매전세코드": "01", "기간": "10"}, points=MN)
+                                         "매매전세코드": "01", "기간": "10"},
+                               points=MN + 3)   # +3 = 백테스트 타깃(3개월 변화율) 여유분
         add("sale_m", "매매가격지수(월간)", "서울 · 월간(KB)", "", "#B65F5A", _sm)
         print(f"[realestate] KB 매매지수 월간 n={len(_sm)}")
     except Exception as e:
@@ -961,6 +968,17 @@ def collect_indicators():
                                        "매매전세코드": "02"}, points=WN))
     except Exception as e:
         print(f"[realestate] KB 전세지수 실패: {e}")
+    try:
+        # 월간 전세지수(장기) — 종합 강도 v4의 '전세지수 YoY' 성분 전용 입력.
+        # YoY 계산에 2020.1 이전 12개월이 필요해 points=MN+12 · 기간=10(장기) 요청.
+        # 지표 카드(_INDV2_ORDER)·거시 차트 스펙에 없어 화면에는 표시되지 않는다.
+        _jm = _kb_seoul_series("index", {"월간주간구분코드": "01", "매물종별구분": "01",
+                                         "매매전세코드": "02", "기간": "10"},
+                               points=MN + 12)
+        add("jeonse_m", "전세가격지수(월간)", "서울 · 월간(KB)", "", "#5A7CA0", _jm)
+        print(f"[realestate] KB 전세지수 월간 n={len(_jm)}")
+    except Exception as e:
+        print(f"[realestate] KB 전세지수 월간 실패: {e}")
     try:
         add("lead50", "선도아파트50지수", "전국 · 주간(KB) · 상위 50개 단지", "", "#A35F5A",
             _kb_lead50_series(points=WN))
