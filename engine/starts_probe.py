@@ -29,6 +29,13 @@
      주의 — 창 안 정권 전환 2회뿐 · 2022~23 하락은 금리 쇼크와 중첩(교란) →
      corr이 높아도 '가설과 모순되지 않음' 수준의 증거. 가중 40%는 편집적 선택.
 
+  5) [2026-07-14 2차] KOSIS 접근을 직접 REST(15초 타임아웃·재시도 3회)로 교체 —
+     1차 실행에서 westus 러너의 kosis.kr connect timeout 실측(미분양 수집은 되던
+     통로라 러너 지역별 간헐 이슈 추정). 검색 실패 시 국토부 후보 표 폴백(응답
+     TBL_NM에 '착공' 검증 후 채택). 정책 고정가중 40% 단일점 → 10~40% 스윕 확장.
+     1차 실측: P 단독 +0.609(lag0) · A 무정책 +0.823/80% ·
+     A+P 실측가중(18%) +0.846/79% · A+P 40% 고정 +0.817/70%(적중률 -10pp).
+
 실행: GitHub Actions에서 `python -m engine.starts_probe`
   (KOSIS_API_KEY · ECOS_API_KEY 필요 · KB는 키 불필요 · Supabase 불필요)
 ※ engine/macro_lag_probe.py 의 유틸을 import 하므로 그 파일은 이 작업이 끝날 때까지
@@ -80,54 +87,73 @@ def policy_series(start="201501"):
     return out
 
 
-# ── 0) KOSIS 통합검색 — 착공 통계표 후보 발견 ───────────────────
-def kosis_api():
-    from PublicDataReader import Kosis
+# ── 0) KOSIS 접근 — 직접 REST(타임아웃·재시도) ─────────────────
+#   PublicDataReader는 타임아웃 제어가 없어 kosis.kr 간헐 차단(러너 지역별 ·
+#   2026-07-14 westus에서 connect timeout 실측) 시 분당 단위로 매달린다.
+#   ECOS와 같은 패턴: 15초 타임아웃 · 3회 재시도 · 실패 시 다음 단계로.
+KOSIS_SEARCH_URL = "https://kosis.kr/openapi/statisticsSearch.do"
+KOSIS_DATA_URL = "https://kosis.kr/openapi/Param/statisticsParameterData.do"
+
+# 검색까지 막혔을 때 시도할 국토부(116) 주택건설실적 후보 표 — 이름을 모르는
+# 추측 ID이므로, 응답의 TBL_NM에 '착공'이 있을 때만 채택(오표 채택 방지).
+FALLBACK_TBLS = [("116", t) for t in
+                 ("DT_MLTM_2080", "DT_MLTM_2078", "DT_MLTM_2079",
+                  "DT_MLTM_2081", "DT_MLTM_2074", "DT_MLTM_2075",
+                  "DT_MLTM_2076", "DT_MLTM_2077", "DT_MLTM_2083",
+                  "DT_MLTM_2084", "DT_MLTM_2085", "DT_MLTM_5386")]
+
+
+def _kosis_get(url, params, tries=3, wait=8):
+    import time
+    import requests
     key = _env_key("KOSIS_API_KEY")
     if not key:
         raise RuntimeError("KOSIS_API_KEY 없음")
-    return Kosis(key)
+    q = {"method": "getList", "apiKey": key, "format": "json", "jsonVD": "Y"}
+    q.update(params)
+    last = ""
+    for i in range(tries):
+        try:
+            r = requests.get(url, params=q, timeout=15)
+            j = r.json()
+            if isinstance(j, list) and j:
+                return j
+            last = str(j)[:120]           # {"err":..} 형태 — 재시도 무의미
+            break
+        except Exception as e:
+            last = str(e)[:120]
+            if i < tries - 1:
+                time.sleep(wait)
+    print(f"    KOSIS 응답 없음({last})")
+    return None
 
 
-def search_tables(api, keyword):
+def search_tables(keyword):
     """KOSIS 통합검색 → [(org, tbl, name)] (착공 포함 표만)."""
-    try:
-        df = api.get_data("KOSIS통합검색", searchNm=keyword)
-    except Exception as e:
-        print(f"  [검색] '{keyword}' 실패: {e}")
-        return []
-    if df is None or not len(df):
-        print(f"  [검색] '{keyword}' 0건")
-        return []
-    cols = {c.upper(): c for c in df.columns}
-    oc = cols.get("ORG_ID") or cols.get("ORGID")
-    tc = cols.get("TBL_ID") or cols.get("TBLID")
-    nc = cols.get("TBL_NM") or cols.get("TBLNM") or cols.get("STAT_NM")
-    if not (oc and tc and nc):
-        print(f"  [검색] 컬럼 인식 실패: {list(df.columns)}")
+    rows = _kosis_get(KOSIS_SEARCH_URL, {"searchNm": keyword})
+    if not rows:
+        print(f"  [검색] '{keyword}' 실패/0건")
         return []
     out = []
-    for _, r in df.iterrows():
-        nm = str(r[nc])
-        if "착공" in nm:
-            out.append((str(r[oc]), str(r[tc]), nm))
+    for r in rows:
+        nm = str(r.get("TBL_NM", ""))
+        org, tbl = str(r.get("ORG_ID", "")), str(r.get("TBL_ID", ""))
+        if "착공" in nm and org and tbl:
+            out.append((org, tbl, nm))
     return out
 
 
-def fetch_table(api, org, tbl, months=KOSIS_MONTHS):
-    """통계자료 조회 — 분류 차원 수를 몰라도 되도록 objL을 단계 확장."""
-    last = ""
-    for extra in ({}, {"objL2": "ALL"}, {"objL2": "ALL", "objL3": "ALL"},
-                  {"objL2": "ALL", "objL3": "ALL", "objL4": "ALL"}):
-        try:
-            df = api.get_data("통계자료", orgId=org, tblId=tbl, itmId="ALL",
-                              objL1="ALL", prdSe="M",
-                              newEstPrdCnt=str(months), **extra)
-        except Exception as e:
-            last, df = str(e)[:120], None
-        if df is not None and len(df):
-            return df
-    print(f"    조회 실패({last})")
+def fetch_table(org, tbl, months=KOSIS_MONTHS):
+    """통계자료 직접 조회 — 분류 차원 수를 몰라도 되도록 objL을 단계 확장."""
+    import pandas as pd
+    base = {"orgId": org, "tblId": tbl, "itmId": "ALL",
+            "prdSe": "M", "newEstPrdCnt": str(months)}
+    obj = {}
+    for lv in ("objL1", "objL2", "objL3", "objL4"):
+        obj[lv] = "ALL"
+        rows = _kosis_get(KOSIS_DATA_URL, {**base, **obj}, tries=2, wait=6)
+        if rows:
+            return pd.DataFrame(rows)
     return None
 
 
@@ -142,7 +168,15 @@ def dump_structure(df, max_vals=14):
             if pd.to_numeric(df[c], errors="coerce").notna().sum() >= 2:
                 vcol = c
                 break
-    nmcols = [c for c in cols if c.endswith("_NM") or c.endswith("명")]
+    import re as _re
+    tblnm = str(df["TBL_NM"].iloc[0]) if "TBL_NM" in cols else ""
+    if tblnm:
+        print(f"    표명: {tblnm}")
+    # 분류 컬럼만(C1_NM 등·ITM_NM·한글 '…명'). TBL_NM/UNIT_NM/C1_OBJ_NM 등
+    # 메타 컬럼이 섞이면 '계' 필터가 전 행을 지워버리므로 제외.
+    nmcols = [c for c in cols
+              if _re.fullmatch(r"C\d_NM", c) or c == "ITM_NM"
+              or (c.endswith("명") and c not in ("단위명",))]
     print(f"    행={len(df)} · 컬럼={cols}")
     if pcol is not None:
         print(f"    시점: {df[pcol].min()} ~ {df[pcol].max()}")
@@ -154,7 +188,7 @@ def dump_structure(df, max_vals=14):
             regcol = c
             mark = "  ← 지역컬럼"
         print(f"    {c} ({len(vals)}종): {vals[:max_vals]}{'…' if len(vals) > max_vals else ''}{mark}")
-    return regcol, pcol, vcol, nmcols
+    return regcol, pcol, vcol, nmcols, tblnm
 
 
 def build_series(df, regcol, pcol, vcol, nmcols, exclude_rent=False):
@@ -162,7 +196,8 @@ def build_series(df, regcol, pcol, vcol, nmcols, exclude_rent=False):
     exclude_rent=True면, '임대' 라벨이 존재하는 분류컬럼에서 임대 제외 합산으로 대체."""
     import pandas as pd
     d = df.copy()
-    d["_v"] = pd.to_numeric(d[vcol], errors="coerce")
+    d["_v"] = pd.to_numeric(d[vcol].astype(str).str.replace(",", ""),
+                            errors="coerce")
     d = d.dropna(subset=["_v"])
     d = d[d[regcol].astype(str).str.contains("|".join(REGIONS))]
     rent_col = None
@@ -277,32 +312,38 @@ def main():
         print("!! 타깃 부족 — 중단")
         return
 
-    # 0) KOSIS 착공 표 탐색
-    print("\n[0] KOSIS 통합검색 — '착공' 통계표 후보")
-    api = kosis_api()
+    # 0) KOSIS 착공 표 탐색 — 검색 실패 시 국토부 후보 표 폴백(표명 검증 후 채택)
+    print("\n[0] KOSIS 통합검색 (직접 REST · 15초 타임아웃 · 재시도)")
     cands, seen = [], set()
-    for kw in ("주택건설실적 착공", "주택 착공실적", "착공실적"):
-        for org, tbl, nm in search_tables(api, kw):
+    for kw in ("주택 착공실적", "착공실적"):
+        for org, tbl, nm in search_tables(kw):
             if (org, tbl) not in seen:
                 seen.add((org, tbl))
                 cands.append((org, tbl, nm))
+        if cands:
+            break                          # 첫 성공 검색어로 충분
     for org, tbl, nm in cands[:12]:
         print(f"  org={org} tbl={tbl} — {nm}")
     if not cands:
-        print("!! 후보 없음 — 검색어/키 확인 (KOSIS 스킵 · S0·정책 섹션은 진행)")
+        print("  검색 불가 → 국토부 후보 표 폴백(표명에 착공 있을 때만 채택)")
+        cands = [(o, t, "") for o, t in FALLBACK_TBLS]
 
     # 1) 구조 덤프 + 서울+경기 시계열 구축(첫 성공 표 채택)
     print("\n[1] 후보 표 구조 → 서울+경기 월별 착공 시계열")
     s_all = s_norent = None
     used_tbl = rent_col = None
-    for org, tbl, nm in cands[:6]:
-        print(f"\n  ▶ org={org} tbl={tbl} — {nm}")
-        df = fetch_table(api, org, tbl)
+    for org, tbl, nm in cands[:12]:
+        tag = (' — ' + nm) if nm else ' (폴백 후보)'
+        print(f"\n  ▶ org={org} tbl={tbl}{tag}")
+        df = fetch_table(org, tbl)
         if df is None:
             continue
-        regcol, pcol, vcol, nmcols = dump_structure(df)
+        regcol, pcol, vcol, nmcols, tblnm = dump_structure(df)
+        if not nm and '착공' not in tblnm:
+            print('    폴백 표명에 착공 없음 — 오표 채택 방지, 다음 후보')
+            continue
         if not (regcol and pcol and vcol):
-            print("    지역/시점/값 컬럼 인식 실패 — 다음 후보")
+            print('    지역/시점/값 컬럼 인식 실패 — 다음 후보')
             continue
         s_all, _ = build_series(df, regcol, pcol, vcol, nmcols, exclude_rent=False)
         if len(s_all) < 100:
@@ -378,10 +419,9 @@ def main():
     pol = scan("P 정권더미", policy_series(), target)
     if pol:
         psign = 1 if pol["corr"] >= 0 else -1
-        # 짝지을 착공: S0(현행) 우선, 없으면 가용 후보 중 첫 번째
-        s0nm = next((k for k, v in res.items() if v and k.startswith("S0")), None)
-        if s0nm is None:
-            s0nm = next((k for k, v in res.items() if v), None)
+        # 짝지을 착공: |corr| 최고 후보(= v5 착공 스펙 후보와 동일 조건으로 비교)
+        avail = [(k, v) for k, v in res.items() if v]
+        s0nm = max(avail, key=lambda kv: abs(kv[1]["corr"]))[0] if avail else None
         if s0nm:
             r0 = res[s0nm]
             base4 = base + [(s0nm, r0["z"], r0["lag"],
@@ -389,16 +429,18 @@ def main():
             eval_combo("A 기준(무정책)", base4, target)
             eval_combo("A+P 실측가중",
                        base4 + [("P정책", pol["z"], pol["lag"], psign)], target)
-            eval_combo_fixed("A+P 40%고정",
-                             base4 + [("P정책", pol["z"], pol["lag"], psign)],
-                             target, "P정책")
+            for w in (0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.50):
+                eval_combo_fixed(f"A+P {w:.0%} 고정",
+                                 base4 + [("P정책", pol["z"], pol["lag"], psign)],
+                                 target, "P정책", fixed_w=w)
         else:
             eval_combo("3지표(착공無)", base, target)
             eval_combo("3지표+P 실측",
                        base + [("P정책", pol["z"], pol["lag"], psign)], target)
-            eval_combo_fixed("3지표+P 40%고정",
-                             base + [("P정책", pol["z"], pol["lag"], psign)],
-                             target, "P정책")
+            for w in (0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.50):
+                eval_combo_fixed(f"3지표+P {w:.0%} 고정",
+                                 base + [("P정책", pol["z"], pol["lag"], psign)],
+                                 target, "P정책", fixed_w=w)
 
     print("\n판정 가이드: ① 착공 — 현행(S0) 대비 corr·적중률이 같거나 좋으면서 기저효과")
     print("없는 S1/S3(레벨형)이 있으면 채택(lag 24~36·부호 − 확인). ② 정책 — P 단독")
