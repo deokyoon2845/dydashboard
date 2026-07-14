@@ -417,6 +417,53 @@ def main():
     print("판정 가이드: corr ≥ +0.5 & 적중률 ≥ 65% → v4 채택. 미달 시 지표 조합 재검토.")
     print("=" * 76)
 
+    # ── 고정 스펙 조합 A/B/C 평가 (2차 실행 확정용 · 2026-07-14 추가) ─────
+    #   자동선택의 경계 인공물(주담대 레벨 lag36 · 스캔 상한)과 단일 사이클
+    #   과적합 의심(M2 lag26)을 사람이 고른 스펙으로 나란히 비교한다.
+    #   가중치는 '해당 lag에서 실측된 |corr|' 비례 · 부호는 스펙에 고정.
+    def _find(prefix):
+        return next(((k, v) for k, v in results.items()
+                     if k.startswith(prefix)), (None, None))
+
+    def eval_combo(title, spec):
+        """spec = [(지표 prefix, lag, sign)] → 합성 corr·적중률 출력."""
+        members = []
+        for prefix, lag, sign in spec:
+            name, v = _find(prefix)
+            if not name:
+                print(f"  {title}: '{prefix}' 미확보 — 조합 평가 생략")
+                return
+            cc, nn = pearson(lag_shift(v["z"], lag), target)
+            if cc is None:
+                print(f"  {title}: '{name}' lag={lag} 표본 부족 — 조합 평가 생략")
+                return
+            members.append((name, lag, sign, cc, v["z"]))
+        tot2 = sum(abs(m[3]) for m in members) or 1e-9
+        cmp2 = {}
+        for name, lag, sign, cc, z in members:
+            w = abs(cc) / tot2
+            for ym, val in lag_shift(z, lag).items():
+                cmp2[ym] = cmp2.get(ym, 0.0) + sign * w * val
+        cmp2 = {k: v for k, v in cmp2.items() if k >= START_TARGET}
+        c2, n2 = pearson(cmp2, target)
+        ks = sorted(set(cmp2) & set(target))
+        h2 = sum(1 for k in ks if cmp2[k] * target[k] > 0)
+        wtxt = " · ".join(f"{m[0]}(lag{m[1]},{'+' if m[2] > 0 else '−'},"
+                          f"w{abs(m[3])/tot2*100:.0f}%)" for m in members)
+        print(f"  {title:<14} corr={c2:+.3f} (n={n2}) · 적중률 {h2}/{len(ks)}"
+              f" = {h2/len(ks)*100:.0f}%")
+        print(f"      구성: {wtxt}")
+
+    print("\n" + "-" * 76)
+    print("[고정 스펙 비교] A 경제해석형(4) / B A+M2(5) / C 동행형 KB(2)")
+    print("-" * 76)
+    _A = [("매수우위", 0, +1), ("전세지수", 0, +1),
+          ("착공 YoY", 29, -1), ("주담대(6M변화)", 15, -1)]
+    eval_combo("A 경제해석형(4)", _A)
+    eval_combo("B A+M2(5)", _A + [("M2", 26, -1)])
+    eval_combo("C 동행형KB(2)", [("매수우위", 0, +1), ("전세지수", 0, +1)])
+    print("=" * 76)
+
 
 if __name__ == "__main__":
     main()
