@@ -85,6 +85,7 @@ RE_TABLE = "realestate_snapshots"
 KW_TABLE = "keywords"
 RE_KW_TABLE = "realestate_keywords"
 IPO_TABLE = "ipo_snapshots"
+USMKT_TABLE = "usmkt_snapshots"
 LEADERS_TABLE = "leaders"
 SM_TABLE = "stock_master"
 IPO_ABOUT_TABLE = "ipo_about"
@@ -231,6 +232,7 @@ RETENTION: dict[str, tuple[str, int]] = {
     "reports":              ("report_date", 10),
     "realestate_snapshots": ("asof_date",   10),
     "ipo_snapshots":        ("asof_date",   10),
+    "usmkt_snapshots":      ("asof_date",   10),
     "market_flow":          ("asof_date",   10),
     "leaders":              ("asof_date",   10),
     "keywords":             ("kw_date",     40),
@@ -581,6 +583,39 @@ def load_ipo() -> dict | None:
        반환 dict: {'asof','recent','upcoming'}."""
     res = (_client().table(IPO_TABLE)
            .select("asof,recent,upcoming")
+           .order("asof_date", desc=True)
+           .limit(1)
+           .execute())
+    return res.data[0] if res.data else None
+
+
+# ── 미국 전일 시장 스냅샷: 읽기·쓰기 ──────────────────────────
+# usmkt_snapshots 테이블에 날짜(asof_date)별로 엔진(engine.usmkt_run) 수집 결과를 upsert.
+# payload 구조: {asof, asof_date, trade_date, sectors[], top50[], movers{up,dn}, issues[]}
+# 뷰어(modules/us_market.py)는 최신 1행만 읽는다. 행이 없으면 섹션 생략(무회귀).
+# (※ 최초 1회 SQL:
+#     create table if not exists usmkt_snapshots (
+#       asof_date date primary key, asof text, payload jsonb,
+#       updated_at timestamptz default now());  )
+
+def save_usmkt(payload: dict, asof_date: str | None = None) -> str:
+    """미국 시장 스냅샷 저장(upsert, asof_date 단일행)."""
+    now = datetime.now()
+    asof_date = asof_date or (payload or {}).get("asof_date") or now.strftime("%Y-%m-%d")
+    row = {
+        "asof_date": asof_date,
+        "asof": (payload or {}).get("asof") or now.strftime("%Y-%m-%d %H:%M"),
+        "payload": payload,
+        "updated_at": now.isoformat(),
+    }
+    _client().table(USMKT_TABLE).upsert(row, on_conflict="asof_date").execute()
+    return asof_date
+
+
+def load_usmkt() -> dict | None:
+    """가장 최신 미국 시장 스냅샷 1행 {'asof','payload'}. 없으면 None."""
+    res = (_client().table(USMKT_TABLE)
+           .select("asof,payload")
            .order("asof_date", desc=True)
            .limit(1)
            .execute())
