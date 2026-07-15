@@ -52,6 +52,20 @@ def _sector_rows(sectors):
     return "".join(rows)
 
 
+def _mcap_txt(r):
+    """시총 — 달러·원화 병기. mcap_b=십억$(엔진), mcap_kj=조원(엔진이 당일 환율 환산).
+    한국 관행에 맞춰 1조 달러 미만은 '억 달러'(십억×10)로 표기한다."""
+    b = r.get("mcap_b")
+    if not b:
+        return ""
+    usd = f"{b / 1000:.2f}조$" if b >= 1000 else f"{b * 10:,}억$"
+    kj = r.get("mcap_kj")
+    won = ""
+    if kj:
+        won = f" · {kj:,.0f}조원" if kj >= 100 else f" · {kj:,.1f}조원"
+    return f'<div class="usm-mc">{usd}{won}</div>'
+
+
 def _top50_grid(top50):
     tiles = []
     for i, r in enumerate(top50, 1):
@@ -63,6 +77,7 @@ def _top50_grid(top50):
             f'<div class="usm-tk">{_html.escape(r["tk"])}'
             f'<span class="usm-rk">{i}</span></div>'
             f'<div class="usm-nm">{_html.escape(r["nm"])}</div>'
+            f'{_mcap_txt(r)}'
             f'<div class="usm-chg" style="color:{_col(chg)}">{_pct(chg)}{sus}</div>'
             f'</div>')
     return "".join(tiles)
@@ -111,6 +126,8 @@ _CSS = """
 .usm-rk{font-size:9.5px;font-weight:600;color:#b0b2a8}
 .usm-nm{font-size:10.5px;color:#8a8d84;white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis;margin:1px 0 3px}
+.usm-mc{font-size:10px;color:#8a8d84;font-variant-numeric:tabular-nums;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px}
 .usm-chg{font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
 .usm-sus{color:#b0b2a8;font-weight:600;cursor:help}
 /* 이슈 카드 */
@@ -145,6 +162,7 @@ def render_us_market():
         badge = foot_badge(
             "Yahoo Finance · 네이버 뉴스 · 전일 종가",
             "업종 = SPDR 섹터 ETF 11종 · 시총 Top50은 매일 실시간 시가총액으로 재랭킹 · "
+            "시총은 달러·원화(당일 원/달러 환산) 병기 · "
             "이슈 = 대형 120종 중 전일 ±4% 이상, 제목에 종목명이 포함된 기사만 연결 · "
             "빨강 상승/파랑 하락, ±3%에서 틴트 최대(글로벌 히트맵과 동일)")
     except Exception:
@@ -155,8 +173,10 @@ def render_us_market():
 
     parts = [_CSS, '<div class="usm-wrap">']
     td = p.get("trade_date") or ""
+    fx = p.get("usdkrw")
+    fxtxt = f' · 원/달러 {fx:,.0f}원 기준 환산' if fx else ""
     parts.append(f'<div class="usm-sub">거래 기준일 {td} (미 동부 마감) · '
-                 f'수집 {p.get("asof", "")} KST</div>')
+                 f'수집 {p.get("asof", "")} KST{fxtxt}</div>')
 
     parts.append('<div class="usm-h">업종별 등락 — SPDR 섹터 ETF</div>')
     parts.append(_sector_rows(p.get("sectors") or []))
