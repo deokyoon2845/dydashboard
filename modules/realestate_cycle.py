@@ -999,7 +999,7 @@ _INDV2_HTML = r'''<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--kfont);font-size:14px;-webkit-font-smoothing:antialiased}
 .box{padding:2px 1px 6px}
-.cycle{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:15px 17px;margin-bottom:15px}
+.cycle{background:var(--card);border:1px solid var(--line);border-left:4px solid #B08268;border-radius:18px;padding:15px 17px;margin-bottom:15px}
 .cyc-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:11px}
 .cyc-top .t{font-size:13px;font-weight:800}
 .cyc-top .now{font-size:12px;color:var(--muted)}.cyc-top .now b{color:var(--up)}
