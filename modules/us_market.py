@@ -7,8 +7,11 @@
 
 시각 문법은 글로벌 지수 히트맵과 통일: 빨강=상승 / 파랑=하락, ±3%에서 틴트 최대.
 순수 HTML/CSS 렌더(JS 없음) — st.markdown 한 번으로 그린다.
+2026-07: 시총 Top50은 기본 20개 + <details> 펼치기(21~50위) — 세로 밀도 개선.
+  이슈 종목의 '관련 기사 없음'은 네이버 통합검색 링크로 대체(막다른 골목 제거).
 """
 import html as _html
+import urllib.parse as _q
 
 import streamlit as st
 
@@ -66,9 +69,9 @@ def _mcap_txt(r):
     return f'<div class="usm-mc">{usd}{won}</div>'
 
 
-def _top50_grid(top50):
+def _top50_grid(top50, start=1):
     tiles = []
-    for i, r in enumerate(top50, 1):
+    for i, r in enumerate(top50, start):
         chg = r.get("chg")
         sus = (' <span class="usm-sus" title="일간 ±20% 초과 — 실적 쇼크일 수도, '
                '분할·데이터 오류일 수도 있습니다. 원문 확인 권장(수치는 원본 그대로)">?'
@@ -96,7 +99,10 @@ def _issue_cards(issues):
             f'<span class="usm-nsrc">{_html.escape(n.get("src") or "")}</span></a>'
             for n in (it.get("news") or []))
         if not links:
-            links = '<div class="usm-nonews">관련 기사 없음</div>'
+            q = _q.quote(f"{it.get('nm', '')} 주가")
+            links = (f'<a class="usm-news usm-nonews" '
+                     f'href="https://search.naver.com/search.naver?query={q}" '
+                     f'target="_blank" rel="noopener">관련 기사 없음 — 네이버에서 검색 ↗</a>')
         cards.append(
             f'<div class="usm-icard" style="border-left-color:{_col(chg)}">'
             f'<div class="usm-ihead"><b>{_html.escape(it["nm"])}</b>'
@@ -146,6 +152,18 @@ _CSS = """
 .usm-news:hover{color:#34352f;text-decoration:underline}
 .usm-nsrc{font-size:10px;color:#b0b2a8;margin-left:6px}
 .usm-nonews{font-size:11.5px;color:#b0b2a8;padding:2px 0}
+a.usm-nonews{border-top:none}
+a.usm-nonews:hover{color:#7E9A83}
+/* Top50 21~50위 펼치기 */
+.usm-more{margin-top:7px}
+.usm-more summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px;
+  font-size:12px;font-weight:700;color:#7E9A83;background:#F6F7F2;border:1px solid #ECEDE7;
+  border-radius:9px;padding:6px 12px;user-select:none}
+.usm-more summary::-webkit-details-marker{display:none}
+.usm-more summary::after{content:"▾";font-size:10px;color:#9a9b92}
+.usm-more[open] summary::after{content:"▴"}
+.usm-more summary:hover{border-color:#A7BBA9;color:#34352f}
+.usm-more>.usm-grid{margin-top:7px}
 </style>"""
 
 
@@ -184,8 +202,14 @@ def render_us_market():
     parts.append(_sector_rows(p.get("sectors") or []))
 
     if p.get("top50"):
+        # 기본 Top20 + 21~50위는 <details> 펼치기 — JS·위젯 상태 없이 세로 밀도 개선(C1).
+        head20, tail = p["top50"][:20], p["top50"][20:]
         parts.append('<div class="usm-h">시총 Top 50</div>')
-        parts.append(f'<div class="usm-grid">{_top50_grid(p["top50"])}</div>')
+        parts.append(f'<div class="usm-grid">{_top50_grid(head20)}</div>')
+        if tail:
+            parts.append(
+                f'<details class="usm-more"><summary>21~50위 펼치기 · {len(tail)}종목</summary>'
+                f'<div class="usm-grid">{_top50_grid(tail, start=21)}</div></details>')
 
     if p.get("issues"):
         parts.append('<div class="usm-h">이슈 종목 — 전일 ±4% 이상 · 관련 기사</div>')
