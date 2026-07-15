@@ -98,98 +98,81 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 [data-baseweb="tab-panel"] [data-baseweb="tab"][aria-selected="true"] p { color:#FFFFFF; }
 [data-baseweb="tab-panel"] [data-baseweb="tab"][aria-selected="true"]:hover p { color:#FFFFFF; }
 /* ===== lazy 탭 (st.segmented_control 리스타일 — 선택 탭만 렌더) ===== */
-/* 상단 섹션(주식/부동산) — 섹션색 필 (A안 · 2026-07)
-   컨테이너 배경/보더와 활성 필 색은 현재 선택된 섹션에 따라 달라져야 하는데,
-   Streamlit은 body에 클래스를 못 붙인다 → 선택값을 읽어 _section_theme_css()가
-   런타임에 오버라이드를 주입한다(아래). 여기 값은 주식(기본) 기준. */
+/* 상단 섹션(주식/부동산) — 섹션색 채움 (A안 · 목업 정합 2026-07 재작업)
+   목업: 컨테이너 없이 독립 카드 버튼 2개 — 활성=섹션색 채움+흰 글자,
+   비활성=흰 카드+라인 테두리. 활성 필 색은 섹션에 따라 달라지는데 Streamlit은
+   body에 클래스를 못 붙인다 → 선택값을 읽어 런타임 오버라이드를 주입한다(아래).
+   여기 값은 주식(기본·세이지) 기준. */
 .st-key-top_section div[data-testid="stSegmentedControl"] [role="radiogroup"],
 .st-key-top_section div[data-testid="stSegmentedControl"] > div {
-  display:inline-flex; gap:5px; background:var(--stk-tint); border:1px solid var(--stk-line);
-  border-radius:12px; padding:4px; flex-wrap:wrap;
+  display:inline-flex; gap:8px; background:transparent; border:none;
+  border-radius:0; padding:0; flex-wrap:wrap;
 }
 .st-key-top_section div[data-testid="stSegmentedControl"] button {
-  border:0 !important; background:transparent !important; box-shadow:none !important;
-  color:#9a9b92 !important; font-weight:700 !important; padding:8px 18px !important;
-  border-radius:9px !important; min-height:0 !important; transition:all .18s ease;
+  border:1px solid var(--line) !important; background:#FFFFFF !important;
+  box-shadow:none !important;
+  color:#5d6258 !important; font-weight:700 !important; padding:9px 20px !important;
+  border-radius:12px !important; min-height:0 !important; transition:all .18s ease;
 }
 .st-key-top_section div[data-testid="stSegmentedControl"] button p { font-weight:700 !important; font-size:14px !important; margin:0 !important; }
 .st-key-top_section div[data-testid="stSegmentedControl"] button:hover { color:#34352f !important; }
 .st-key-top_section div[data-testid="stSegmentedControl"] button[aria-checked="true"],
 .st-key-top_section div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
 .st-key-top_section div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] {
-  background:var(--stk) !important; color:#FFFFFF !important;
+  background:var(--stk) !important; border-color:var(--stk) !important;
+  color:#FFFFFF !important;
   box-shadow:0 2px 7px -1px rgba(126,154,131,.5) !important;
 }
 .st-key-top_section div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
 .st-key-top_section div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
 .st-key-top_section div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:#FFFFFF !important; }
-/* 2단 메인 탭 — 세이지 필 (B안): 주식(시장/글로벌/브리핑/종목/테마) + 부동산(사이클/실거래/분양/테마).
-   키 stock_subtab→stock_subtab2 교체(2026-07 탭 개편): 기존 세션에 '주도주' 등 구 옵션 값이
-   남아 있으면 새 옵션 목록과 충돌하므로 새 키로 시작. 부동산 re_maintab2도 동일 필로 통일. */
+/* 2단 메인 탭 — 언더라인 (A안 목업 정합 · 2026-07 재작업):
+   주식(시장/글로벌/브리핑/종목/테마) + 부동산(사이클/지도/실거래/분양/테마).
+   목업: 필 컨테이너 대신 콘텐츠 폭 베이스라인 위에 텍스트 탭 — 활성은
+   섹션색 언더라인(2.5px) + 잉크 텍스트, 비활성은 뮤트. 아이콘은 목업대로 숨김.
+   키 stock_subtab2/re_maintab2 유지(세션 충돌 방지 원칙). */
 .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] [role="radiogroup"],
 .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] > div,
 .st-key-re_maintab2 div[data-testid="stSegmentedControl"] [role="radiogroup"],
 .st-key-re_maintab2 div[data-testid="stSegmentedControl"] > div {
-  display:inline-flex; gap:3px; background:#F4F6F1; border:1px solid #ECEDE7;
-  border-radius:12px; padding:4px; flex-wrap:wrap;
+  display:flex; width:100%; gap:2px; background:transparent; border:none;
+  border-bottom:1.5px solid var(--line); border-radius:0; padding:0; flex-wrap:wrap;
 }
 .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button,
 .st-key-re_maintab2 div[data-testid="stSegmentedControl"] button {
   border:0 !important; background:transparent !important; box-shadow:none !important;
-  color:#9a9b92 !important; font-weight:700 !important; padding:9px 15px !important;
-  border-radius:9px !important; min-height:0 !important; transition:all .18s ease;
+  color:#9a9b92 !important; font-weight:700 !important; padding:9px 14px 10px !important;
+  border-radius:8px 8px 0 0 !important; min-height:0 !important;
+  border-bottom:2.5px solid transparent !important; margin-bottom:-1.5px !important;
+  transition:color .18s ease,border-color .18s ease,background .18s ease;
 }
 .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button p,
 .st-key-re_maintab2 div[data-testid="stSegmentedControl"] button p { font-weight:700 !important; font-size:13.5px !important; margin:0 !important; }
-.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button:hover,
-.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button:hover { color:#34352f !important; }
-.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"],
-.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
-.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"],
-.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"],
-.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
-.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] {
-  background:#FFFFFF !important; box-shadow:0 1px 3px rgba(52,53,47,.07) !important;
-}
-/* A안 위계: 상위=섹션색 채움 / 2단=흰 필 + 섹션색 텍스트·상단 인디케이터 / 3단=언더라인만 */
+.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button:hover { color:#34352f !important; background:var(--stk-tint) !important; }
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button:hover { color:#34352f !important; background:var(--re-tint) !important; }
+/* 활성 — 섹션색 언더라인 + 잉크 텍스트 (주식=세이지 / 부동산=클레이) */
 .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"],
 .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
 .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] {
-  box-shadow:0 1px 3px rgba(52,53,47,.07), inset 0 2px 0 0 var(--stk) !important;
+  background:transparent !important; box-shadow:none !important;
+  border-bottom-color:var(--stk) !important;
 }
 .st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"],
 .st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
 .st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] {
-  box-shadow:0 1px 3px rgba(52,53,47,.07), inset 0 2px 0 0 var(--re) !important;
+  background:transparent !important; box-shadow:none !important;
+  border-bottom-color:var(--re) !important;
 }
 .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
 .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
 .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p,
 .st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
 .st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
-.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:#FFFFFF !important; }
-/* 2단 활성 텍스트 = 섹션색(흰 필 위) — 위 흰색 규칙을 섹션별로 덮어쓴다 */
-.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
-.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
-.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:var(--stk) !important; }
-.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
-.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
-.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:var(--re) !important; }
-/* 2단 컨테이너 — 섹션 틴트 배경으로 소속을 드러낸다 */
-.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] [role="radiogroup"],
-.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] > div {
-  background:var(--stk-tint) !important; border-color:var(--stk-line) !important;
-}
-.st-key-re_maintab2 div[data-testid="stSegmentedControl"] [role="radiogroup"],
-.st-key-re_maintab2 div[data-testid="stSegmentedControl"] > div {
-  background:var(--re-tint) !important; border-color:var(--re-line) !important;
-}
-.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button:hover { color:var(--stk) !important; }
-.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button:hover { color:var(--re) !important; }
-/* 탭 아이콘(:material/…) 크기·정렬 — 라벨 텍스트 색을 그대로 상속 */
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:#34352f !important; }
+/* 탭 아이콘(:material/…) — 상위 탭만 유지(목업), 2단은 텍스트 온리라 숨김 */
 .st-key-top_section div[data-testid="stSegmentedControl"] button span[data-testid="stIconMaterial"] { font-size:17px; color:inherit; }
 .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button span[data-testid="stIconMaterial"],
-.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button span[data-testid="stIconMaterial"] { font-size:16px; color:inherit; }
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button span[data-testid="stIconMaterial"] { display:none !important; }
 /* 모바일(≤640px): 아이콘까지 붙으면 서브탭(주식 5개·부동산 4개)이 두 줄로 밀린다.
    아이콘을 숨기고 버튼을 flex 균등분할(full-width)해 한 행에 딱 맞춘다 — 데스크톱은 아이콘 유지. */
 @media (max-width:640px){
@@ -197,13 +180,11 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
   .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] > div,
   .st-key-re_maintab2 div[data-testid="stSegmentedControl"] [role="radiogroup"],
   .st-key-re_maintab2 div[data-testid="stSegmentedControl"] > div {
-    display:flex !important; width:100%; gap:2px; flex-wrap:nowrap; padding:3px;
+    display:flex !important; width:100%; gap:0; flex-wrap:nowrap; padding:0;
   }
-  .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button span[data-testid="stIconMaterial"],
-  .st-key-re_maintab2 div[data-testid="stSegmentedControl"] button span[data-testid="stIconMaterial"] { display:none !important; }
   .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button,
   .st-key-re_maintab2 div[data-testid="stSegmentedControl"] button {
-    flex:1 1 0 !important; min-width:0 !important; padding:8px 4px !important;
+    flex:1 1 0 !important; min-width:0 !important; padding:8px 2px 9px !important;
     justify-content:center !important; text-align:center;
   }
   .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button p,
@@ -1681,13 +1662,11 @@ _top = st.segmented_control(
 if _top == "부동산":
     st.markdown(
         '<style>'
-        '.st-key-top_section div[data-testid="stSegmentedControl"] [role="radiogroup"],'
-        '.st-key-top_section div[data-testid="stSegmentedControl"] > div'
-        '{background:var(--re-tint) !important;border-color:var(--re-line) !important;}'
         '.st-key-top_section div[data-testid="stSegmentedControl"] button[aria-checked="true"],'
         '.st-key-top_section div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],'
         '.st-key-top_section div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"]'
-        '{background:var(--re) !important;box-shadow:0 2px 7px -1px rgba(176,130,104,.5) !important;}'
+        '{background:var(--re) !important;border-color:var(--re) !important;'
+        'box-shadow:0 2px 7px -1px rgba(176,130,104,.5) !important;}'
         '.st-key-top_section div[data-testid="stSegmentedControl"] button:hover'
         '{color:var(--re) !important;}'
         '</style>', unsafe_allow_html=True)
