@@ -70,7 +70,9 @@ def _top50_grid(top50):
     tiles = []
     for i, r in enumerate(top50, 1):
         chg = r.get("chg")
-        sus = ' <span class="usm-sus" title="등락 재검증 불가 — 참고용">?</span>' \
+        sus = (' <span class="usm-sus" title="일간 ±20% 초과 — 실적 쇼크일 수도, '
+               '분할·데이터 오류일 수도 있습니다. 원문 확인 권장(수치는 원본 그대로)">?'
+               '</span>') \
               if r.get("suspect") else ""
         tiles.append(
             f'<div class="usm-tile" style="background:{_tint(chg)}">'
