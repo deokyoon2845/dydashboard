@@ -6,7 +6,8 @@
  야후 .news / 네이버 뉴스 API 모두 Actions IP에서 정상).
 
 수집 내용(payload):
-  sectors  SPDR 섹터 ETF 11종 — 전일 등락률(+5일)
+  sectors  SPDR 섹터 ETF 11종 — 전일 등락률(+5일) · 폴백/참고용 유지
+  groups   유니버스 120종 → 산업군 23그룹 재분류 — 동일가중 평균 등락(2026-07 · 메인 표시)
   top50    시총 상위 50 — fast_info 라이브 시총으로 매일 재랭킹(정적 순서 아님).
            시총은 달러(십억 $)와 원화(조원) 병기 — 원화는 당일 KRW=X 환율로 환산.
   movers   유니버스(120종) 내 상승/하락 Top5
@@ -96,6 +97,40 @@ _MCAP_CANDIDATES = list(UNIVERSE)[:50] + [
     "QCOM", "BKNG", "AMGN", "CAT", "ADBE", "SPGI", "BLK", "NEE", "INTC", "MU",
 ]
 
+# ── 산업군 재분류 (2026-07) — 유니버스 120종을 ~23개 산업군으로 정적 매핑.
+#    업종 바 차트가 SPDR 11섹터 ETF 대신 이 재분류의 '동일가중 평균 등락'을 쓴다.
+#    동일가중인 이유: 시총가중은 NVDA 하나가 반도체를 지배해 업종 정보가 죽는다.
+#    티커 추가/삭제 시 UNIVERSE와 함께 여기도 갱신(누락은 ci 테스트가 잡는다).
+INDUSTRY_GROUPS = {
+    "반도체": ["NVDA", "AVGO", "AMD", "TXN", "QCOM", "MU", "INTC",
+               "AMAT", "MRVL", "SNPS", "CDNS"],
+    "소프트웨어": ["MSFT", "ORCL", "CRM", "NOW", "INTU", "ADBE", "PLTR"],
+    "사이버보안": ["PANW", "CRWD", "FTNT"],
+    "인터넷·플랫폼": ["GOOGL", "AMZN", "META", "NFLX", "UBER", "ABNB",
+                      "BKNG", "MELI"],
+    "IT하드웨어·네트워크": ["AAPL", "CSCO", "IBM", "ANET", "APH"],
+    "은행": ["JPM", "BAC", "WFC", "C", "GS", "MS", "SCHW"],
+    "결제·핀테크": ["V", "MA", "AXP", "PYPL"],
+    "금융투자·거래소": ["BRK-B", "BLK", "KKR", "SPGI", "ICE", "CME", "MCO"],
+    "보험": ["PGR", "MMC", "AON"],
+    "제약·바이오": ["LLY", "JNJ", "ABBV", "MRK", "PFE", "BMY", "AMGN",
+                    "GILD", "VRTX"],
+    "의료기기·헬스서비스": ["ABT", "ISRG", "BSX", "SYK", "MDT", "DHR",
+                            "UNH", "ELV", "CVS"],
+    "필수소비재": ["PG", "KO", "PEP", "PM", "MO", "CL"],
+    "소매·유통": ["WMT", "COST", "HD", "LOW", "TJX", "ORLY"],
+    "외식·소비브랜드": ["MCD", "SBUX", "NKE"],
+    "자동차": ["TSLA"],
+    "미디어·통신": ["DIS", "CMCSA", "T", "TMUS"],
+    "에너지": ["XOM", "CVX", "COP"],
+    "항공우주·방산": ["GE", "BA", "LMT", "GD"],
+    "기계·산업재": ["CAT", "DE", "HON", "ETN", "PH", "ITW", "MMM", "TT"],
+    "산업서비스·운송": ["UNP", "UPS", "WM", "CTAS", "ADP"],
+    "소재·화학": ["LIN", "SHW", "APD"],
+    "유틸리티": ["NEE", "SO", "DUK"],
+    "리츠": ["PLD", "EQIX"],
+}
+
 ISSUE_TH = 4.0      # |전일 등락%| ≥ 이 값 → 이슈 종목
 ISSUE_MAX = 12      # 이슈 카드 최대 개수
 GLITCH_TH = 20.0    # |등락| > 이 값 → 의심 표시(값은 보존 — 아래 _flag_glitch 참고)
@@ -133,6 +168,33 @@ def _batch(tickers):
         except Exception:
             continue
     return out, tdate
+
+
+def _spark_batch(tickers, points=30):
+    """Top50용 3개월 종가 스파크 — 배치 1회(≈5초). {티커: [float×~30]}.
+    ~63개 일봉을 균등 다운샘플(마지막 포함)해 payload를 가볍게 유지한다.
+    실패 종목은 생략 — 뷰어가 스파크 없이 타일만 그린다(무회귀)."""
+    import yfinance as yf
+    out = {}
+    try:
+        df = yf.download(tickers=" ".join(tickers), period="3mo", interval="1d",
+                         group_by="ticker", auto_adjust=True, progress=False,
+                         threads=True)
+    except Exception as e:
+        print(f"[usmkt] 스파크 배치 실패: {e}")
+        return out
+    for t in tickers:
+        try:
+            s = df[t]["Close"].dropna() if len(tickers) > 1 else df["Close"].dropna()
+            n = len(s)
+            if n < 5:
+                continue
+            k = min(points, n)
+            idx = [round(i * (n - 1) / (k - 1)) for i in range(k)]
+            out[t] = [round(float(s.iloc[i]), 2) for i in idx]
+        except Exception:
+            continue
+    return out
 
 
 def _usdkrw():
@@ -280,6 +342,18 @@ def collect():
         px[t] = _flag_glitch(t, px[t])
     print(f"[usmkt] 유니버스 {len(px)}/{len(UNIVERSE)}종")
 
+    # 2.5) 산업군 재분류(23그룹) — 유니버스 등락의 동일가중 평균(추가 API 0).
+    #      시세 결측 종목은 그룹 평균에서 자동 제외 · 산출 종목 수(n)를 함께 저장.
+    groups = []
+    for gnm, tks in INDUSTRY_GROUPS.items():
+        chgs = [px[t]["chg"] for t in tks if t in px]
+        if not chgs:
+            continue
+        groups.append({"nm": gnm, "chg": round(sum(chgs) / len(chgs), 2),
+                       "n": len(chgs)})
+    groups.sort(key=lambda g: g["chg"], reverse=True)
+    print(f"[usmkt] 산업군 {len(groups)}/{len(INDUSTRY_GROUPS)}그룹 (동일가중)")
+
     # 3) 시총 Top50 — fast_info 라이브 랭킹
     mcaps = {}
     for t in _MCAP_CANDIDATES:
@@ -299,6 +373,13 @@ def collect():
         top50.append(row)
     print(f"[usmkt] 시총 랭킹 {len(mcaps)}종 조회 → Top{len(top50)} · "
           f"환율 {fx if fx else '실패(달러만)'}")
+
+    # 3.5) Top50 3개월 스파크(타일 미니차트) — 배치 1회 · 실패 종목은 생략.
+    sparks = _spark_batch([r["tk"] for r in top50])
+    for r in top50:
+        if r["tk"] in sparks:
+            r["sp"] = sparks[r["tk"]]
+    print(f"[usmkt] 스파크 {len(sparks)}/{len(top50)}종")
 
     # 4) 상승/하락 Top5 + 이슈
     ranked = sorted(px.items(), key=lambda kv: kv[1]["chg"])
@@ -323,7 +404,7 @@ def collect():
     return {"asof": now.strftime("%Y-%m-%d %H:%M"),
             "asof_date": now.date().isoformat(),
             "trade_date": tdate, "usdkrw": fx,
-            "sectors": sectors, "top50": top50,
+            "sectors": sectors, "groups": groups, "top50": top50,
             "movers": movers, "issues": issues}
 
 
