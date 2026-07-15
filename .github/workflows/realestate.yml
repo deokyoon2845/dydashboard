@@ -85,6 +85,14 @@ jobs:
           FORCE_COLLECT: ${{ github.event.inputs.force }}
         run: python -m engine.realestate_run
 
+      # ── 일일 롤업(영구 보존) — v5 산식 원료(매수우위·주담대·착공YoY·전세YoY·매매지수·
+      #    전세가율) 최신값을 daily_rollup에 upsert. 산식이 바뀌어도 소급 재계산 가능.
+      - name: 일일 롤업(부동산) → daily_rollup
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python -m engine.rollup realestate
+
 
       # ── 실패 시 텔레그램 알림(조용한 실패 방어) — curl만 사용해 pip 실패에도 동작 ──
       - name: 실패 시 텔레그램 알림
