@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """글로벌 탭 '미국 전일 시장' — 업종 등락 · 시총 Top50 · 이슈 종목 뉴스.
 
+2026-07: 업종 바 = 유니버스 120종 산업군 23그룹 재분류(동일가중 · 엔진 groups) —
+  groups가 없으면 기존 SPDR 11섹터로 폴백(무회귀). Top50 타일에 현재가 + 3개월
+  스파크(엔진 sp) 추가 · 21~50위 <details> 펼치기는 제거하고 1~50 전체 표시.
+
 데이터: 엔진(engine/usmkt_run · 07:20/08:20 KST)이 usmkt_snapshots에 저장한
 최신 스냅샷만 읽는다(뷰어 라이브 호출 없음 — 아키텍처 원칙).
 행이 없으면 섹션 전체를 조용히 생략해 기존 글로벌 탭 무회귀.
@@ -55,6 +59,40 @@ def _sector_rows(sectors):
     return "".join(rows)
 
 
+def _group_rows(groups):
+    """산업군 23그룹 — 동일가중 평균 등락 바. n=산출 종목 수(뮤트 배지)."""
+    rows = []
+    for g in groups:                                     # 엔진이 이미 등락순 정렬
+        chg = g.get("chg") or 0.0
+        w = min(abs(chg), _MAXP) / _MAXP * 50
+        side = ("left:50%" if chg >= 0 else f"left:{50 - w:.1f}%")
+        n = g.get("n")
+        nb = f'<em class="usm-gn">{n}</em>' if n else ""
+        rows.append(
+            f'<div class="usm-srow">'
+            f'<span class="usm-snm usm-gnm">{_html.escape(g["nm"])}{nb}</span>'
+            f'<span class="usm-sbar"><i style="{side};width:{w:.1f}%;'
+            f'background:{_col(chg)}"></i></span>'
+            f'<span class="usm-schg" style="color:{_col(chg)}">{_pct(chg)}</span>'
+            f'</div>')
+    return "".join(rows)
+
+
+def _tile_spark(vals, color):
+    """타일용 3개월 미니 스파크 — 인라인 SVG 폴리라인(높이 24px)."""
+    if not vals or len(vals) < 2:
+        return ""
+    lo, hi = min(vals), max(vals)
+    sp = (hi - lo) or (abs(hi) * 0.01) or 1.0
+    n = len(vals)
+    pts = " ".join(f"{i / (n - 1) * 100:.1f},{(1 - (v - lo) / sp) * 20 + 2:.1f}"
+                   for i, v in enumerate(vals))
+    return (f'<svg class="usm-sp" viewBox="0 0 100 24" preserveAspectRatio="none">'
+            f'<polyline points="{pts}" fill="none" stroke="{color}" '
+            f'stroke-width="1.6" vector-effect="non-scaling-stroke" '
+            f'stroke-linejoin="round"/></svg>')
+
+
 def _mcap_txt(r):
     """시총 — 달러·원화 병기. mcap_b=십억$(엔진), mcap_kj=조원(엔진이 당일 환율 환산).
     한국 관행에 맞춰 1조 달러 미만은 '억 달러'(십억×10)로 표기한다."""
@@ -77,13 +115,18 @@ def _top50_grid(top50, start=1):
                '분할·데이터 오류일 수도 있습니다. 원문 확인 권장(수치는 원본 그대로)">?'
                '</span>') \
               if r.get("suspect") else ""
+        spark = _tile_spark(r.get("sp"), _col(chg))
+        close = r.get("close")
+        px_html = (f'<span class="usm-px">${close:,.2f}</span>'
+                   if isinstance(close, (int, float)) else "")
         tiles.append(
             f'<div class="usm-tile" style="background:{_tint(chg)}">'
             f'<div class="usm-tk">{_html.escape(r["tk"])}'
             f'<span class="usm-rk">{i}</span></div>'
             f'<div class="usm-nm">{_html.escape(r["nm"])}</div>'
-            f'{_mcap_txt(r)}'
-            f'<div class="usm-chg" style="color:{_col(chg)}">{_pct(chg)}{sus}</div>'
+            f'{_mcap_txt(r)}{spark}'
+            f'<div class="usm-bot">{px_html}'
+            f'<span class="usm-chg" style="color:{_col(chg)}">{_pct(chg)}{sus}</span></div>'
             f'</div>')
     return "".join(tiles)
 
@@ -120,6 +163,9 @@ _CSS = """
 /* 업종 바 */
 .usm-srow{display:flex;align-items:center;gap:10px;padding:3.5px 0}
 .usm-snm{width:86px;font-size:12px;color:#5d6258;font-weight:600;flex:none}
+.usm-gnm{width:128px;display:flex;align-items:baseline;gap:5px}
+.usm-gn{font-style:normal;font-size:9.5px;font-weight:700;color:#b0b2a8;
+  background:#F1F2EC;border-radius:5px;padding:1px 5px;flex:none}
 .usm-sbar{flex:1;height:9px;background:#F1F2EC;border-radius:5px;position:relative;overflow:hidden}
 .usm-sbar::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:#D9DAD2}
 .usm-sbar i{position:absolute;top:0;bottom:0;border-radius:5px;opacity:.85}
@@ -136,6 +182,9 @@ _CSS = """
   text-overflow:ellipsis;margin:1px 0 3px}
 .usm-mc{font-size:10px;color:#8a8d84;font-variant-numeric:tabular-nums;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px}
+.usm-sp{display:block;width:100%;height:24px;margin:3px 0 4px;opacity:.85}
+.usm-bot{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
+.usm-px{font-size:11.5px;font-weight:800;color:#34352f;font-variant-numeric:tabular-nums}
 .usm-chg{font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
 .usm-sus{color:#b0b2a8;font-weight:600;cursor:help}
 /* 이슈 카드 */
@@ -154,16 +203,6 @@ _CSS = """
 .usm-nonews{font-size:11.5px;color:#b0b2a8;padding:2px 0}
 a.usm-nonews{border-top:none}
 a.usm-nonews:hover{color:#7E9A83}
-/* Top50 21~50위 펼치기 */
-.usm-more{margin-top:7px}
-.usm-more summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px;
-  font-size:12px;font-weight:700;color:#7E9A83;background:#F6F7F2;border:1px solid #ECEDE7;
-  border-radius:9px;padding:6px 12px;user-select:none}
-.usm-more summary::-webkit-details-marker{display:none}
-.usm-more summary::after{content:"▾";font-size:10px;color:#9a9b92}
-.usm-more[open] summary::after{content:"▴"}
-.usm-more summary:hover{border-color:#A7BBA9;color:#34352f}
-.usm-more>.usm-grid{margin-top:7px}
 </style>"""
 
 
@@ -173,7 +212,8 @@ def render_us_market():
         d = load_usmkt()
     except Exception:
         d = None
-    if not d or not (d.get("payload") or {}).get("sectors"):
+    p0 = (d or {}).get("payload") or {}
+    if not d or not (p0.get("sectors") or p0.get("groups")):
         return
     p = d["payload"]
 
@@ -181,7 +221,9 @@ def render_us_market():
         from modules.ui import foot_badge
         badge = foot_badge(
             "Yahoo Finance · 네이버 뉴스 · 전일 종가",
-            "업종 = SPDR 섹터 ETF 11종 · 시총 Top50은 매일 실시간 시가총액으로 재랭킹 · "
+            "업종 = 대형 120종을 산업군 23그룹으로 재분류한 동일가중 평균"
+            "(엔진 미수집 시 SPDR 11섹터 폴백) · 시총 Top50은 매일 실시간 시가총액으로 재랭킹 · "
+            "타일 미니차트 = 3개월 종가 · "
             "시총은 달러·원화(당일 원/달러 환산) 병기 · "
             "이슈 = 대형 120종 중 전일 ±4% 이상, 제목에 종목명이 포함된 기사만 연결 · "
             "빨강 상승/파랑 하락, ±3%에서 틴트 최대(글로벌 히트맵과 동일)")
@@ -198,18 +240,19 @@ def render_us_market():
     parts.append(f'<div class="usm-sub">거래 기준일 {td} (미 동부 마감) · '
                  f'수집 {p.get("asof", "")} KST{fxtxt}</div>')
 
-    parts.append('<div class="usm-h">업종별 등락 — SPDR 섹터 ETF</div>')
-    parts.append(_sector_rows(p.get("sectors") or []))
+    # 업종 바 — 산업군 재분류(groups) 우선, 없으면 기존 SPDR 11섹터 폴백(무회귀)
+    if p.get("groups"):
+        parts.append('<div class="usm-h">업종별 등락 — 산업군 재분류 '
+                     '<span style="font-weight:600;color:#b0b2a8">'
+                     '· 대형 120종·동일가중 · 배지=산출 종목 수</span></div>')
+        parts.append(_group_rows(p["groups"]))
+    else:
+        parts.append('<div class="usm-h">업종별 등락 — SPDR 섹터 ETF</div>')
+        parts.append(_sector_rows(p.get("sectors") or []))
 
     if p.get("top50"):
-        # 기본 Top20 + 21~50위는 <details> 펼치기 — JS·위젯 상태 없이 세로 밀도 개선(C1).
-        head20, tail = p["top50"][:20], p["top50"][20:]
         parts.append('<div class="usm-h">시총 Top 50</div>')
-        parts.append(f'<div class="usm-grid">{_top50_grid(head20)}</div>')
-        if tail:
-            parts.append(
-                f'<details class="usm-more"><summary>21~50위 펼치기 · {len(tail)}종목</summary>'
-                f'<div class="usm-grid">{_top50_grid(tail, start=21)}</div></details>')
+        parts.append(f'<div class="usm-grid">{_top50_grid(p["top50"])}</div>')
 
     if p.get("issues"):
         parts.append('<div class="usm-h">이슈 종목 — 전일 ±4% 이상 · 관련 기사</div>')
