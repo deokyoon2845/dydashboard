@@ -175,9 +175,10 @@ def fetch_index(ticker: str):
         change = current - prev
         pct = (change / prev) * 100 if prev else 0.0
 
-        # 데이터의 실제 기준일 (마지막 거래일) — tz 문제를 피하려 문자열로 저장
+        # 데이터의 실제 기준일 (마지막 거래일) — tz 문제를 피하려 문자열로 저장.
+        # _bar_date: 야후 '자정 UTC 일봉' 왜곡 보정(미국 지수 기준일 D-1 라벨 버그 수정 · 2026-07)
         try:
-            asof = close.index[-1].strftime("%Y-%m-%d")
+            asof = _bar_date(close.index[-1]).strftime("%Y-%m-%d")
         except Exception:
             asof = None
 
@@ -395,6 +396,23 @@ def sparkline_axis_html(series, color, height=38, n_days=92, label_color=None):
 
 
 @st.cache_data(ttl=3600)
+def _bar_date(ts):
+    """일봉 타임스탬프 → 날짜(tz-naive Timestamp, 자정).
+
+    야후가 일봉을 '자정 UTC'로 찍은 뒤 거래소 tz로 변환해 주는 경우가 있어,
+    미국(-4/-5h) 지수는 벽시계가 전일 저녁(19~20시)으로 밀려 기준일이 하루
+    당겨 보이는 왜곡이 생긴다(값은 최신인데 라벨만 D-1 · 2026-07 관찰).
+    정상적인 일봉은 자정(00:00) 또는 장 시작(09:00~09:30)에 찍히므로,
+    'tz-aware + 저녁(17시 이후)' 조합만 다음 날로 롤포워드하면 안전하다.
+    한국(+9h)은 자정 UTC → 09:00 KST라 이 보정의 영향을 받지 않는다."""
+    t = pd.Timestamp(ts)
+    if t.tzinfo is not None:
+        if t.hour >= 17:
+            t = t + pd.Timedelta(days=1)
+        t = t.tz_localize(None)
+    return t.normalize()
+
+
 def fetch_history(ticker: str, period: str = "3mo"):
     """일별 종가 Series (정규화된 날짜 인덱스). 실패 시 None.
     한국 지수는 네이버로 최근 거래일을 보강한다(야후 지연 대응)."""
@@ -403,10 +421,8 @@ def fetch_history(ticker: str, period: str = "3mo"):
         df = yf.Ticker(ticker).history(period=period, interval="1d")
         if not df.empty:
             close = df["Close"].dropna()
-            idx = close.index
-            if getattr(idx, "tz", None) is not None:
-                idx = idx.tz_localize(None)
-            close.index = idx.normalize()
+            # tz 스트립 + 자정 UTC 왜곡 보정(_bar_date) — 미국 지수 기준일 D-1 라벨 수정
+            close.index = pd.DatetimeIndex([_bar_date(t) for t in close.index])
     except Exception:
         close = None
 
