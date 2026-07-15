@@ -10,11 +10,12 @@
   top50    시총 상위 50 — fast_info 라이브 시총으로 매일 재랭킹(정적 순서 아님).
            시총은 달러(십억 $)와 원화(조원) 병기 — 원화는 당일 KRW=X 환율로 환산.
   movers   유니버스(120종) 내 상승/하락 Top5
-  issues   |전일 등락| ≥ 4% 이슈 종목(최대 12) + 종목별 뉴스(네이버 한글 우선,
-           제목에 종목명 포함 기사만 채택 · 부족하면 야후 영문 보충)
+  issues   |전일 등락| ≥ 4% 이슈 종목(최대 12) + 이슈 전 종목의 뉴스(네이버 한글 우선,
+           제목에 종목명 포함 기사만 채택 · 부족하면 야후 영문 보충, 야후도 제목에
+           티커가 있어야 채택 — 둘 다 무관 기사를 섞어 주기 때문)
 
 데이터 품질 가드(probe에서 확인된 함정):
-  · |등락| > 20%는 분할/글리치 의심 — fast_info로 재검증 후 어긋나면 교정
+  · |등락| > 20%는 값을 보존한 채 suspect 표시만(실제 폭락을 지우지 않기 위해)
   · 상장폐지/티커 변경(예: FI 404)은 배치에서 자동 결측 → 조용히 스킵
   · 휴장일엔 직전 거래일 봉이 그대로 오므로 payload에 trade_date를 실어
     뷰어가 '기준일'을 표시(값 중복 저장은 무해 · asof_date는 KST 날짜)
@@ -96,8 +97,11 @@ _MCAP_CANDIDATES = list(UNIVERSE)[:50] + [
 ]
 
 ISSUE_TH = 4.0      # |전일 등락%| ≥ 이 값 → 이슈 종목
-GLITCH_TH = 20.0    # |등락| > 이 값 → fast_info 재검증(분할/글리치 방어)
-NEWS_MAX_STOCKS = 8
+ISSUE_MAX = 12      # 이슈 카드 최대 개수
+GLITCH_TH = 20.0    # |등락| > 이 값 → 의심 표시(값은 보존 — 아래 _flag_glitch 참고)
+# 뉴스는 이슈 전체에 대해 수집한다. 예전엔 8종만 받아서 9~12위 카드에 '관련 기사 없음'이
+# 떴는데, 기사가 없는 게 아니라 안 받은 것이라 거짓 표기였다. 둘을 같은 수로 묶는다.
+NEWS_MAX_STOCKS = ISSUE_MAX
 _HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"}
 
 
@@ -158,20 +162,26 @@ def _fast_info(t):
         return {}
 
 
-def _verify_glitch(t, row):
-    """|등락|>20% 의심 종목을 fast_info로 재검증. 5%p 넘게 어긋나면 교정."""
+def _flag_glitch(t, row):
+    """|등락|>20%는 '의심' 표시만 하고 값은 절대 건드리지 않는다.
+
+    이전 버전은 fast_info와 5%p 이상 어긋나면 자동 교정했는데, 이는 실제 폭락을
+    조용히 지워버릴 수 있다(실측: IBM이 실적 프리어나운스로 하루 −25% 마감 —
+    분할 글리치가 아니라 진짜였고, 그런 날이야말로 이슈 카드에 떠야 한다).
+    판단은 사람이 하도록 원본 수치를 보존하고 뷰어에 '?' 배지만 띄운다.
+    fast_info 대조는 로그로만 남겨 사후 확인을 돕는다.
+    """
     if abs(row.get("chg") or 0) <= GLITCH_TH:
         return row
+    row["suspect"] = True
     fi = _fast_info(t)
     try:
         rc = (float(fi["last"]) / float(fi["prev"]) - 1) * 100
+        note = f"실시간 대조 {rc:+.1f}%" + (" (일치)" if abs(rc - row["chg"]) <= 5
+                                        else " ⚠️ 불일치 — 분할/데이터오류 가능")
     except (KeyError, TypeError, ValueError, ZeroDivisionError):
-        row["suspect"] = True                      # 재검증 불가 — 표시만
-        return row
-    if abs(rc - row["chg"]) > 5:
-        print(f"[usmkt] {t} 등락 교정 {row['chg']:+.1f}% → {rc:+.1f}% (분할/글리치)")
-        row["chg"] = round(rc, 2)
-        row["close"] = round(float(fi["last"]), 2)
+        note = "실시간 대조 불가"
+    print(f"[usmkt] {t} 등락 {row['chg']:+.1f}% — 의심 표시(값 보존) · {note}")
     return row
 
 
@@ -208,8 +218,28 @@ def _naver_news(kname, limit=3):
     return out
 
 
+# 흔한 영단어와 철자가 겹치는 티커 — 제목에 그냥 등장했다고 종목 기사로 보면 안 된다.
+# ("Buy This Stock NOW" ≠ 서비스나우) → 괄호·$·콤마 나열 등 '티커스러운' 문맥일 때만 인정.
+_AMBIG_TK = {"V", "MA", "T", "C", "GE", "MU", "NOW", "SO", "DE", "CAT",
+             "ICE", "PM", "MS", "ALL", "KEY", "ON", "IT"}
+
+
+def _title_has_ticker(tk, title):
+    """제목이 이 종목을 실제로 다루는가 — 티커 토큰이 있어야 인정(대소문자 구분).
+
+    야후 .news는 종목 페이지의 '관련 기사'까지 섞어 준다(실측: 마벨 요청에 브로드컴
+    기사, 오라클 요청에 IBM 기사). 네이버와 동일하게 제목 필터를 걸어 오배치를 막는다.
+    영문 사명은 표기 흔들림이 커서(Alphabet/Google 등) 티커 토큰만 신뢰한다.
+    """
+    if not re.search(rf"(?<![A-Za-z0-9]){re.escape(tk)}(?![A-Za-z0-9])", title):
+        return False
+    if tk not in _AMBIG_TK:
+        return True
+    return bool(re.search(rf"[($]{re.escape(tk)}\)?|{re.escape(tk)}(?=\s*[,:])", title))
+
+
 def _yahoo_news(ticker, limit=2):
-    """야후 종목 뉴스(영문) — 네이버가 비었을 때 보충."""
+    """야후 종목 뉴스(영문) — 네이버가 비었을 때 보충. 제목에 티커가 있는 기사만."""
     import yfinance as yf
     try:
         ns = yf.Ticker(ticker).news or []
@@ -222,6 +252,8 @@ def _yahoo_news(ticker, limit=2):
         url = c.get("canonicalUrl")
         url = url.get("url") if isinstance(url, dict) else (url or c.get("link"))
         if not (title and url):
+            continue
+        if not _title_has_ticker(ticker, title):   # 무관 기사 배제
             continue
         prov = c.get("provider")
         prov = (prov.get("displayName") if isinstance(prov, dict) else prov) or "Yahoo"
@@ -245,7 +277,7 @@ def collect():
     px, td2 = _batch(list(UNIVERSE))
     tdate = max(tdate or "", td2 or "") or None
     for t in list(px):
-        px[t] = _verify_glitch(t, px[t])
+        px[t] = _flag_glitch(t, px[t])
     print(f"[usmkt] 유니버스 {len(px)}/{len(UNIVERSE)}종")
 
     # 3) 시총 Top50 — fast_info 라이브 랭킹
@@ -275,7 +307,7 @@ def collect():
               "dn": [mk(t, r) for t, r in ranked[:5]]}
     issues = [mk(t, r) for t, r in
               sorted(px.items(), key=lambda kv: -abs(kv[1]["chg"]))
-              if abs(r["chg"]) >= ISSUE_TH][:12]
+              if abs(r["chg"]) >= ISSUE_TH][:ISSUE_MAX]
 
     # 5) 이슈 종목 뉴스(상위 8종) — 네이버 한글 우선, 부족하면 야후 보충
     for it in issues[:NEWS_MAX_STOCKS]:
