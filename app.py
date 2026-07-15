@@ -47,6 +47,11 @@ LIGHT_VARS = """
 :root{
   --bg:#FCFCFA; --card:#ffffff; --ink:#34352f; --muted:#9a9b92; --line:#ECEDE7;
   --sage:#A7BBA9; --sage-deep:#7E9A83; --up:#B65F5A; --down:#5A7CA0;
+  /* 섹션 색 (A안 · 2026-07) — 상위 탭(주식/부동산)에 고유색을 주고 하위 탭·3단 탭이
+     같은 색조를 상속해 위계를 만든다. 주식=기존 브랜드 세이지 유지, 부동산=클레이(흙·벽돌).
+     부동산에 적색 계열을 쓰지 않는 이유: --up(#B65F5A)/--down(#5A7CA0) 시맨틱과 충돌. */
+  --stk:#7E9A83; --stk-soft:#A7BBA9; --stk-tint:#EEF3EF; --stk-line:#E1E8E2;
+  --re:#B08268;  --re-soft:#C9A48D;  --re-tint:#F6EEE8;  --re-line:#EDDFD4;
   --summary-bg:#F6F7F2; --pill-bg:#F1F2EC; --pill-ink:#5d6258;
   --tint-up:#FBF2F2; --tint-down:#F1F5F9; --pill-hover:#E6EBE2;
 }
@@ -93,10 +98,13 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 [data-baseweb="tab-panel"] [data-baseweb="tab"][aria-selected="true"] p { color:#FFFFFF; }
 [data-baseweb="tab-panel"] [data-baseweb="tab"][aria-selected="true"]:hover p { color:#FFFFFF; }
 /* ===== lazy 탭 (st.segmented_control 리스타일 — 선택 탭만 렌더) ===== */
-/* 상단 섹션(주식/부동산) — 흰 카드 인셋 토글 */
+/* 상단 섹션(주식/부동산) — 섹션색 필 (A안 · 2026-07)
+   컨테이너 배경/보더와 활성 필 색은 현재 선택된 섹션에 따라 달라져야 하는데,
+   Streamlit은 body에 클래스를 못 붙인다 → 선택값을 읽어 _section_theme_css()가
+   런타임에 오버라이드를 주입한다(아래). 여기 값은 주식(기본) 기준. */
 .st-key-top_section div[data-testid="stSegmentedControl"] [role="radiogroup"],
 .st-key-top_section div[data-testid="stSegmentedControl"] > div {
-  display:inline-flex; gap:5px; background:#EEF3EF; border:1px solid #E1E8E2;
+  display:inline-flex; gap:5px; background:var(--stk-tint); border:1px solid var(--stk-line);
   border-radius:12px; padding:4px; flex-wrap:wrap;
 }
 .st-key-top_section div[data-testid="stSegmentedControl"] button {
@@ -109,11 +117,12 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 .st-key-top_section div[data-testid="stSegmentedControl"] button[aria-checked="true"],
 .st-key-top_section div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
 .st-key-top_section div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] {
-  background:#FFFFFF !important; color:#34352f !important; box-shadow:0 1px 2px rgba(52,53,47,.09) !important;
+  background:var(--stk) !important; color:#FFFFFF !important;
+  box-shadow:0 2px 7px -1px rgba(126,154,131,.5) !important;
 }
 .st-key-top_section div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
 .st-key-top_section div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
-.st-key-top_section div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:#34352f !important; }
+.st-key-top_section div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:#FFFFFF !important; }
 /* 2단 메인 탭 — 세이지 필 (B안): 주식(시장/글로벌/브리핑/종목/테마) + 부동산(사이클/실거래/분양/테마).
    키 stock_subtab→stock_subtab2 교체(2026-07 탭 개편): 기존 세션에 '주도주' 등 구 옵션 값이
    남아 있으면 새 옵션 목록과 충돌하므로 새 키로 시작. 부동산 re_maintab2도 동일 필로 통일. */
@@ -140,7 +149,18 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 .st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"],
 .st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
 .st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] {
-  background:#7E9A83 !important; color:#FFFFFF !important; box-shadow:0 2px 6px -1px rgba(126,154,131,.45) !important;
+  background:#FFFFFF !important; box-shadow:0 1px 3px rgba(52,53,47,.07) !important;
+}
+/* A안 위계: 상위=섹션색 채움 / 2단=흰 필 + 섹션색 텍스트·상단 인디케이터 / 3단=언더라인만 */
+.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"],
+.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
+.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] {
+  box-shadow:0 1px 3px rgba(52,53,47,.07), inset 0 2px 0 0 var(--stk) !important;
+}
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"],
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] {
+  box-shadow:0 1px 3px rgba(52,53,47,.07), inset 0 2px 0 0 var(--re) !important;
 }
 .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
 .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
@@ -148,6 +168,24 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 .st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
 .st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
 .st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:#FFFFFF !important; }
+/* 2단 활성 텍스트 = 섹션색(흰 필 위) — 위 흰색 규칙을 섹션별로 덮어쓴다 */
+.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
+.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
+.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:var(--stk) !important; }
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:var(--re) !important; }
+/* 2단 컨테이너 — 섹션 틴트 배경으로 소속을 드러낸다 */
+.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] [role="radiogroup"],
+.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] > div {
+  background:var(--stk-tint) !important; border-color:var(--stk-line) !important;
+}
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] [role="radiogroup"],
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] > div {
+  background:var(--re-tint) !important; border-color:var(--re-line) !important;
+}
+.st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button:hover { color:var(--stk) !important; }
+.st-key-re_maintab2 div[data-testid="stSegmentedControl"] button:hover { color:var(--re) !important; }
 /* 탭 아이콘(:material/…) 크기·정렬 — 라벨 텍스트 색을 그대로 상속 */
 .st-key-top_section div[data-testid="stSegmentedControl"] button span[data-testid="stIconMaterial"] { font-size:17px; color:inherit; }
 .st-key-stock_subtab2 div[data-testid="stSegmentedControl"] button span[data-testid="stIconMaterial"],
@@ -206,7 +244,13 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 .st-key-rpt_kind_seg div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
 .st-key-rpt_kind_seg div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] {
   background:transparent !important; box-shadow:none !important;
-  border-bottom:2px solid #A7BBA9 !important; color:#7E9A83 !important;
+  border-bottom:2px solid var(--stk-soft) !important; color:var(--stk) !important;
+}
+/* 3단도 섹션색 상속 — 실거래 보기(부동산)만 클레이로 덮어쓴다 */
+.st-key-re_dealtab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"],
+.st-key-re_dealtab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],
+.st-key-re_dealtab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] {
+  border-bottom-color:var(--re-soft) !important; color:var(--re) !important;
 }
 .st-key-stock_kind div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
 .st-key-stock_kind div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
@@ -216,7 +260,10 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 .st-key-re_dealtab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p,
 .st-key-rpt_kind_seg div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
 .st-key-rpt_kind_seg div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
-.st-key-rpt_kind_seg div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:#7E9A83 !important; }
+.st-key-rpt_kind_seg div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:var(--stk) !important; }
+.st-key-re_dealtab2 div[data-testid="stSegmentedControl"] button[aria-checked="true"] p,
+.st-key-re_dealtab2 div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"] p,
+.st-key-re_dealtab2 div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"] p { color:var(--re) !important; }
 .stButton > button { border-radius:9px; padding:6px 16px; font-weight:600; }
 .stButton { margin-bottom:4px; }
 [data-testid="stExpander"] { border-radius:10px; margin-bottom:8px; }
@@ -1548,6 +1595,25 @@ _top = st.segmented_control(
     key="top_section", label_visibility="collapsed",
 ) or "주식"   # 선택 해제(None) 시 기본값으로 폴백
  
+# ── 섹션 테마 (A안 · 2026-07) — 상위 탭 선택에 따라 상단 토글 색을 섹션색으로 전환.
+#   Streamlit은 body에 클래스를 붙일 수 없어 CSS만으로는 '현재 섹션'을 알 수 없다.
+#   → 선택값을 읽어 상단 토글(top_section)에만 오버라이드를 주입한다.
+#     하위 탭(stock_subtab2/re_maintab2)·3단 탭은 키가 이미 섹션별로 갈려 있어
+#     정적 CSS(:root 변수 --stk/--re)로 처리되므로 여기서 건드리지 않는다.
+if _top == "부동산":
+    st.markdown(
+        '<style>'
+        '.st-key-top_section div[data-testid="stSegmentedControl"] [role="radiogroup"],'
+        '.st-key-top_section div[data-testid="stSegmentedControl"] > div'
+        '{background:var(--re-tint) !important;border-color:var(--re-line) !important;}'
+        '.st-key-top_section div[data-testid="stSegmentedControl"] button[aria-checked="true"],'
+        '.st-key-top_section div[data-testid="stSegmentedControl"] button[kind="segmented_controlActive"],'
+        '.st-key-top_section div[data-testid="stSegmentedControl"] button[data-testid="stBaseButton-segmented_controlActive"]'
+        '{background:var(--re) !important;box-shadow:0 2px 7px -1px rgba(176,130,104,.5) !important;}'
+        '.st-key-top_section div[data-testid="stSegmentedControl"] button:hover'
+        '{color:var(--re) !important;}'
+        '</style>', unsafe_allow_html=True)
+
 if _top == "주식":
     # '브리핑에서 자세히' 점프 — 위젯 생성 '전'에 세션값을 바꿔야 한다.
     # default= 대신 세션 사전 시드를 쓰면 위젯 생성 후 값 변경 경고 없이 전환된다.
