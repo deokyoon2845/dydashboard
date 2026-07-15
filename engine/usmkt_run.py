@@ -7,7 +7,8 @@
 
 수집 내용(payload):
   sectors  SPDR 섹터 ETF 11종 — 전일 등락률(+5일)
-  top50    시총 상위 50 — fast_info 라이브 시총으로 매일 재랭킹(정적 순서 아님)
+  top50    시총 상위 50 — fast_info 라이브 시총으로 매일 재랭킹(정적 순서 아님).
+           시총은 달러(십억 $)와 원화(조원) 병기 — 원화는 당일 KRW=X 환율로 환산.
   movers   유니버스(120종) 내 상승/하락 Top5
   issues   |전일 등락| ≥ 4% 이슈 종목(최대 12) + 종목별 뉴스(네이버 한글 우선,
            제목에 종목명 포함 기사만 채택 · 부족하면 야후 영문 보충)
@@ -130,6 +131,20 @@ def _batch(tickers):
     return out, tdate
 
 
+def _usdkrw():
+    """원/달러 환율 — 시총 원화 병기용. 배치 시세와 같은 소스(yfinance)라 추가 의존 없음.
+    실패 시 None → 뷰어가 달러만 표시(무회귀)."""
+    try:
+        import yfinance as yf
+        s = yf.download(tickers="KRW=X", period="5d", interval="1d",
+                        auto_adjust=True, progress=False)["Close"].dropna()
+        if len(s):
+            return round(float(s.iloc[-1]), 2)
+    except Exception as e:
+        print(f"[usmkt] 환율 조회 실패: {e}")
+    return None
+
+
 def _fast_info(t):
     """fast_info dict — 신/구 키 모두 대응. 실패 시 {}."""
     import yfinance as yf
@@ -241,10 +256,17 @@ def collect():
         mc = _fast_info(t).get("mcap")
         if mc:
             mcaps[t] = float(mc)
-    top50 = [{"tk": t, "nm": UNIVERSE[t], "mcap_b": round(mcaps[t] / 1e9),
-              **px[t]}
-             for t in sorted(mcaps, key=mcaps.get, reverse=True)[:50]]
-    print(f"[usmkt] 시총 랭킹 {len(mcaps)}종 조회 → Top{len(top50)}")
+    fx = _usdkrw()          # 원/달러 — 원화 시총 병기용(없으면 달러만)
+    top50 = []
+    for t in sorted(mcaps, key=mcaps.get, reverse=True)[:50]:
+        row = {"tk": t, "nm": UNIVERSE[t],
+               "mcap_b": round(mcaps[t] / 1e9),        # 십억 달러
+               **px[t]}
+        if fx:                                          # 조원 = 달러시총 × 환율 ÷ 1e12
+            row["mcap_kj"] = round(mcaps[t] * fx / 1e12, 1)
+        top50.append(row)
+    print(f"[usmkt] 시총 랭킹 {len(mcaps)}종 조회 → Top{len(top50)} · "
+          f"환율 {fx if fx else '실패(달러만)'}")
 
     # 4) 상승/하락 Top5 + 이슈
     ranked = sorted(px.items(), key=lambda kv: kv[1]["chg"])
@@ -268,7 +290,7 @@ def collect():
     now = _now_kst()
     return {"asof": now.strftime("%Y-%m-%d %H:%M"),
             "asof_date": now.date().isoformat(),
-            "trade_date": tdate,
+            "trade_date": tdate, "usdkrw": fx,
             "sectors": sectors, "top50": top50,
             "movers": movers, "issues": issues}
 
