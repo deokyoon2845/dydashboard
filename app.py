@@ -270,9 +270,9 @@ h1 { font-size:1.875rem !important; font-weight:600 !important; line-height:1.3 
 .app-name { font-family:'Fraunces','Noto Sans KR',serif; font-size:18px; font-weight:600; color:var(--ink); }
 .app-upd { font-size:11.5px; color:var(--muted); }
 .accent-bar { height:3px; width:30px; background:var(--sage); border-radius:3px; margin:0 0 12px; }
-.mkt-group { font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:16px 0 10px; }
+.mkt-group { font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:12px 0 9px; }  /* C4: 16→12 */
 .grp-asof { font-weight:600; font-size:10.5px; letter-spacing:0; text-transform:none; color:var(--muted); opacity:.8; margin-left:8px; }
-.grp-divider { border:none; border-top:1px solid var(--line); margin:22px 0 0; }
+.grp-divider { border:none; border-top:1px solid var(--line); margin:18px 0 0; }  /* C4: 22→18 */
 .sect-banner { font-family:'Fraunces','Noto Sans KR',serif; font-size:15.5px; font-weight:600; color:var(--sage-deep); letter-spacing:.01em; margin:18px 0 14px; display:flex; align-items:center; gap:9px; }
 .sect-banner::before { content:""; width:18px; height:3px; background:var(--sage); border-radius:3px; flex:none; }
 .mkt-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
@@ -799,9 +799,17 @@ def _big_index_chart(name: str, ticker: str, days: int):
  
 def _render_domestic_charts():
     st.markdown(_IDX_CHART_CSS, unsafe_allow_html=True)
-    period_label = st.radio(
-        "조회 기간", list(_KRX_PERIODS.keys()), index=3, horizontal=True,
-        key="krx_chart_period", label_visibility="collapsed")
+    # 기간 선택 UI를 IPO 탭과 동일한 세그먼트로 통일(C3) — 구버전 Streamlit이면
+    # 기존 라디오로 폴백. 위젯 타입이 바뀌므로 세션 키도 교체(구 캐시 충돌 방지 원칙).
+    _plist = list(_KRX_PERIODS.keys())
+    if hasattr(st, "segmented_control"):
+        period_label = st.segmented_control(
+            "조회 기간", _plist, default="6개월",
+            key="krx_chart_period2", label_visibility="collapsed") or "6개월"
+    else:
+        period_label = st.radio(
+            "조회 기간", _plist, index=3, horizontal=True,
+            key="krx_chart_period", label_visibility="collapsed")
  
     is_intraday = (period_label == "1일")
     days = _KRX_PERIODS[period_label]
@@ -855,8 +863,10 @@ def _histories(group):
     return out
 
 
-def _heat_group(group, group_data, group_asof, unified):
-    st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
+def _heat_group(group, group_data, group_asof, unified, divider=True):
+    # divider=False: 섹션 배너 바로 아래 첫 그룹 — 배너+구분선 이중 여백 제거(C4).
+    if divider:
+        st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     head = f'<div class="mkt-group">{group}'
     if not unified and group_asof.get(group):
         head += f'<span class="grp-asof">기준 {group_asof[group]}</span>'
@@ -924,9 +934,11 @@ def _render_global_body():
             "🌡️ 히트맵 · 타일 색 = 등락률의 은은한 틴트(빨강 상승 / 파랑 하락, ±3%에서 최대) · "
             "미니차트 = 3개월 추이(하단 눈금 = 보름)")
         + '</div>', unsafe_allow_html=True)
+    _first = True
     for g in ("미국", "변동성·원자재", "암호화폐"):
         if g in group_data:
-            _heat_group(g, group_data, group_asof, unified)
+            _heat_group(g, group_data, group_asof, unified, divider=not _first)
+            _first = False
  
     # ══════════ 1.5 미국 전일 시장 — 업종·시총 Top50·이슈 종목(엔진 usmkt) ══════════
     #   엔진(engine.usmkt_run · 07:20/08:20 KST)이 저장한 스냅샷만 읽는다.
@@ -939,7 +951,7 @@ def _render_global_body():
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     st.markdown('<div class="sect-banner" id="sec-fx">외환 · 금리</div>', unsafe_allow_html=True)
     if "환율" in group_data:
-        _heat_group("환율", group_data, group_asof, unified)
+        _heat_group("환율", group_data, group_asof, unified, divider=False)
  
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     from modules.rates import render_rates
@@ -984,6 +996,16 @@ __MKH_MOOD__
 /* 오늘의 한 장 — 블록 라벨·시그널 카드 */
 .mkt-head .moods{display:inline-flex;align-items:center;gap:6px;}
 .mkt-head .moods .ar{color:var(--muted,#9a9b92);font-size:11px;font-weight:700;}
+/* 결론 스트립 — 국면 · 주도 섹터 · 내일 관전 (오늘의 한 장 v2.1) */
+.op-strip{display:flex;gap:9px;flex-wrap:wrap;margin:9px 0 0;}
+.op-cell{display:flex;align-items:baseline;gap:7px;background:#fff;border:1px solid var(--line,#ECEDE7);
+  border-radius:12px;padding:8px 12px;min-width:0;}
+.op-cell .k{font-size:9.5px;font-weight:700;letter-spacing:.08em;color:var(--muted,#9a9b92);white-space:nowrap;}
+.op-cell .v{font-size:12px;font-weight:700;color:var(--ink,#34352f);}
+.op-cell.ph .v{color:var(--sage-deep,#7E9A83);}
+.op-cell.watch{flex:1 1 240px;}
+.op-cell.watch .v{font-weight:600;font-size:11.5px;line-height:1.55;color:var(--pill-ink,#5d6258);
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
 .op-lab{font-size:10px;font-weight:700;letter-spacing:.09em;color:var(--muted,#9a9b92);margin:13px 0 7px;}
 .op-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;}
 .op-card{background:#fff;border:1px solid var(--line,#ECEDE7);border-radius:14px;padding:12px 13px;}
@@ -1054,13 +1076,45 @@ def _today_page_data():
                            "stocks": [str(s).strip() for s in
                                       (t.get("stocks") or []) if str(s).strip()][:3]})
 
+        # 결론 스트립: 장마감 후=outlook.post.tomorrow(내일 가설),
+        # 장전=outlook.pre 상위 2개(오늘 볼 것) — analyze 스키마 그대로 재사용.
+        ol = data.get("outlook") or {}
+        if kind0 == "post":
+            watch = str(((ol.get("post") or {}).get("tomorrow") or "")).strip()
+            watch_label = "내일 관전"
+        else:
+            pre = [str(x).strip() for x in (ol.get("pre") or []) if str(x).strip()]
+            watch = " · ".join(pre[:2])
+            watch_label = "오늘 관전"
+
         return {"headline": headline,
                 "mood": data.get("mood", "neutral"),
                 "pre_mood": pre_mood,
                 "kind": kind0,
                 "date": d0,
                 "snap": str(data.get("snapshot_line", "")).strip(),
+                "watch": watch, "watch_label": watch_label,
                 "topics": topics}
+    except Exception:
+        return None
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _leaders_brief():
+    """주도 섹터 한 줄 요약 {'sector','count'} — 결론 스트립용.
+    leaders 스냅샷의 sectors[0](점수 1위)과 주도주 개수. 없음/실패 시 None."""
+    try:
+        from modules.db import supabase_configured, load_leaders
+        if not supabase_configured():
+            return None
+        p = load_leaders() or {}
+        secs = p.get("sectors") or []
+        if not secs:
+            return None
+        sector = str(secs[0].get("upjong", "")).strip()
+        if not sector:
+            return None
+        return {"sector": sector, "count": len(p.get("stocks") or [])}
     except Exception:
         return None
 
@@ -1121,6 +1175,30 @@ def _render_market_head():
             f'<div class="hl">{_html.escape(page["headline"])}</div>'
             f'{_snap_chips_html(page["snap"])}'
             f'</div>', unsafe_allow_html=True)
+
+    # ①.5 결론 스트립 — 국면(체온계) · 주도 섹터(leaders) · 내일/오늘 관전(outlook).
+    # 세 소스 모두 기존 캐시 재사용이라 추가 비용 0 · 실패한 셀은 조용히 생략.
+    strip = ""
+    try:
+        from modules.indicators import phase_brief
+        ph = phase_brief()
+    except Exception:
+        ph = None
+    if ph:
+        strip += (f'<div class="op-cell ph"><span class="k">국면</span>'
+                  f'<span class="v">{_html.escape(ph["phase"])}'
+                  f' {ph["score"]:+.2f}</span></div>')
+    lb = _leaders_brief()
+    if lb:
+        cnt = f' · 주도주 {lb["count"]}' if lb.get("count") else ""
+        strip += (f'<div class="op-cell"><span class="k">주도 섹터</span>'
+                  f'<span class="v">{_html.escape(lb["sector"])}{cnt}</span></div>')
+    if page and page.get("watch"):
+        strip += (f'<div class="op-cell watch">'
+                  f'<span class="k">{_html.escape(page["watch_label"])}</span>'
+                  f'<span class="v">{_html.escape(page["watch"])}</span></div>')
+    if strip:
+        st.markdown(f'<div class="op-strip">{strip}</div>', unsafe_allow_html=True)
 
     # ② 시그널 카드 — topics 상위 3 · implication 전문 + 종목 칩(높이 자동)
     if page and page["topics"]:
