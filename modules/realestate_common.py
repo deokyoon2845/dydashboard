@@ -161,7 +161,8 @@ _RE_CSS = """
   border:1px solid var(--line,#ECEDE7);border-radius:12px;padding:11px 15px;margin:2px 0 14px;}
 .re-phase b{font-size:12px;color:var(--muted,#9a9b92);font-weight:600;margin-right:2px;}
 .re-phase .seg{font-size:13px;font-weight:700;color:var(--ink,#34352f);}
-.re-grp{font-size:12px;font-weight:700;color:var(--ink,#34352f);margin:16px 0 8px;letter-spacing:.02em;}
+.re-grp{font-size:12px;font-weight:700;color:var(--ink,#34352f);margin:16px 0 8px;letter-spacing:.02em;
+  border-left:3px solid #B08268;padding-left:9px;}  /* 섹션 액센트(클레이) — A안 목업 '카드 악센트가 섹션색을 따라감' */
 .re-grp .sub{font-weight:500;color:var(--muted,#9a9b92);font-size:11px;margin-left:6px;}
 .re-delta{font-size:11px;font-weight:700;margin-left:7px;}
 .re-delta.up{color:var(--up,#B65F5A);} .re-delta.dn{color:var(--down,#5A7CA0);} .re-delta.fl{color:var(--muted,#9a9b92);}
