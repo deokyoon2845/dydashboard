@@ -1,0 +1,76 @@
+name: 미국 시장 수집 (일일)
+
+# 미국 마감(EDT 16:00 ≈ KST 05~06시) 후 아침에 전일 시장을 수집한다.
+# UTC 22:20/23:20 월~금 = KST 화~토 07:20/08:20 — 2슬롯 + 멱등 가드로 결행 방지.
+on:
+  schedule:
+    - cron: "20 22 * * 1-5"
+    - cron: "20 23 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "당일 재수집(멱등 가드 무시)"
+        type: boolean
+        default: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v5
+
+      - name: 필수 시크릿 점검
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
+            echo "::error::SUPABASE_URL/SUPABASE_KEY 시크릿이 비어 있습니다."
+            exit 1
+          fi
+          echo "✅ 필수 시크릿 확인 — 수집 단계로 진행합니다."
+
+      - name: 파이썬 설정
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: 라이브러리 설치
+        run: pip install -r requirements.txt
+
+      - name: 미국 전일 시장 수집 → Supabase 저장
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          # 이슈 종목 한글 뉴스용 — 없으면 야후 영문 뉴스만 수집(정상 진행)
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+          FORCE_COLLECT: ${{ (github.event_name == 'workflow_dispatch' && inputs.force) && '1' || '' }}
+        run: python -m engine.usmkt_run
+
+      # ── 일일 롤업(영구 보존) — 업종 등락·상하위·이슈 티커를 daily_rollup에 upsert ──
+      - name: 일일 롤업(미국) → daily_rollup
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python -m engine.rollup us
+
+      # ── 실패 시 텔레그램 알림(조용한 실패 방어) ──
+      - name: 실패 시 텔레그램 알림
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "텔레그램 시크릿 없음 — 알림 건너뜀"; exit 0
+          fi
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          TEXT=$(printf '⚠️ <b>%s</b> 실패\n실행 로그: %s' "${{ github.workflow }}" "$RUN_URL")
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${TEXT}" \
+            -d "parse_mode=HTML" -d "disable_web_page_preview=true" >/dev/null || true
+          echo "실패 알림 발송 시도 완료"
