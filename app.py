@@ -1643,16 +1643,20 @@ def _render_status_panel():
 _inject_countup()
  
 # 탭 아이콘(:material/…) — format_func로 표시만 바꾸고 값(세션·비교·점프)은 한글 그대로 유지.
-_TOP_TAB_ICONS = {"주식": ":material/candlestick_chart:", "부동산": ":material/apartment:"}
+_TOP_TAB_ICONS = {"증권": ":material/candlestick_chart:", "부동산": ":material/apartment:"}
 _STOCK_TAB_ICONS = {"시장": ":material/monitoring:", "글로벌": ":material/public:",
                     "브리핑": ":material/newspaper:", "종목": ":material/target:",
                     "테마": ":material/tag:"}
 
+# 탭명 변경(주식→증권 · 2026-07): 기존 세션에 '주식' 값이 남아 있으면 새 옵션
+# 목록과 충돌한다 → 위젯 생성 '전'에 치환(사용자의 섹션 선택 상태는 보존).
+if st.session_state.get("top_section") == "주식":
+    st.session_state["top_section"] = "증권"
 _top = st.segmented_control(
-    "섹션", ["주식", "부동산"], default="주식",
+    "섹션", ["증권", "부동산"], default="증권",
     format_func=lambda _t: f"{_TOP_TAB_ICONS[_t]} {_t}",
     key="top_section", label_visibility="collapsed",
-) or "주식"   # 선택 해제(None) 시 기본값으로 폴백
+) or "증권"   # 선택 해제(None) 시 기본값으로 폴백
  
 # ── 섹션 테마 (A안 · 2026-07) — 상위 탭 선택에 따라 상단 토글 색을 섹션색으로 전환.
 #   Streamlit은 body에 클래스를 붙일 수 없어 CSS만으로는 '현재 섹션'을 알 수 없다.
@@ -1671,7 +1675,7 @@ if _top == "부동산":
         '{color:var(--re) !important;}'
         '</style>', unsafe_allow_html=True)
 
-if _top == "주식":
+if _top == "증권":
     # '브리핑에서 자세히' 점프 — 위젯 생성 '전'에 세션값을 바꿔야 한다.
     # default= 대신 세션 사전 시드를 쓰면 위젯 생성 후 값 변경 경고 없이 전환된다.
     # ※ key를 stock_subtab2로 교체(2026-07 탭 개편): 기존 세션에 '주도주'/'공모주' 값이
@@ -1682,7 +1686,7 @@ if _top == "주식":
     if _jump:
         st.session_state["stock_subtab2"] = _jump
     _sub = st.segmented_control(
-        "주식 탭", ["시장", "글로벌", "브리핑", "종목", "테마"],
+        "증권 탭", ["시장", "글로벌", "브리핑", "종목", "테마"],
         format_func=lambda _t: f"{_STOCK_TAB_ICONS[_t]} {_t}",
         key="stock_subtab2", label_visibility="collapsed",
     ) or "시장"
