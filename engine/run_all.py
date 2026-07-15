@@ -2,10 +2,11 @@
 
 GitHub Actions가 호출합니다. 하나가 실패해도 다른 하나는 계속 진행합니다.
 실행:
-    python -m engine.run_all            # 전체(보고서+키워드+채점) — 수동 실행 기본값
+    python -m engine.run_all            # 전체(보고서+키워드+채점+국고채) — 수동 실행 기본값
     python -m engine.run_all report     # 보고서만(장전/장후 시각 자동판별, 채점 포함)
     python -m engine.run_all keywords   # 오늘의 키워드만
     python -m engine.run_all scores     # 예측 채점만
+    python -m engine.run_all rates      # 한국 국고채 수집만(ECOS → engine_cache)
 
 장전/장후는 generate_report()가 생성 '시각'으로 자동 판별한다(오전=장전, 오후=장후).
 따라서 07:50 KST cron → 장전, 17:00 KST cron → 장마감 후로 자동으로 갈린다.
@@ -52,9 +53,19 @@ def _run_scores():
         print("채점 오류:", e)
 
 
+def _run_kr_rates():
+    print("== 한국 국고채 수집(ECOS → engine_cache) ==")
+    try:
+        from engine.kr_rates_collect import collect_kr_rates
+        r = collect_kr_rates()
+        print("국고채:", r.get("counts") if r.get("ok") else f"건너뜀 ({r.get('reason')})")
+    except Exception as e:
+        print("국고채 오류:", e)
+
+
 def main(task="all"):
     task = (task or "all").strip().lower()
-    if task not in ("all", "report", "keywords", "scores"):
+    if task not in ("all", "report", "keywords", "scores", "rates"):
         print(f"알 수 없는 작업 '{task}' → 전체(all)로 실행")
         task = "all"
     print(f"== run_all: 작업='{task}' ==")
@@ -64,6 +75,8 @@ def main(task="all"):
         _run_keywords()
     if task in ("all", "scores"):
         _run_scores()
+    if task in ("all", "rates"):
+        _run_kr_rates()
 
 
 if __name__ == "__main__":
