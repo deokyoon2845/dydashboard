@@ -197,6 +197,22 @@ def _build_realestate_cycle():
     return {k: v for k, v in m.items() if v is not None}
 
 
+def _build_us_market():
+    """usmkt_snapshots 최신 행 → 업종 등락·상하위·이슈 티커 요약(장기 자산)."""
+    from modules.db import load_usmkt
+    d = load_usmkt() or {}
+    p = d.get("payload") or {}
+    if not p.get("sectors"):
+        return {}
+    return {"trade_date": p.get("trade_date"),
+            "sectors": {s["nm"]: s.get("chg") for s in p["sectors"]},
+            "up": [{"tk": x["tk"], "chg": x.get("chg")}
+                   for x in (p.get("movers") or {}).get("up") or []],
+            "dn": [{"tk": x["tk"], "chg": x.get("chg")}
+                   for x in (p.get("movers") or {}).get("dn") or []],
+            "issues": [x["tk"] for x in p.get("issues") or []]}
+
+
 # ── 진입점 ────────────────────────────────────────────────────────────────────
 def main():
     mode = (sys.argv[1] if len(sys.argv) > 1 else "").strip().lower()
@@ -206,8 +222,10 @@ def main():
                 ("global", _build_global)]
     elif mode == "realestate":
         jobs = [("realestate_cycle", _build_realestate_cycle)]
+    elif mode == "us":
+        jobs = [("us_market", _build_us_market)]
     else:
-        print("usage: python -m engine.rollup [stock|realestate]")
+        print("usage: python -m engine.rollup [stock|realestate|us]")
         sys.exit(2)
     ok = 0
     for section, fn in jobs:
