@@ -69,6 +69,14 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python -m engine.leaders_run
 
+      # ── 일일 롤업(영구 보존) — 코스피·코스닥 마감/breadth·주도주 Top10·글로벌 지수를
+      #    daily_rollup 테이블에 upsert(멱등). 10일 purge와 무관하게 장기 자산으로 쌓인다.
+      - name: 일일 롤업(주식) → daily_rollup
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python -m engine.rollup stock
+
 
       # ── 실패 시 텔레그램 알림(조용한 실패 방어) — curl만 사용해 pip 실패에도 동작 ──
       - name: 실패 시 텔레그램 알림
