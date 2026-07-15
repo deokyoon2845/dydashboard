@@ -429,6 +429,24 @@ def _fng_card(fng):
         f'</div>', unsafe_allow_html=True)
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def phase_brief():
+    """시장 국면 한 줄 요약 — '오늘의 한 장' 결론 스트립용(app.py).
+
+    render_indicators와 같은 재료(공포·탐욕/VIX/RSI/수급)로 판정하되 위젯 없이
+    {'phase': '중립', 'score': +0.25}만 돌려준다. 내부 페처가 전부 캐시라
+    시장 탭 아래쪽 지표 섹션과 중복 호출 비용은 사실상 0. 판정 불가 시 None."""
+    try:
+        fng = fetch_cnn_fng()
+        rsi_vals = {name: compute_rsi(tk) for name, tk in _RSI_TARGETS.items()}
+        pp = _phase_payload(fng, rsi_vals)
+        if not pp:
+            return None
+        return {"phase": _PHASES[pp["phase"]], "score": pp["score"]}
+    except Exception:
+        return None
+
+
 def render_indicators():
     st.markdown(_VIX_CSS, unsafe_allow_html=True)
     st.markdown(_RSI_CSS, unsafe_allow_html=True)
