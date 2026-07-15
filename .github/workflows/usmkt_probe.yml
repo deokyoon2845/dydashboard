@@ -1,0 +1,22 @@
+name: usmkt-probe
+
+# 수동 실행 전용 — 미국 시장(업종 ETF·Top50·뉴스) 수집 설계 실측.
+# 본구현(usmkt) 확정 후 probe 파일과 함께 삭제한다.
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: 미국 시장 수집 probe
+        env:
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+        run: python -m engine.usmkt_probe
