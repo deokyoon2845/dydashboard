@@ -1590,8 +1590,32 @@ def _clip_2016(dates, vals):
     return [d for d, _ in keep], [v for _, v in keep]
 
 
+# 우측 보조축(rpair) 스펙 — 주 지표(비율) 옆에 절대 수준을 병기(2026-07).
+#   key → [(소스키, 범례 라벨, 색, 단위, 소수)] · 소스키 시리즈는 엔진 payload에서 찾는다.
+#   gdp는 소스키 대신 전기비 체인링크로 뷰어에서 유도("__gdp_chain__" 센티널).
+_MACRO_RPAIRS = {
+    "starts": [("starts_lv", "착공량 3M평균", "#8B8D82", "만호", 2)],
+    "m2":     [("m2_lv", "M2 평잔", "#8B8D82", "조", 0)],
+    "gdp":    [("__gdp_chain__", "GDP 수준(16Q1=100)", "#8B8D82", "", 1)],
+    "jr":     [("sale_m", "매매지수", "#B65F5A", "", 1),
+               ("jeonse_m", "전세지수", "#5A7CA0", "", 1)],
+}
+
+
+def _gdp_chain(dates, vals):
+    """전기비(%) → 수준 지수(첫 분기=100 체인링크). 새 ECOS 코드 없이
+    기존 성장률 시계열만으로 GDP '수준'의 궤적을 복원한다(스케일만 다름)."""
+    out, lvl = [], 100.0
+    for i, g in enumerate(vals):
+        if i > 0:
+            lvl *= (1.0 + g / 100.0)
+        out.append(round(lvl, 2))
+    return list(dates), out
+
+
 def _macro_chart_payload(data, months):
-    """차트 6개 payload. 각: {lab,sub,unit,col,dec,dates,vals,pair?}"""
+    """차트 6개 payload. 각: {lab,sub,unit,col,dec,dates,vals,pair?,rpair?}
+    rpair = 우측 보조축 라인 목록(절대 수준 병기 · _MACRO_RPAIRS)."""
     by = {it.get("key"): it for it in (data or [])}
     for s in _MACRO_SAMPLE:                    # 엔진 미수집 키만 샘플로 보충
         by.setdefault(s["key"], s)
@@ -1629,6 +1653,30 @@ def _macro_chart_payload(data, months):
                 ch["pair"] = {"lab": pr.get("label", ""), "col": pr.get("col", "#9a9b92"),
                               "dates": [_dlabel(x) for x in pd2],
                               "vals": [round(v, 2) for v in pv2]}
+        # 우측 보조축 라인(rpair) — 절대 수준 병기. 소스가 없으면 그 라인만
+        # 조용히 생략(엔진 첫 수집 전 starts_lv·m2_lv 부재 대응 · 무회귀).
+        rlines = []
+        for skey, rlab, rcol, runit, rdec in _MACRO_RPAIRS.get(key, []):
+            if skey == "__gdp_chain__":            # GDP 수준 = 전기비 체인링크
+                rd, rv = _gdp_chain(dates, vals) if key == "gdp" else ([], [])
+            else:
+                rit = by.get(skey)
+                if not rit:
+                    continue
+                rv = [float(v) for v in (rit.get("series") or []) if v is not None]
+                rd = [str(x) for x in (rit.get("dates") or [])]
+                if len(rd) != len(rv):             # KB 시계열(날짜 없음) — 월간 역산
+                    rd = _dates_back(len(rv), 30)
+                if months is None:
+                    rd, rv = _clip_2016(rd, rv)
+            if len(rv) < 2:
+                continue
+            rd2, rv2 = _slice_period(rd, rv, months, per_month)
+            rlines.append({"lab": rlab, "col": rcol, "unit": runit, "dec": rdec,
+                           "dates": [_dlabel(x) for x in rd2],
+                           "vals": [round(v, 2) for v in rv2]})
+        if rlines:
+            ch["rpair"] = rlines
         out.append(ch)
     return out
 
@@ -1661,10 +1709,14 @@ function card(c,gi){
  var last=c.vals[c.vals.length-1],prev=c.vals[c.vals.length-2];
  var d=last-prev,cls=d>0?"up":(d<0?"dn":"fl"),ar=d>0?"▲":(d<0?"▼":"–");
  var ds=(d>=0?"+":"")+d.toFixed(c.dec);
- var leg="";
- if(c.pair)leg='<div class="mc-leg"><span><i style="background:'+c.col+'"></i>'+c.lab+
-  '</span><span><i style="background:'+c.pair.col+'"></i>'+c.pair.lab+
-  ' <b>'+c.pair.vals[c.pair.vals.length-1].toFixed(c.dec)+c.unit+'</b></span></div>';
+ var legItems=[];
+ if(c.pair||c.rpair)legItems.push('<span><i style="background:'+c.col+'"></i>'+c.lab+'</span>');
+ if(c.pair)legItems.push('<span><i style="background:'+c.pair.col+'"></i>'+c.pair.lab+
+  ' <b>'+c.pair.vals[c.pair.vals.length-1].toFixed(c.dec)+c.unit+'</b></span>');
+ if(c.rpair)c.rpair.forEach(function(rp){legItems.push(
+  '<span><i style="background:'+rp.col+';height:2px"></i>'+rp.lab+'(우) <b>'+
+  rp.vals[rp.vals.length-1].toFixed(rp.dec)+rp.unit+'</b></span>');});
+ var leg=legItems.length?'<div class="mc-leg">'+legItems.join('')+'</div>':"";
  return '<div class="mc"><div class="mc-lab">'+c.lab+'</div>'
   +'<div class="mc-big"><span class="mc-val" style="color:'+c.col+'">'+last.toFixed(c.dec)
   +'<small>'+c.unit+'</small></span>'
@@ -1673,10 +1725,15 @@ function card(c,gi){
 function draw(gi){
  var c=CH[gi],host=document.getElementById("ch"+gi);
  var W=Math.max(260,host.clientWidth||320),H=210;
- var ml=44,mr=10,mt=10,mb=22,pw=W-ml-mr,ph=H-mt-mb;
+ var ml=44,mr=(c.rpair?48:10),mt=10,mb=22,pw=W-ml-mr,ph=H-mt-mb;
  var ys=c.vals.slice(),lo=Math.min.apply(null,ys),hi=Math.max.apply(null,ys);
  if(c.pair){lo=Math.min(lo,Math.min.apply(null,c.pair.vals));hi=Math.max(hi,Math.max.apply(null,c.pair.vals));}
  var pad=(hi-lo)*0.12||Math.abs(hi)*0.02||1;lo-=pad;hi+=pad;var sp=(hi-lo)||1,n=ys.length;
+ var rlo=0,rhi=1,rsp=1,rdec=0;
+ if(c.rpair){rlo=Infinity;rhi=-Infinity;rdec=c.rpair[0].dec;
+  c.rpair.forEach(function(rp){rp.vals.forEach(function(v){if(v<rlo)rlo=v;if(v>rhi)rhi=v;});});
+  var rpad=(rhi-rlo)*0.12||Math.abs(rhi)*0.02||1;rlo-=rpad;rhi+=rpad;rsp=(rhi-rlo)||1;}
+ function Yr(v){return mt+(1-(v-rlo)/rsp)*ph;}
  function X(i,m){var k=m?m.length:n;return ml+(k>1?i/(k-1):0)*pw;}
  function Y(v){return mt+(1-(v-lo)/sp)*ph;}
  function path(a){return 'M'+a.map(function(v,i){return X(i,a).toFixed(1)+','+Y(v).toFixed(1);}).join(' L');}
@@ -1686,13 +1743,18 @@ function draw(gi){
  var yg='';
  for(var k=0;k<5;k++){var v=lo+sp*k/4,y=Y(v).toFixed(1);
   yg+='<line x1='+ml+' y1='+y+' x2='+(ml+pw)+' y2='+y+' stroke="#ECEDE7"/>';
-  yg+='<text x='+(ml-7)+' y='+(parseFloat(y)+3.5).toFixed(1)+' text-anchor="end" font-size="10.5" fill="#9a9b92">'+v.toFixed(c.dec)+'</text>';}
+  yg+='<text x='+(ml-7)+' y='+(parseFloat(y)+3.5).toFixed(1)+' text-anchor="end" font-size="10.5" fill="#9a9b92">'+v.toFixed(c.dec)+'</text>';
+  if(c.rpair){var rv=rlo+rsp*k/4;
+   yg+='<text x='+(ml+pw+6)+' y='+(parseFloat(y)+3.5).toFixed(1)+' text-anchor="start" font-size="10" fill="#b6b7ae">'+rv.toFixed(rdec)+'</text>';}}
  var zero='';
  if(lo<0&&hi>0)zero='<line x1='+ml+' y1='+Y(0).toFixed(1)+' x2='+(ml+pw)+' y2='+Y(0).toFixed(1)+' stroke="#9a9b92" stroke-dasharray="4 4" opacity="0.55"/>';
  var xg='',step=Math.max(1,Math.floor(n/5));
  for(var i=0;i<n;i+=step){xg+='<text x='+X(i).toFixed(1)+' y='+(H-6)+' text-anchor="middle" font-size="10.5" fill="#9a9b92">'+c.dates[i]+'</text>';}
  var pline='';
  if(c.pair)pline='<path d="'+path(c.pair.vals)+'" fill="none" stroke="'+c.pair.col+'" stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round"/>';
+ if(c.rpair)c.rpair.forEach(function(rp){
+  var d='M'+rp.vals.map(function(v,i){return X(i,rp.vals).toFixed(1)+','+Yr(v).toFixed(1);}).join(' L');
+  pline+='<path d="'+d+'" fill="none" stroke="'+rp.col+'" stroke-width="1.6" opacity="0.9" stroke-linejoin="round"/>';});
  var svg='<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">'
   +'<defs><linearGradient id="g'+gi+'" x1="0" y1="0" x2="0" y2="1">'
   +'<stop offset="0" stop-color="rgba('+R+','+G+','+B+',0.18)"/><stop offset="1" stop-color="rgba('+R+','+G+','+B+',0)"/></linearGradient></defs>'
@@ -1713,7 +1775,10 @@ function draw(gi){
   vl.setAttribute('x1',x);vl.setAttribute('x2',x);dt.setAttribute('cx',x);dt.setAttribute('cy',y);
   var s=c.dates[bi]+'  '+ys[bi].toFixed(c.dec)+c.unit;
   if(c.pair&&c.pair.vals.length===n)s+=' · '+c.pair.vals[bi].toFixed(c.dec)+c.unit;
-  tt.textContent=s;var tw=s.length*6.4+14;
+  if(c.rpair)c.rpair.forEach(function(rp){
+   var ri=Math.round(bi/(n-1||1)*(rp.vals.length-1));
+   s+=' · '+rp.lab+' '+rp.vals[ri].toFixed(rp.dec)+rp.unit;});
+  tt.textContent=s;var tw=Math.min(s.length*6.4+14,pw);
   var tx=Math.max(ml+tw/2,Math.min(ml+pw-tw/2,x));
   tb.setAttribute('x',tx-tw/2);tb.setAttribute('y',mt+2);tb.setAttribute('width',tw);
   tt.setAttribute('x',tx);tt.setAttribute('y',mt+15);});
@@ -1871,5 +1936,7 @@ def _render_macro_section(data, scarr=None):
         "ECOS(한국은행) · KB" if _live else "일부 샘플 · 아침 수집 후 실데이터로 교체",
         "주담대 차트의 점선=한국은행 기준금리(비교용) · 착공=주거용 착공 YoY 3개월 평균"
         "(감소=중기 공급부족 신호) · M2=평잔·원계열 전년동월비 · GDP=분기 전기비 · "
+        "가는 실선(우축)=절대 수준 병기 — 착공량 3M평균(만호)·M2 평잔(조원)·"
+        "GDP 수준(전기비 누적·16Q1=100)·매매/전세지수(KB 월간, 전세가율 차트) · "
         "십자선 호버로 시점별 값 확인 · 백테스트=종합 강도 v5를 2016년부터 소급 계산해 "
         "매매지수 3개월 변화율과 비교(가중치·임계·lag 검증용)"), unsafe_allow_html=True)
