@@ -881,6 +881,13 @@ def _render_global_body():
         if g in group_data:
             _heat_group(g, group_data, group_asof, unified)
  
+    # ══════════ 1.5 미국 전일 시장 — 업종·시총 Top50·이슈 종목(엔진 usmkt) ══════════
+    #   엔진(engine.usmkt_run · 07:20/08:20 KST)이 저장한 스냅샷만 읽는다.
+    #   스냅샷이 없으면 render_us_market()이 조용히 생략 → 기존 화면 무회귀.
+    st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
+    from modules.us_market import render_us_market
+    render_us_market()
+
     # ══════════════════ 2. 외환 · 금리 ══════════════════
     st.markdown('<hr class="grp-divider">', unsafe_allow_html=True)
     st.markdown('<div class="sect-banner" id="sec-fx">외환 · 금리</div>', unsafe_allow_html=True)
