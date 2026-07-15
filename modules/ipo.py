@@ -11,6 +11,10 @@
 
 주 수익률 = 공모가比(현재가/공모가−1). 공모가 파싱 실패 종목은 상장일종가比로 폴백 표기.
 추이 스파크라인은 행에서 제거(컬럼 공간) — 모바일 지표 밴드·펼침 차트가 대신한다.
+2026-07: 채움률이 낮은(20% 미만) 지표 컬럼은 데스크톱 표에서 자동으로 접는다.
+  접힌 컬럼에 값이 있는 종목은 행 펼침(차트·상세)에 칩으로 보존 · 모바일 밴드는
+  '—' 칩을 그리지 않는다 — IPO 초기엔 DART 재무가 대부분 미수집이라 빈 컬럼이
+  화면 밀도를 크게 떨어뜨리던 문제 개선.
 
 데이터
   · 목록·메타·재무·밸류·공모가·향후일정 : Supabase ipo_snapshots(엔진). 없으면 임베드 샘플 폴백
@@ -569,7 +573,65 @@ def _newlisted_card_html(s: dict) -> str:
 
 
 # ── ③ 비교 테이블 행 ──────────────────────────────────────────
-def _row_html(s: dict) -> str:
+# ── 지표 컬럼 자동 접기(C2) ────────────────────────────────────
+# 고정 4컬럼(종목·상장일·시총·수익률) 뒤의 지표 8종. (키, 헤더, 그리드 폭, 채움 판정)
+_METRIC_COLS = [
+    ("per",  "PER",     "42px", lambda s: isinstance(s.get("per"), (int, float))
+                                 or str(s.get("net_income") or "").strip().startswith("-")),
+    ("eper", "추정PER",  "50px", lambda s: isinstance(s.get("est_per"), (int, float))),
+    ("pbr",  "PBR",     "44px", lambda s: isinstance(s.get("pbr"), (int, float))),
+    ("psr",  "PSR",     "44px", lambda s: isinstance(s.get("psr"), (int, float))),
+    ("eps",  "EPS",     "58px", lambda s: bool(str(s.get("eps") or "").strip())),
+    ("rev",  "매출",     "60px", lambda s: bool(str(s.get("revenue") or "").strip())),
+    ("op",   "영업이익", "60px", lambda s: bool(str(s.get("op_income") or "").strip())),
+    ("net",  "순이익",   "60px", lambda s: bool(str(s.get("net_income") or "").strip())),
+]
+_FIXED_GRID = "minmax(138px,1.5fr) 58px 54px 110px"   # 종목·상장일·시총·수익률
+
+
+def _metric_cell(key: str, s: dict) -> str:
+    if key == "per":
+        return _per_cell(s)
+    if key == "eper":
+        return _val_num(s.get("est_per"), "{:.1f}")
+    if key == "pbr":
+        return _val_num(s.get("pbr"), "{:.2f}")
+    if key == "psr":
+        return _val_num(s.get("psr"), "{:.2f}")
+    if key == "eps":
+        return _amt_num(s.get("eps"))
+    if key == "rev":
+        return _amt_num(s.get("revenue"))
+    if key == "op":
+        return _amt_num(s.get("op_income"))
+    return _amt_num(s.get("net_income"))
+
+
+def _split_metric_cols(rows):
+    """지표 컬럼을 (보임, 접힘)으로 나눈다 — 채움률 20% 미만(최소 2종목)은 접힘.
+    반환: (vis, hidden) · 각 원소 (key, 헤더, 폭, pred)."""
+    n = len(rows)
+    need = max(2, -(-n * 2 // 10)) if n >= 2 else 1   # ceil(20%) · 표본 1개면 1
+    vis, hidden = [], []
+    for col in _METRIC_COLS:
+        cnt = sum(1 for s in rows if col[3](s))
+        (vis if cnt >= need else hidden).append(col)
+    return vis, hidden
+
+
+def _hidden_metrics_line(s: dict, hidden) -> str:
+    """접힌 컬럼 중 이 종목에 값이 있는 것만 '헤더 값' 칩으로. 없으면 ''."""
+    bits = []
+    for key, hd, _w, pred in hidden:
+        if pred(s):
+            bits.append(f'<span class="chip">{hd}{_metric_cell(key, s)}</span>')
+    if not bits:
+        return ""
+    return ('<div class="mband" style="display:flex;margin:0 0 8px;">'
+            + "".join(bits) + "</div>")
+
+
+def _row_html(s: dict, vis) -> str:
     nm = html.escape(s.get("name", ""))
     sector = s.get("sector")
     sct = f'<span class="sct">{html.escape(sector)}</span>' if sector else ""
@@ -588,36 +650,26 @@ def _row_html(s: dict) -> str:
     else:
         ret = '<div class="retcell"><span class="na">—</span></div>'
 
-    per = f'<div class="num">{_per_cell(s)}</div>'
-    eper = f'<div class="num">{_val_num(s.get("est_per"), "{:.1f}")}</div>'
-    pbr = f'<div class="num">{_val_num(s.get("pbr"), "{:.2f}")}</div>'
-    psr = f'<div class="num">{_val_num(s.get("psr"), "{:.2f}")}</div>'
-    eps = f'<div class="num">{_amt_num(s.get("eps"))}</div>'
-    rev = f'<div class="num">{_amt_num(s.get("revenue"))}</div>'
-    op = f'<div class="num">{_amt_num(s.get("op_income"))}</div>'
-    net = f'<div class="num">{_amt_num(s.get("net_income"))}</div>'
+    # 지표 셀 — 표에 '보이는' 컬럼(vis)만 순서대로 (접힌 컬럼은 행 펼침에 보존)
+    metric_html = "".join(f'<div class="num">{_metric_cell(k, s)}</div>'
+                          for k, _hd, _w, _p in vis)
 
-    # 모바일 밴드 — 숨겨진 숫자 컬럼을 칩으로
+    # 모바일 밴드 — 값이 있는 지표만 칩으로(전 컬럼 대상 · '—' 칩은 그리지 않음)
     def _chip(k, body):
         return f'<span class="chip">{k}{body}</span>'
+    _MB_SHORT = {"영업이익": "영업익", "순이익": "순익"}
     mband = ('<div class="mband">'
              + _chip("상장", f"<b>{html.escape(listed[2:] if len(listed)==10 else listed)}</b>")
              + _chip("시총", f"<b>{html.escape(str(s.get('cap','-')))}</b>")
-             + _chip("PER", _per_cell(s))
-             + _chip("추정PER", _val_num(s.get("est_per"), "{:.1f}"))
-             + _chip("PBR", _val_num(s.get("pbr"), "{:.2f}"))
-             + _chip("PSR", _val_num(s.get("psr"), "{:.2f}"))
-             + _chip("EPS", _amt_num(s.get("eps")))
-             + _chip("매출", _amt_num(s.get("revenue")))
-             + _chip("영업익", _amt_num(s.get("op_income")))
-             + _chip("순익", _amt_num(s.get("net_income")))
+             + "".join(_chip(_MB_SHORT.get(hd, hd), _metric_cell(k, s))
+                       for k, hd, _w, pred in _METRIC_COLS if pred(s))
              + '</div>')
 
     return (
         '<div class="ipo-row">'
         f'<div class="nmcell"><div class="nm"><a href="{html.escape(item)}" target="_blank" rel="noopener">{nm}</a>{nv}</div>'
         f'<div class="sub">{_mk_chip(s.get("market",""))}{sct}</div></div>'
-        f'{dt}{cap}{ret}{per}{eper}{pbr}{psr}{eps}{rev}{op}{net}'
+        f'{dt}{cap}{ret}{metric_html}'
         f'{mband}'
         '</div>'
     )
@@ -719,22 +771,36 @@ def render_ipo_tab():
         st.markdown('<div class="ipo-cna">조건에 맞는 종목이 없어요.</div>', unsafe_allow_html=True)
         return
 
+    # 지표 컬럼 자동 접기 — 현재 필터 결과(rows) 기준 채움률 20% 미만은 표에서 제외.
+    vis, hidden = _split_metric_cols(rows)
+    grid = _FIXED_GRID + "".join(f" {w}" for _k, _hd, w, _p in vis)
+
     # 헤더+행 전체를 keyed 컨테이너로 감싸 스티키 헤더의 이동 범위를 테이블로 확장.
     try:
         _tbl = st.container(key="ipo_tbl")
     except TypeError:                 # 구버전 Streamlit 폴백(스코프만 생략, 동작은 정상)
         _tbl = st.container()
     with _tbl:
+        # 동적 그리드 폭 — 데스크톱에만(모바일 2컬럼+밴드 레이아웃은 그대로).
         st.markdown(
-            '<div class="ipo-head"><span>종목 · 업종</span>'
-            '<span>상장일</span><span>시총</span><span>공모가→현재</span>'
-            '<span>PER</span><span>추정PER</span><span>PBR</span><span>PSR</span>'
-            '<span>EPS</span>'
-            '<span>매출</span><span>영업이익</span><span>순이익</span></div>',
+            '<style>@media(min-width:681px){.st-key-ipo_tbl .ipo-head,'
+            f'.st-key-ipo_tbl .ipo-row{{grid-template-columns:{grid};}}}}</style>',
             unsafe_allow_html=True)
+        head = ('<div class="ipo-head"><span>종목 · 업종</span>'
+                '<span>상장일</span><span>시총</span><span>공모가→현재</span>'
+                + "".join(f"<span>{hd}</span>" for _k, hd, _w, _p in vis)
+                + '</div>')
+        st.markdown(head, unsafe_allow_html=True)
+        if hidden:
+            st.caption("빈 값이 많은 지표("
+                       + " · ".join(hd for _k, hd, _w, _p in hidden)
+                       + ")는 표에서 접었어요 — 값이 있는 종목은 펼침에서 확인돼요.")
         for s in rows:
-            st.markdown(_row_html(s), unsafe_allow_html=True)
+            st.markdown(_row_html(s, vis), unsafe_allow_html=True)
             with st.expander("차트·상세 보기"):
+                extra = _hidden_metrics_line(s, hidden)
+                if extra:
+                    st.markdown(extra, unsafe_allow_html=True)
                 intro = str(s.get("intro") or "").strip()
                 if intro:
                     st.markdown(f'<div class="ipo-cna" style="padding:2px 4px 10px;color:var(--pill-ink,#5d6258);">'
@@ -744,6 +810,6 @@ def render_ipo_tab():
     st.caption("수익률 = 공모가 대비 현재가(공모가는 DART 파싱 · 실패 종목은 상장일 종가 대비로 폴백 표기). "
                "PER·PBR·PSR·매출·영업이익·순이익은 DART 최근 연간 기준이고 시총은 최신 스냅샷. "
                "추정PER·EPS(원)는 네이버 증권 컨센서스 — 추정치가 없는 종목은 '—'. "
-               "PER '적자'는 순이익 마이너스, '—'는 미수집. 정렬은 상단 필 바(PER은 낮은 순). "
+               "PER '적자'는 순이익 마이너스, '—'는 미수집. 값이 거의 없는(20% 미만) 지표 컬럼은 자동으로 접히고, 값이 있는 종목은 행 펼침에 표시돼요. 정렬은 상단 필 바(PER은 낮은 순). "
                "향후 일정의 공모가(예정)·청약·납입·주관은 DART 증권신고서 주요정보 기준 — "
                "정정신고로 바뀔 수 있어요. 큰 차트=네이버 일별(약 15분 지연). N 아이콘·종목명=네이버 증권.")
