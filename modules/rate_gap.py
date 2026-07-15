@@ -2,8 +2,11 @@
 
 데이터 소스:
 - 미국: FRED 공개 CSV (API 키 불필요) — DGS2(2년), DGS10(10년)
-- 한국: 한국은행 ECOS API (ECOS_API_KEY 필요) — 국고채 3년·10년
-        통계표 817Y002 '시장금리(일별)'
+- 한국: Supabase engine_cache('kr_rates') 우선 — 엔진(engine/kr_rates_collect.py)이
+        GitHub Actions에서 ECOS 817Y002 국고채 2·3·10년을 매일 수집해 저장한다.
+        캐시가 없을 때만 ECOS 직접 호출 폴백(로컬 개발용 · ECOS_API_KEY 필요).
+        ※ Streamlit Cloud(해외 IP)에서 ECOS 직접 호출이 막혀 '데이터 없음'으로
+          떨어지던 문제를 캐시 경유로 해결(2026-07).
 
 ECOS 항목코드는 시점에 따라 바뀔 수 있어, 항목 '이름'으로 코드를 찾아 쓴다.
 모든 외부 호출은 실패해도 빈 값으로 떨어지며 앱을 멈추지 않는다.
@@ -58,7 +61,45 @@ def _fred_latest(series_id: str):
         return []
 
 
-# ── 한국: ECOS ─────────────────────────────────────────────
+# ── 한국: engine_cache 우선 ────────────────────────────────
+@st.cache_data(ttl=1800)
+def _kr_rates_cache() -> dict:
+    """engine_cache('kr_rates') → {'2y': [(YYYYMMDD, 값)...], '3y':…, '10y':…}.
+
+    엔진이 Actions에서 수집한 국고채 시계열. 없음/실패 시 {} — 호출부가
+    ECOS 직접 호출로 폴백한다."""
+    try:
+        from modules import db
+        payload = db.cache_get("kr_rates") or {}
+        tenors = payload.get("tenors") or {}
+    except Exception:
+        return {}
+    out = {}
+    for k, vals in tenors.items():
+        rows = []
+        for it in (vals or []):
+            try:
+                rows.append((str(it[0]), float(it[1])))
+            except Exception:
+                continue
+        rows.sort()
+        if rows:
+            out[k] = rows
+    return out
+
+
+def _kr_vals(tenor_key: str, name_keywords, ecos_key: str = ""):
+    """한국 국고채 한 만기의 [(t,v)] — 캐시 우선, 비면 ECOS 직접 폴백."""
+    vals = _kr_rates_cache().get(tenor_key) or []
+    if vals:
+        return vals
+    if not ecos_key:
+        return []
+    code = _find_code(_ecos_items(ecos_key), *name_keywords)
+    return _ecos_latest(ecos_key, code)
+
+
+# ── 한국: ECOS 직접 호출 (폴백/로컬용) ──────────────────────
 @st.cache_data(ttl=86400)
 def _ecos_items(key: str):
     """817Y002의 {항목이름: 항목코드} 매핑. 실패 시 {}."""
@@ -162,23 +203,24 @@ def render_rate_gap():
     with hc2:
         _gap_help()
 
-    key = _cfg("ECOS_API_KEY")
-    if not key:
-        st.caption("한국 국고채 데이터를 위해 ECOS_API_KEY가 필요해요. "
-                   "Secrets에 키를 넣으면 표시됩니다. (미국 금리는 키 없이 동작)")
-        return
+    key = _cfg("ECOS_API_KEY")   # 폴백(직접 호출)용 — 캐시가 있으면 없어도 동작
 
-    items = _ecos_items(key)
-    # 한국 단기 대표는 국고채 3년 (2년물이 있으면 우선 사용)
-    kr_short_code = _find_code(items, "국고채", "2년") or _find_code(items, "국고채", "3년")
-    kr_short_label = "한 2년" if _find_code(items, "국고채", "2년") else "한 3년"
-    kr_long_code = _find_code(items, "국고채", "10년")
+    # 한국: engine_cache 우선 · 단기 대표는 2년(있으면) 아니면 3년
+    krs_v = _kr_vals("2y", ("국고채", "2년"), key)
+    kr_short_label = "한 2년"
+    if not krs_v:
+        krs_v = _kr_vals("3y", ("국고채", "3년"), key)
+        kr_short_label = "한 3년"
+    krl_v = _kr_vals("10y", ("국고채", "10년"), key)
+
+    if not krs_v and not krl_v and not key:
+        st.caption("한국 국고채 데이터가 아직 없어요. 엔진(run_all)이 돌면 자동으로 "
+                   "채워지고, 로컬에서는 ECOS_API_KEY를 넣으면 바로 표시됩니다.")
+        return
 
     # 헤드라인용 최신값 + 미니차트용 전체 시계열
     us2_v = _fred_latest("DGS2")
     us10_v = _fred_latest("DGS10")
-    krs_v = _ecos_latest(key, kr_short_code)
-    krl_v = _ecos_latest(key, kr_long_code)
 
     us2, us10 = _last(us2_v), _last(us10_v)
     kr_s, kr_l = _last(krs_v), _last(krl_v)
