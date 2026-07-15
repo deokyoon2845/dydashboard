@@ -850,7 +850,15 @@ def _collect_macro_indicators():
         out.append({"key": "m2", "label": "M2 증가율",
                     "sub": "광의통화 평잔·원계열 전년동월비 · 월간(ECOS)", "unit": "%",
                     "col": "#7E9A83", "series": yv, "dates": yd})
-        print(f"[realestate] ECOS M2 OK n={len(yv)} 최근={yv[-1]}%")
+        # [2026-07] 레벨 병기 — 거시 차트 우측 보조축용(M2 평잔 · 조원).
+        # BBHA00 단위는 십억원 → /1000 = 조원. 카드 화이트리스트에 없어
+        # 지표 카드에는 안 뜨고, 뷰어 rpair 스펙이 m2 차트 우축으로만 쓴다.
+        out.append({"key": "m2_lv", "label": "M2 평잔",
+                    "sub": "광의통화 평잔·원계열 · 조원 · 월간(ECOS)", "unit": "조",
+                    "col": "#8B8D82",
+                    "series": [round(x / 1000.0) for x in v2], "dates": d2})
+        print(f"[realestate] ECOS M2 OK n={len(yv)} 최근={yv[-1]}%"
+              f" · 레벨 n={len(v2)} 최근={round(v2[-1] / 1000.0):,}조")
     else:
         print("[realestate] ECOS M2 0행")
 
@@ -924,8 +932,18 @@ def _collect_macro_indicators():
                         "sub": f"주거용 착공 증감률(전년동월比)·3개월 평균 · {reg_lab} · 월간(ECOS)",
                         "unit": "%",
                         "col": "#B89A5C", "series": sv, "dates": sd})
+            # [2026-07] 착공량 레벨 병기 — 거시 차트 우측 보조축용.
+            # 월별 원값은 계절성 노이즈가 커서 주 시리즈(YoY 3M평균)와 같은
+            # 3개월 평균으로 스무딩해 저장한다(호 → 만호 환산 · dec 2).
+            lv = _ma_series(starts_v, 3)
+            out.append({"key": "starts_lv", "label": "착공량 3M평균",
+                        "sub": f"주거용 착공 호수·3개월 평균 · {reg_lab} · 만호 · 월간(ECOS)",
+                        "unit": "만호", "col": "#8B8D82",
+                        "series": [round(x / 10000.0, 2) for x in lv],
+                        "dates": starts_d})
             print(f"[realestate] ECOS 착공 OK item={used} 기준={reg_lab}"
-                  f" n={len(sv)} 최근={sv[-1]}%")
+                  f" n={len(sv)} 최근={sv[-1]}%"
+                  f" · 착공량 3M {round(lv[-1] / 10000.0, 2)}만호")
     else:
         print("[realestate] ECOS 착공 실패 — 지역 해석·전국 콤보 모두 0행"
               " (901Y103 구조 재확인 필요)")
