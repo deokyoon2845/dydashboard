@@ -50,7 +50,8 @@ def _fetch_investor(sosok: str):
     """네이버 투자자별 매매동향 → DataFrame[날짜, 외국인, 기관]. 실패 시 None.
 
     sosok: '01'=코스피, '02'=코스닥
-    값 단위는 네이버 표기(백만원) 기준 — 표시 단계에서 억원으로 환산한다.
+    값 단위는 네이버 표기 그대로 '억원'이다 — 추가 환산 없이 그대로 쓴다.
+    (과거 백만원으로 오인해 /100 하던 버그로 표시값이 1/100로 축소됐었음 · 2026-07 수정)
     """
     today = datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y%m%d")
     url = (f"https://finance.naver.com/sise/investorDealTrendDay.naver"
@@ -87,13 +88,22 @@ def _fetch_investor(sosok: str):
     return df.reset_index(drop=True)
 
 
+def _fmt_eok(v: float) -> str:
+    """억원 값 표기 — 1조(=10,000억) 이상은 조 단위로 축약."""
+    a = abs(v)
+    if a >= 10000:
+        t = a / 10000.0
+        return f"{t:,.2f}조" if t < 10 else f"{t:,.1f}조"
+    return f"{a:,.0f}억"
+
+
 def _card(label, val_eok, dstr):
     up = val_eok >= 0
     cls = "up" if up else "down"
     arrow = "▲" if val_eok > 0 else ("▼" if val_eok < 0 else "▬")
     state = "순매수" if up else "순매도"
     return (f'<div class="mkt-card"><div class="mkt-name">{label} ({dstr})</div>'
-            f'<div class="mkt-val">{arrow} {abs(val_eok):,.0f}억</div>'
+            f'<div class="mkt-val">{arrow} {_fmt_eok(val_eok)}</div>'
             f'<div class="mkt-chg {cls}">{state}</div></div>')
 
 
@@ -112,9 +122,11 @@ def _legend_html() -> str:
                 f'font-size:12px;font-weight:600;color:var(--pill-ink,#5d6258);">'
                 f'<span style="width:9px;height:9px;border-radius:50%;'
                 f'background:{color};display:inline-block;"></span>{text}</span>')
-    return (f'<div style="display:flex;justify-content:center;gap:20px;'
-            f'flex-wrap:wrap;margin:16px 0 8px;">'
-            f'{chip(_C_FRG, "외국인 누적")}{chip(_C_INS, "기관 누적")}</div>')
+    unit = ('<span style="font-size:11.5px;font-weight:500;'
+            'color:var(--muted,#9a9b92);">단위: 억원</span>')
+    return (f'<div style="display:flex;justify-content:center;align-items:center;'
+            f'gap:20px;flex-wrap:wrap;margin:16px 0 8px;">'
+            f'{chip(_C_FRG, "외국인 누적")}{chip(_C_INS, "기관 누적")}{unit}</div>')
 
 
 def _supply_chart(long: pd.DataFrame):
@@ -168,9 +180,9 @@ def _render_market_block(label: str, sosok: str):
         return
 
     df = df.tail(15).copy()
-    # 네이버 표기(백만원) → 억원 (1억원 = 100백만원)
-    df["외국인_억"] = df["외국인"] / 100.0
-    df["기관_억"] = df["기관"] / 100.0
+    # 네이버 표기 자체가 억원 단위 — 환산 없이 그대로 사용 (2026-07: /100 오환산 버그 수정)
+    df["외국인_억"] = df["외국인"]
+    df["기관_억"] = df["기관"]
 
     # 최근일 카드
     last = df.iloc[-1]
