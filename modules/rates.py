@@ -2,8 +2,11 @@
 
 미국: 야후 CBOE 금리 인덱스 (Close = % 그대로)
   ^IRX=13주(3개월), ^FVX=5년, ^TNX=10년, ^TYX=30년
-한국: 한국은행 ECOS 국고채 2년·3년·10년 (ECOS_API_KEY 필요).
-      ECOS 호출 로직은 rate_gap.py의 헬퍼를 재사용한다(중복 방지).
+한국: Supabase engine_cache('kr_rates') 우선 — 엔진(engine/kr_rates_collect.py)이
+      Actions에서 ECOS 국고채 2·3·10년을 매일 수집. 캐시 없으면 ECOS 직접 폴백
+      (로컬 개발용 · ECOS_API_KEY). 헬퍼는 rate_gap.py 재사용(중복 방지).
+      ※ Streamlit Cloud에서 ECOS 직접 호출 불가 → '데이터 없음' 문제를
+        캐시 경유로 해결(2026-07).
 
 2026-06: 수익률 카드를 히트맵 타일로 표시 — 전일 대비 변화 '방향'으로 색칠
   (상승=빨강 / 하락=파랑 은은한 틴트, ±10bp에서 최대 — 지수 히트맵 A안과 동일).
@@ -16,7 +19,7 @@ import streamlit as st
 import yfinance as yf
 
 # ECOS 호출 헬퍼 재사용 (rate_gap.py 정의)
-from modules.rate_gap import _cfg, _ecos_items, _ecos_latest, _find_code
+from modules.rate_gap import _cfg, _kr_vals
 # 보름축 미니차트 헬퍼 재사용 (indices.py 정의)
 from modules.indices import sparkline_axis_html
 
@@ -28,11 +31,11 @@ _RATE_TICKERS = [
     ("미 30년", "^TYX"),
 ]
 
-# 한국 국고채 (ECOS 항목 이름 키워드, 표시 라벨)
+# 한국 국고채 (표시 라벨, engine_cache 키, ECOS 항목 이름 키워드)
 _KR_TENORS = [
-    ("한 2년", ("국고채", "2년")),
-    ("한 3년", ("국고채", "3년")),
-    ("한 10년", ("국고채", "10년")),
+    ("한 2년", "2y", ("국고채", "2년")),
+    ("한 3년", "3y", ("국고채", "3년")),
+    ("한 10년", "10y", ("국고채", "10년")),
 ]
 
 
@@ -100,12 +103,11 @@ def _fetch_rate(ticker: str):
 
 
 def _fetch_kr_yields(key):
-    """한국 국고채 2년·3년·10년: {라벨: {'cur','bp','series'} or None}. ECOS 헬퍼 재사용."""
-    items = _ecos_items(key)
+    """한국 국고채 2년·3년·10년: {라벨: {'cur','bp','series'} or None}.
+    engine_cache 우선 · 캐시가 비면 ECOS 직접 폴백(_kr_vals, rate_gap 헬퍼)."""
     out = {}
-    for label, kw in _KR_TENORS:
-        code = _find_code(items, *kw)
-        vals = _ecos_latest(key, code) if code else []
+    for label, tkey, kw in _KR_TENORS:
+        vals = _kr_vals(tkey, kw, key)
         if vals:
             cur = vals[-1][1]
             prev = vals[-2][1] if len(vals) >= 2 else cur
@@ -167,14 +169,15 @@ def render_rates():
             "색 = 전일 대비 변화의 은은한 틴트(상승 빨강/하락 파랑, ±10bp에서 최대) · "
             "미니차트 = 3개월 추이(눈금=보름)")
         + '</div>', unsafe_allow_html=True)
-    key = _cfg("ECOS_API_KEY")
-    if not key:
-        st.caption("한국 국고채는 ECOS_API_KEY가 필요해요. Secrets에 키를 넣으면 표시됩니다.")
+    key = _cfg("ECOS_API_KEY")   # 폴백(직접 호출)용 — 캐시가 있으면 없어도 동작
+    kr = _fetch_kr_yields(key)
+    if not any(kr.values()):
+        st.caption("한국 국고채 데이터가 아직 없어요. 엔진(run_all)이 돌면 자동으로 "
+                   "채워지고, 로컬에서는 ECOS_API_KEY를 넣으면 바로 표시됩니다.")
         return
 
-    kr = _fetch_kr_yields(key)
     tiles = ""
-    for label, _kw in _KR_TENORS:
+    for label, _tkey, _kw in _KR_TENORS:
         d = kr.get(label)
         if d:
             tiles += _rate_tile(label, d["cur"], d["bp"], d.get("series"))
